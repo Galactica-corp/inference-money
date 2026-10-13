@@ -1,6 +1,6 @@
 {
 	"name": "@galactica-net/inference-money-core",
-	"version": "0.1.0",
+	"version": "0.1.1",
 	"private": true,
 	"description": "The inference-money USDC bridge between Ethereum and Aztec: protocol SDK, contract artifacts, L1 ABIs, the testnet deployment, and a deploy library for instances of your own.",
 	"keywords": [
