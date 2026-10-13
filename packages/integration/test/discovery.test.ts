@@ -12,9 +12,9 @@ import { claimable, claimFor, deposit, l1Actor, merchantActor, payFor, sentDurin
 import { harness, INTEGRATION, newAccount } from "./harness"
 import { as, token } from "./token"
 
-// aztec-nr v6.0.0-rc.1's STANDARD_HANDSHAKE_REGISTRY_ADDRESS and DomainSeparator.NON_INTERACTIVE_HANDSHAKE_LOG_TAG: the
+// aztec-nr v6.0.0-rc.3's STANDARD_HANDSHAKE_REGISTRY_ADDRESS and DomainSeparator.NON_INTERACTIVE_HANDSHAKE_LOG_TAG: the
 // registry announces a non-interactive handshake under a tag anyone derives from the recipient's address alone.
-const HANDSHAKE_REGISTRY = AztecAddress.fromStringUnsafe("0x1d6cc365d8986c2111962a3460ad7a65bb06237768f334cb1ef8d9eada94a0c4")
+const HANDSHAKE_REGISTRY = AztecAddress.fromStringUnsafe("0x198aa5f21f7a13761f4729c544fb6edcae73a484d57b248b6390eb0dc5c06040")
 const NON_INTERACTIVE_HANDSHAKE_LOG_TAG = 4046403018
 
 /** The txs holding a private log under `account`'s handshake tag. */

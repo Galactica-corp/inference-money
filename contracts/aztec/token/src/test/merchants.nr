@@ -97,7 +97,7 @@ unconstrained fn switching_back_on_cancels_a_pending_switch_off() {
     w.env.call_public(w.admin, Token::at(w.token).schedule_merchant_off(w.m1, false));
     let s = status(w, w.m1);
     assert(!s.scheduled_off);
-    // The switch-on is itself scheduled, so it marks the entry until then.
+    // The switch-on is itself scheduled; as a change to the current value it marks nothing.
     assert_eq(s.scheduled_off_at, t0 + HOUR + DAY);
     at(w, t0 + DAY + HOUR - 1);
     assert(is_merchant(w, w.m1));
@@ -129,11 +129,11 @@ unconstrained fn cancel_refuses_an_entry_with_nothing_pending() {
 }
 
 #[test(should_fail_with = "No pending change")]
-unconstrained fn cancel_refuses_to_re_mark_a_cancelled_entry() {
+unconstrained fn cancel_refuses_a_cancelled_entry() {
     let w = utils::setup_merchant_world(false);
     w.env.call_public(w.admin, Token::at(w.token).schedule_merchant_off(w.m1, true));
     w.env.call_public(w.admin, Token::at(w.token).cancel_merchant_change(w.m1));
-    // The scheduled value now equals the current one: a second cancel would only restart the mark.
+    // The scheduled value now equals the current one, so nothing is left to cancel.
     w.env.call_public(w.admin, Token::at(w.token).cancel_merchant_change(w.m1));
 }
 

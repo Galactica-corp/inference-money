@@ -54,6 +54,7 @@ export interface L1Wiring {
 	chainId: number
 	inbox: Address
 	outbox: Address
+	feeJuicePortal: Address
 	version: bigint
 }
 
@@ -62,6 +63,7 @@ export function checkL1Wiring(w: L1Wiring, pins: NetworkPins): Check[] {
 		check("L1 RPC chain id", w.chainId === pins.l1ChainId, `${w.chainId}`),
 		check("registry → rollup → inbox", eq(w.inbox, pins.inbox), w.inbox),
 		check("registry → rollup → outbox", eq(w.outbox, pins.outbox), w.outbox),
+		check("registry → rollup → fee juice portal", eq(w.feeJuicePortal, pins.feeJuicePortal), w.feeJuicePortal),
 		check("registry → rollup → version", w.version === BigInt(pins.rollupVersion), `${w.version}`),
 	]
 }
@@ -103,6 +105,7 @@ const L1_ABI = parseAbi([
 	"function getInbox() view returns (address)",
 	"function getOutbox() view returns (address)",
 	"function getVersion() view returns (uint256)",
+	"function getFeeAssetPortal() view returns (address)",
 	"function decimals() view returns (uint8)",
 	"function version() view returns (string)",
 	"function mintAmount() view returns (uint256)",
@@ -110,13 +113,14 @@ const L1_ABI = parseAbi([
 
 async function readL1Wiring(l1: PublicClient, pins: NetworkPins): Promise<L1Wiring> {
 	const rollup = await l1.readContract({ address: pins.registry, abi: L1_ABI, functionName: "getCanonicalRollup" })
-	const [chainId, inbox, outbox, version] = await Promise.all([
+	const [chainId, inbox, outbox, feeJuicePortal, version] = await Promise.all([
 		l1.getChainId(),
 		l1.readContract({ address: rollup, abi: L1_ABI, functionName: "getInbox" }),
 		l1.readContract({ address: rollup, abi: L1_ABI, functionName: "getOutbox" }),
+		l1.readContract({ address: rollup, abi: L1_ABI, functionName: "getFeeAssetPortal" }),
 		l1.readContract({ address: rollup, abi: L1_ABI, functionName: "getVersion" }),
 	])
-	return { chainId, inbox, outbox, version }
+	return { chainId, inbox, outbox, feeJuicePortal, version }
 }
 
 async function readAssets(l1: PublicClient, pins: NetworkPins) {

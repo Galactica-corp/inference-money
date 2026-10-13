@@ -122,11 +122,10 @@ describe("delayPolicyChecks", () => {
 		expect(judged(r, 7200, `merchant ${M} delay == setting`)).toMatchObject({ strict: "fail", allowing: "fail" })
 	})
 
-	it("fails a pending switch, and an entry only marked, strict; the flag warns, saying which", () => {
+	it("fails a pending switch strict, which the flag turns into a warning, and passes a cancelled one", () => {
 		const off = judged(reads(86_400n, { scheduledOff: true, changeAt: AT + 500n }), 86_400, `merchant ${M} switch pending`)
 		expect(off).toEqual({ strict: "fail", allowing: "warn", detail: `switches off at ${LATER}` })
-		const marked = judged(reads(86_400n, { changeAt: AT + 500n }), 86_400, `merchant ${M} switch pending`)
-		expect(marked).toEqual({ strict: "fail", allowing: "warn", detail: `marked, no switch at ${LATER}` })
+		expect(delayPolicyChecks(reads(86_400n, { changeAt: AT + 500n }), 86_400).every((c) => c.ok && !c.warn)).toBe(true)
 	})
 
 	it("warns on a manifest without the delay, never waives an entry's delay change for it, and still waives a switch", () => {

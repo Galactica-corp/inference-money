@@ -1,9 +1,9 @@
 {
 	"bun": "1.4.0",
-	"aztecNode": "6.0.0-rc.1",
+	"aztecNode": "6.0.0-rc.3",
 	"aztecNodeFoundry": "1.4.1",
-	"aztecJs": "6.0.0-rc.1",
-	"noir": "6.0.0-rc.1",
+	"aztecJs": "6.0.0-rc.3",
+	"noir": "6.0.0-rc.3",
 	"nargo": "1.0.0-rc.3",
 	"node": "24.12.0",
 	"foundry": "1.7.1",

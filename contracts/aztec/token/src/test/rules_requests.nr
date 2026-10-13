@@ -3,8 +3,10 @@
 // any; and a request takes one payment.
 use crate::{test::utils::{self, MerchantWorld, mint_amount}, Token};
 use aztec::{
-    protocol::address::AztecAddress, test::helpers::txe_oracles::get_last_call_offchain_effects,
+    protocol::address::AztecAddress,
+    test::helpers::{authwit as authwit_cheatcodes, txe_oracles::get_last_call_offchain_effects},
 };
+use generic_proxy::GenericProxy;
 use merchant_stamp::{pad, REQUEST_OPENED_EFFECT, stamp, stamp_bucket, stamp_deadline};
 
 global AMOUNT: u128 = 100;
@@ -66,29 +68,36 @@ unconstrained fn a_request_a_merchant_opens_for_a_merchant_is_stamped() {
     assert_stamped(w, c, bucket);
 }
 
-// A sent tx returns no private return values, so the opener's client learns the commitment from this effect alone.
-unconstrained fn assert_handed_over(commitment: Field) {
+// The last call's request effects: how many, and the commitment the last one carries.
+unconstrained fn request_effects() -> (u32, Field) {
     let effects = get_last_call_offchain_effects();
     let mut found = 0;
+    let mut carried = 0;
     for i in 0..effects.len() {
         let e = effects.get(i);
         if (e.len() == 2) & (e.get(0) == REQUEST_OPENED_EFFECT) {
-            assert_eq(e.get(1), commitment, "the effect should carry the opened commitment");
+            carried = e.get(1);
             found += 1;
         }
     }
-    assert_eq(found, 1, "one opening should emit exactly one request effect");
+    (found, carried)
+}
+
+// A sent tx returns no private return values, so the opener's client learns the commitment from this effect alone.
+unconstrained fn assert_handed_over(commitment: Field) {
+    assert_eq(
+        request_effects(),
+        (1, commitment),
+        "one opening should emit one effect carrying its commitment",
+    );
 }
 
 #[test]
-unconstrained fn both_openings_hand_the_commitment_to_the_opener() {
+unconstrained fn an_opening_hands_the_commitment_to_the_opener() {
     let w = utils::setup_merchant_world(false);
-    let token = Token::at(w.token);
-    let c = w.env.call_private(w.alice, token.initialize_transfer_commitment(w.m1, w.alice));
-    assert_handed_over(c);
     let c = w.env.call_private(
-        w.m1,
-        token.transfer_private_to_public_with_commitment(w.m1, w.bob, AMOUNT, 0),
+        w.alice,
+        Token::at(w.token).initialize_transfer_commitment(w.m1, w.alice),
     );
     assert_handed_over(c);
 }
@@ -102,22 +111,76 @@ unconstrained fn a_user_cannot_open_a_request_for_a_user() {
     );
 }
 
+// A refund commitment is the payer's and opens no request: no stamp, no pad, no effect. Its completer refunds it
+// from a merchant.
 #[test]
-unconstrained fn with_commitment_to_a_merchant_is_stamped_and_from_a_merchant_padded() {
+unconstrained fn a_merchant_refunds_a_users_commitment_unstamped() {
     let w = utils::setup_merchant_world(false);
     let token = Token::at(w.token);
     let bucket = bucket_now(w);
-    let to_merchant = w.env.call_private(
+    let c = w.env.call_private(
         w.alice,
         token.transfer_private_to_public_with_commitment(w.alice, w.m1, AMOUNT, 0),
     );
-    assert_stamped(w, to_merchant, bucket);
-    let to_user = w.env.call_private(
-        w.m1,
-        token.transfer_private_to_public_with_commitment(w.m1, w.bob, AMOUNT, 0),
+    assert_eq(request_effects().0, 0, "a refund commitment should emit no request effect");
+    assert(!has_nullifier(w, stamp(c, bucket)), "a refund commitment should not be stamped");
+    assert(!has_nullifier(w, pad(c)), "a refund commitment should not be padded");
+    let refund = AMOUNT / 4;
+    let give_back = token.transfer_public_to_commitment(w.m1, c, refund, 0);
+    authwit_cheatcodes::add_public_authwit_from_call(w.env, w.m1, w.alice, give_back);
+    w.env.call_public(w.alice, give_back);
+    utils::check_private_balance(w.env, w.token, w.alice, mint_amount - AMOUNT + refund);
+    utils::check_public_balance(w.env, w.token, w.m1, mint_amount + AMOUNT - refund);
+}
+
+/// Carol opens a free refund commitment through Bob's proxy, which so becomes its completer: were it stamped,
+/// Bob could pay Carol through it, user to user.
+unconstrained fn a_free_refund_commitment(
+    w: MerchantWorld,
+    carol: AztecAddress,
+    proxy: AztecAddress,
+) -> Field {
+    let open = Token::at(w.token).transfer_private_to_public_with_commitment(carol, w.m1, 0, 0);
+    authwit_cheatcodes::add_private_authwit_from_call(w.env, carol, proxy, open);
+    let c: Field = w.env.call_private(
+        carol,
+        GenericProxy::at(proxy).forward_private_4_and_return(
+            open.target_contract,
+            open.selector,
+            open.args,
+        ),
     );
-    assert_padded(w, to_user, bucket);
-    utils::check_public_balance(w.env, w.token, w.bob, AMOUNT);
+    c
+}
+
+#[test(should_fail_with = "Payment refused: users may only pay into requests opened for a merchant")]
+unconstrained fn a_user_cannot_pay_into_a_users_refund_commitment() {
+    let mut w = utils::setup_merchant_world(true);
+    let (carol, bob) = (w.alice, w.bob);
+    let proxy = w.env.deploy("@generic_proxy/GenericProxy").without_initializer();
+    let c = a_free_refund_commitment(w, carol, proxy);
+    w.env.call_public(w.minter, Token::at(w.token).mint_to_public(bob, mint_amount));
+    let pay = Token::at(w.token).transfer_public_to_commitment(bob, c, AMOUNT, 0);
+    authwit_cheatcodes::add_public_authwit_from_call(w.env, bob, proxy, pay);
+    w.env.call_public(
+        bob,
+        GenericProxy::at(proxy).forward_public_4(pay.target_contract, pay.selector, pay.args),
+    );
+}
+
+#[test(should_fail_with = "Payment refused: users may only pay into requests opened for a merchant")]
+unconstrained fn a_user_cannot_pay_into_a_users_refund_commitment_privately() {
+    let mut w = utils::setup_merchant_world(true);
+    let (carol, bob) = (w.alice, w.bob);
+    let proxy = w.env.deploy("@generic_proxy/GenericProxy").without_initializer();
+    let c = a_free_refund_commitment(w, carol, proxy);
+    utils::mint_to_private(w.env, w.token, bob, mint_amount, w.minter);
+    let pay = Token::at(w.token).transfer_private_to_commitment(bob, c, AMOUNT, 0);
+    authwit_cheatcodes::add_private_authwit_from_call(w.env, bob, proxy, pay);
+    w.env.call_private(
+        bob,
+        GenericProxy::at(proxy).forward_private_4(pay.target_contract, pay.selector, pay.args),
+    );
 }
 
 #[test]

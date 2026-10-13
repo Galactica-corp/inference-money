@@ -258,13 +258,14 @@ fn transfer_private_to_public(
 
 ### transfer_private_to_public_with_commitment
 ```rust
-/// @notice Transfer tokens from private balance to public balance with a commitment
-/// @dev Spends notes, emits a new note (UintNote) with any remaining change, enqueues a public call, and returns a partial note
-/// @param from The address of the sender
-/// @param to The address of the recipient
+/// @notice Transfer tokens from private balance to public balance, with a refund commitment for `from`
+/// @dev The commitment is owned by `from` and completable only by `msg_sender`. It is never stamped, so only a
+///      merchant source can complete it, once.
+/// @param from The address of the sender, and the owner of the commitment
+/// @param to The address of the recipient of the public balance
 /// @param amount The amount of tokens to transfer
 /// @param nonce The nonce used for authwit
-/// @return commitment The partial note utilized for the transfer commitment (privacy entrance)
+/// @return commitment The refund commitment owned by `from`
 #[private]
 fn transfer_private_to_public_with_commitment(
     from: AztecAddress,

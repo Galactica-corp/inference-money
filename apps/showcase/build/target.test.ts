@@ -22,6 +22,17 @@ mkdirSync(join(root, "apps", "showcase", "e2e", "fixtures"), { recursive: true }
 writeFileSync(join(root, "apps", "showcase", "e2e", "fixtures", "tour.json"), JSON.stringify({ recorded: "fixture" }))
 /** A local manifest's L1 RPC comes from its run's network; attached endpoints stand in for one. */
 const ANVIL = { NET_L1_RPC: "http://127.0.0.1:8545", NET_NODE_URL: "http://127.0.0.1:8080" }
+// The fixture manifest names node 5.0.0; `current` names the toolchain's node, for which Presto pins another stdlib.
+writeFileSync(join(root, "toolchain.json"), JSON.stringify({ aztecNode: "6.0.0-rc.3", aztecJs: "6.0.0-rc.3" }))
+const presto = join(root, "apps", "showcase", "node_modules", "@alejoamiras", "presto")
+mkdirSync(presto, { recursive: true })
+const prestoPinning = (stdlib?: string) =>
+	writeFileSync(join(presto, "package.json"), JSON.stringify({ dependencies: stdlib ? { "@aztec-labs/stdlib": stdlib } : {} }))
+prestoPinning("6.0.0-rc.1")
+const current = join(root, "local", "run-2", "manifest.json")
+mkdirSync(join(root, "local", "run-2"), { recursive: true })
+writeFileSync(current, JSON.stringify({ ...fixture, network: "local", l2: { ...fixture.l2, nodeVersion: "6.0.0-rc.3" } }))
+writeFileSync(join(root, "local", "run-2", "demo.json"), demo(fixture.l2.bridge.address))
 
 describe("resolveTarget", () => {
 	it("pins the testnet build to the committed manifest, refuses every override and every keyed variable", () => {
@@ -55,6 +66,25 @@ describe("resolveTarget", () => {
 			/has no recorded tour at .*testnet-tour\.json: run `bun run bridge smoke/,
 		)
 		writeFileSync(join(root, "testnet-tour.json"), JSON.stringify({ recorded: "testnet" }))
+	})
+})
+
+describe("Presto's stdlib", () => {
+	it("refuses a real-proof build for the toolchain's node until Presto pins the toolchain's stdlib", () => {
+		const real = { BRIDGE_MANIFEST: current, SHOWCASE_PROOFS: "real", ...ANVIL }
+		expect(() => resolveTarget(real, root)).toThrow(/pins @aztec-labs\/stdlib 6\.0\.0-rc\.1, not the toolchain's 6\.0\.0-rc\.3/)
+		for (const malformed of [undefined, "", "^6.0.0-rc.3"]) {
+			prestoPinning(malformed)
+			expect(() => resolveTarget(real, root)).toThrow(/an exact @aztec-labs\/stdlib/)
+		}
+		prestoPinning("6.0.0-rc.3")
+		expect(resolveTarget(real, root).proofs).toBe("real")
+		prestoPinning("6.0.0-rc.1")
+	})
+
+	it("builds fake proofs, and a manifest on another node version, whatever Presto pins", () => {
+		expect(resolveTarget({ BRIDGE_MANIFEST: current, ...ANVIL }, root).proofs).toBe("fake")
+		expect(resolveTarget({ BRIDGE_MANIFEST: testnet }, root).proofs).toBe("real")
 	})
 })
 

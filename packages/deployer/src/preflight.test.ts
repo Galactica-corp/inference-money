@@ -29,9 +29,13 @@ describe("probe checks", () => {
 	})
 
 	it("fail when the registry's canonical rollup is wired elsewhere (a rollup upgrade)", () => {
-		const wiring = { chainId: TESTNET.l1ChainId, inbox: TESTNET.inbox, outbox: TESTNET.outbox, version: BigInt(TESTNET.rollupVersion) }
+		const { l1ChainId: chainId, inbox, outbox, feeJuicePortal } = TESTNET
+		const wiring = { chainId, inbox, outbox, feeJuicePortal, version: BigInt(TESTNET.rollupVersion) }
 		expect(failed(checkL1Wiring(wiring, TESTNET))).toEqual([])
 		expect(failed(checkL1Wiring({ ...wiring, version: 1n }, TESTNET))).toEqual(["registry → rollup → version"])
+		expect(failed(checkL1Wiring({ ...wiring, feeJuicePortal: TESTNET.inbox }, TESTNET))).toEqual([
+			"registry → rollup → fee juice portal",
+		])
 	})
 
 	it("gate on the faucet covering the deploy, not on the sponsor's balance, which `demo fund` tops up", () => {

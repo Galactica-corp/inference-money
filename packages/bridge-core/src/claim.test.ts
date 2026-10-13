@@ -36,7 +36,7 @@ const CHECKPOINTED = async () => receiptAt(TxStatus.CHECKPOINTED) as never
 const NO_NULLIFIER: ClaimNode = { findLeavesIndexes: async (_b, _t, leaves) => leaves.map(() => undefined), getTxReceipt: CHECKPOINTED }
 
 describe("registerSponsor", () => {
-	const SPONSOR = "0x06a9fa0208c78509921b0487a6b5cd5c2e93baf17de1a18d310f65a3cc1d924b" as const
+	const SPONSOR = "0x2adfb70e860909f0db8268b3fec80bce52a94559963444f5c0341816b8412130" as const
 
 	it("registers the pinned sponsor, and refuses a manifest naming any other", async () => {
 		const registered: string[] = []

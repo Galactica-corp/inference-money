@@ -179,6 +179,16 @@ unconstrained fn a_merchant_read_caps_expiry_at_the_entrys_horizon() {
     assert_eq(w.env.private_context_at(w.token, |_| merchant_horizon(list, w.bob)), 0);
 }
 
+// A cancel schedules the current value, a change aztec-nr's horizon ignores: the read caps as a settled entry's does.
+#[test]
+unconstrained fn a_cancelled_entry_reads_unmarked() {
+    let w = utils::setup_merchant_world(false);
+    let _ = switch_off(w, w.m1);
+    w.env.call_public(w.admin, Token::at(w.token).cancel_merchant_change(w.m1));
+    utils::anchor_at(w.env, w.env.last_block_timestamp() + 1);
+    assert_horizon(w, w.m1, MERCHANT_MAX_DELAY - 1);
+}
+
 // The call publishes its sender, so a merchant sender is proven even while the hidden recipient's read would cap later.
 // TXE cannot see which entry a real call read; check-stamp-constraint.sh pins the call's `(from, to, true)`.
 #[test]

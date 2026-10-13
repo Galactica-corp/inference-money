@@ -5,11 +5,11 @@ compiler_version = ">=1.0.0"
 type = "contract"
 
 [dependencies]
-aztec = { git = "https://github.com/aztec-labs-eng/aztec-nr", tag = "v6.0.0-rc.1", directory = "aztec" }
-uint_note = { git = "https://github.com/aztec-labs-eng/aztec-nr", tag = "v6.0.0-rc.1", directory = "uint-note" }
-balance_set = { git = "https://github.com/aztec-labs-eng/aztec-nr", tag = "v6.0.0-rc.1", directory = "balance-set" }
-compressed_string = { git = "https://github.com/aztec-labs-eng/aztec-nr", tag = "v6.0.0-rc.1", directory = "compressed-string" }
-generic_proxy = { git = "https://github.com/AztecProtocol/aztec-standards", tag = "v6.0.0-rc.1", directory = "src/generic_proxy" }
-arc403_interface = { git = "https://github.com/AztecProtocol/aztec-standards", tag = "v6.0.0-rc.1", directory = "src/arc403_interface" }
-authorization_contract = { git = "https://github.com/AztecProtocol/aztec-standards", tag = "v6.0.0-rc.1", directory = "src/token_contract/src/test/test_authorization_contract" }
+aztec = { git = "https://github.com/aztec-labs-eng/aztec-nr", tag = "v6.0.0-rc.3", directory = "aztec" }
+uint_note = { git = "https://github.com/aztec-labs-eng/aztec-nr", tag = "v6.0.0-rc.3", directory = "uint-note" }
+balance_set = { git = "https://github.com/aztec-labs-eng/aztec-nr", tag = "v6.0.0-rc.3", directory = "balance-set" }
+compressed_string = { git = "https://github.com/aztec-labs-eng/aztec-nr", tag = "v6.0.0-rc.3", directory = "compressed-string" }
+generic_proxy = { git = "https://github.com/AztecProtocol/aztec-standards", tag = "v6.0.0-rc.3", directory = "src/generic_proxy" }
+arc403_interface = { git = "https://github.com/AztecProtocol/aztec-standards", tag = "v6.0.0-rc.3", directory = "src/arc403_interface" }
+authorization_contract = { git = "https://github.com/AztecProtocol/aztec-standards", tag = "v6.0.0-rc.3", directory = "src/token_contract/src/test/test_authorization_contract" }
 merchant_stamp = { path = "../merchant_stamp" }

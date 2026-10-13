@@ -46,14 +46,23 @@ jobs:
         with:
           foundry: "true"
           aztec-node: "true"
+      - name: Presto proves on this toolchain
+        id: compat
+        run: bun apps/showcase/e2e/run/presto-compat.ts
+        env:
+          # Remove once Presto's SDK pins @aztec-labs/stdlib 6.0.0-rc.3; no presto build does yet.
+          PRESTO_SKIP_TOOLCHAIN: 6.0.0-rc.3
+          PRESTO_SKIP_STDLIB: 6.0.0-rc.1
       - name: Chromium (the pinned Playwright's build)
+        if: steps.compat.outputs.run == 'true'
         run: apps/showcase/node_modules/.bin/playwright install --with-deps chromium
-      - run: bun run test:e2e:presto
+      - if: steps.compat.outputs.run == 'true'
+        run: bun run test:e2e:presto
         env:
           # presto.sh hands it to presto-server alone, for the GitHub API calls that check the bb it downloads.
           PRESTO_GITHUB_TOKEN: ${{ github.token }}
       # The run's certificate key and presto-server's home live outside the state dir, so neither is uploaded.
-      - if: failure()
+      - if: failure() && steps.compat.outputs.run == 'true'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: e2e-presto-state

@@ -3,7 +3,7 @@
 	"private": true,
 	"description": "The pinned Aztec node (toolchain.json aztecNode) for CI's local network, installed with --frozen-lockfile into the ~/.aztec/versions layout the local network resolves.",
 	"dependencies": {
-		"@aztec-labs/aztec": "6.0.0-rc.1"
+		"@aztec-labs/aztec": "6.0.0-rc.3"
 	},
 	"trustedDependencies": [
 		"bcrypto"

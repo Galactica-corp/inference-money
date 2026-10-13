@@ -31,9 +31,9 @@ interface IPermit2Errors {
 /// (`networks.test.ts` asserts it) and the node info the testnet probe checks.
 contract SepoliaForkTest is Test {
     address internal constant REGISTRY = 0xA0BFb1B494FB49041e5c6e8c2C1BE09cD171c6Ba;
-    address internal constant INBOX = 0x816ce1861ec258F99279E75a3EE6B5Dfc9571E30;
-    address internal constant OUTBOX = 0xb9daE0F8c5dD6524c1015fFE6494d9fD0623DF0d;
-    uint256 internal constant ROLLUP_VERSION = 2_914_217_885;
+    address internal constant INBOX = 0xb3B95295823AD313Edc9e498EFF7b672B3C6b209;
+    address internal constant OUTBOX = 0x25519d3c79E39143aCCf358BA07D200b534fA400;
+    uint256 internal constant ROLLUP_VERSION = 3_409_706_519;
     address internal constant USDC = 0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238;
     address internal constant PERMIT2 = 0x000000000022D473030F116dDEE9F6B43aC78BA3;
     bytes32 internal constant L2_BRIDGE = bytes32(uint256(0xB41D6E));

@@ -1,4 +1,4 @@
-// Forked from AztecProtocol/aztec-standards v6.0.0-rc.1 (cdfba943), src/token_contract; MIT, see LICENSE.
+// Forked from AztecProtocol/aztec-standards v6.0.0-rc.3 (f7bf63d5), src/token_contract; MIT, see LICENSE.
 // Delta:
 // - the package is `merchant_token`, and its path dependencies are the same upstream crates by pinned git tag;
 // - a merchant list is appended (storage, events, the MERCHANTS section); upstream's storage slots, events and function
@@ -245,14 +245,16 @@ pub contract Token {
         self.enqueue_self.increase_public_balance_internal(to, amount);
     }
 
-    /// @notice Transfer tokens from private balance to public balance and initializes a commitment
-    /// @dev Spends notes, emits a new note (UintNote) with any remaining change, enqueues a public call, and returns a partial note.
-    ///      The sender will be used as the completer for the initialized partial note.
-    /// @param from The address of the sender
-    /// @param to The address of the recipient
+    /// @notice Transfer tokens from private balance to public balance, with a refund commitment for `from`
+    /// @dev The refund pattern: a contract pulls `amount` publicly and later returns any unused part to `from`
+    ///      privately via `transfer_public_to_commitment`. The commitment is owned by `from` and completable only by
+    ///      `msg_sender` (the integrating contract when called through an authwit). Complete it at most once (see
+    ///      README). It is never stamped, so only a merchant source can complete it.
+    /// @param from The address of the sender, and the owner of the commitment
+    /// @param to The address of the recipient of the public balance
     /// @param amount The amount of tokens to transfer
     /// @param _nonce The nonce used for authwitness
-    /// @return commitment The partial note utilized for the transfer commitment (privacy entrance)
+    /// @return commitment The refund commitment owned by `from`
     #[authorize_once("from", "_nonce")]
     #[external("private")]
     fn transfer_private_to_public_with_commitment(
@@ -270,10 +272,9 @@ pub contract Token {
 
         self.enqueue_self.increase_public_balance_internal(to, amount);
 
-        // Only the sender will be able to complete the partial note
         let completer = self.msg_sender();
-        let commitment = self.internal._initialize_transfer_commitment(to, completer);
-        self.internal._push_request_stamp(commitment.to_field(), side);
+        // Never stamped: a stamp is the only owner check a payment makes, and this commitment's owner may be a user.
+        let commitment = self.internal._initialize_transfer_commitment(from, completer);
         commitment.to_field()
     }
 
@@ -697,7 +698,7 @@ pub contract Token {
 
     /// @notice Schedules switching a merchant off (`off`) or back on, after the entry's delay
     /// @dev A no-op when `off` is already the latest scheduled value, so repeats never restart the clock. Scheduling the
-    ///      current value cancels a pending change, and still marks the entry until the new change time.
+    ///      current value cancels a pending change and unmarks the entry: a change to the current value caps no read.
     /// @param account The listed merchant
     /// @param off Whether the merchant is to be switched off
     #[external("public")]
@@ -783,8 +784,7 @@ pub contract Token {
 
     /// @notice Cancels an entry's pending change: re-schedules its current value, and its current delay if a decrease
     ///         is pending
-    /// @dev Refused when nothing is pending: re-scheduling an unchanged value would only restart the mark, so a
-    ///      guardian could otherwise keep an entry marked forever
+    /// @dev Refused when nothing is pending, so a mistaken cancel fails rather than doing nothing
     /// @param account The merchant whose pending change to cancel
     #[external("public")]
     fn cancel_merchant_change(account: AztecAddress) {

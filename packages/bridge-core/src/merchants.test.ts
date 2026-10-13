@@ -31,6 +31,8 @@ const entry = (e: Partial<MerchantEntry> = {}): MerchantEntry => ({
 })
 const on = entry()
 const switchingOff = entry({ scheduledOff: true, changeAt: NOW + HOUR })
+// A switch-off cancelled, or switched back on, before it landed: the current value scheduled again.
+const cancelled = entry({ changeAt: NOW + HOUR })
 // A decrease to the hour, synced two hours before NOW.
 const shortening = entry({ scheduledDelay: HOUR, delayChangeAt: NOW - 2n * HOUR + DAY - HOUR })
 const list = (entries: [AztecAddress, MerchantEntry][]): MerchantList => ({
@@ -46,6 +48,7 @@ describe("merchant status", () => {
 		expect(merchantStatus(l, m1, switchingOff.changeAt - 1n)).toEqual({ merchant: true, pending: true })
 		expect(merchantStatus(l, m1, switchingOff.changeAt)).toEqual({ merchant: false, pending: false })
 		expect(merchantStatus(l, alice)).toEqual({ merchant: false, pending: false })
+		expect(merchantStatus(list([[m1, cancelled]]), m1)).toEqual({ merchant: true, pending: false })
 	})
 })
 
@@ -58,6 +61,10 @@ describe("a merchant's horizon, from the read's anchor", () => {
 		expect(offset(entry({ delay: HOUR, scheduledDelay: HOUR }))).toBe(HOUR - 1n)
 		expect(offset(entry({ delay: undefined, scheduledDelay: undefined }))).toBe(HOUR - 1n)
 		expect(offset(entry({ scheduledOff: true, changeAt: NOW + DAY - 1n }))).toBe(DAY - 2n)
+	})
+
+	it("ignores a change scheduled to the current value (a_cancelled_entry_reads_unmarked)", () => {
+		expect(offset(cancelled)).toBe(DAY - 1n)
 	})
 
 	it("is bounded by the old delay while a decrease is pending, and by the new one from its landing", () => {

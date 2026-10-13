@@ -272,10 +272,10 @@ function entryChecks(account: string, e: MerchantEntry, r: DelayReads, pinned: b
 	if (d.changeAt > at && d.current !== d.scheduled) {
 		out.push(pendingCheck(`${name} delay change pending`, delayChange(d), d.scheduled === pinned, allowPending))
 	}
-	// A cancel or a switch back on leaves the entry marked, its value unchanged, until `changeAt`.
-	if (e.changeAt > at) {
-		const switches = e.off === e.scheduledOff ? "marked, no switch" : `switches ${e.scheduledOff ? "off" : "on"}`
-		out.push(pendingCheck(`${name} switch pending`, `${switches} at ${when(e.changeAt)}`, true, allowPending))
+	// A change scheduled to the current value (a cancel, a switch back on) caps no read, so only a switch is pending.
+	if (e.changeAt > at && e.off !== e.scheduledOff) {
+		const switches = `switches ${e.scheduledOff ? "off" : "on"} at ${when(e.changeAt)}`
+		out.push(pendingCheck(`${name} switch pending`, switches, true, allowPending))
 	}
 	return out
 }
