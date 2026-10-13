@@ -19,6 +19,9 @@ export const ACTION_LABEL: Record<LiveAction, string> = {
 	withdraw: "Withdraw to Ethereum",
 }
 
+export const DEPOSITS_CLOSED =
+	"Deposits are closed. Aztec has moved to a new rollup, and this bridge stays on the one it was deployed on. Claims, payments, transfers and withdrawals still work while that rollup runs."
+
 /** What the composer holds: the amount as typed, so validation can say what is wrong with it. */
 export interface Draft {
 	actor: Actor

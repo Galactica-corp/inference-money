@@ -269,10 +269,11 @@ describe.skipIf(!INTEGRATION)("deposits and claims", () => {
 
 	it("[A12] a network that is not the manifest's is refused before anything is signed", async () => {
 		const { manifest: m, node, l1: chain } = harness()
-		await assertNetworkIdentity(node, chain.publicClient, m)
+		expect(await assertNetworkIdentity(node, chain.publicClient, m)).toEqual({ depositsOpen: true })
 		for (const wrong of [
 			{ ...m, l2: { ...m.l2, rollupVersion: m.l2.rollupVersion + 1 } },
 			{ ...m, l1: { ...m.l1, outbox: m.l1.inbox } },
+			{ ...m, l1: { ...m.l1, registry: m.l1.inbox } },
 		]) {
 			await expect(assertNetworkIdentity(node, chain.publicClient, wrong)).rejects.toBeInstanceOf(NetworkMismatchError)
 		}

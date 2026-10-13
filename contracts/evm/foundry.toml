@@ -41,8 +41,8 @@ line_length = 120
 tab_width = 4
 
 
-# Medusa's build only (`test:evm:fuzz` sets FOUNDRY_PROFILE for that one process): an ambient leak would change the
-# bytecode `verify` compares, never pass silently.
+# Medusa's build only (`test:evm:fuzz` sets FOUNDRY_PROFILE for that one process); the deployer's builds pin the
+# default profile, so a leak never reaches a deploy or `verify`.
 [profile.fuzz]
 out = "out-fuzz"
 cache_path = "cache-fuzz"

@@ -41,10 +41,13 @@ export const bridgeManifestSchema = z
 			registry: evmAddress,
 			inbox: evmAddress,
 			outbox: evmAddress,
-			/** The first block a deposit log scan needs to read. */
+			/** The first block a deposit log scan needs to read: the router's creation block. */
 			deployBlock: uint,
 			/** The portal's initializer: its only power ended at `initialize`. */
 			deployer: evmAddress,
+			/** The creation txs `verify` checks the constructors against; absent from manifests that predate them. */
+			portalTx: field.optional(),
+			routerTx: field.optional(),
 		}),
 		l2: z.strictObject({
 			nodeVersion: z.string().min(1),
@@ -55,6 +58,8 @@ export const bridgeManifestSchema = z
 			admin: field.optional(),
 			/** The admin is a disposable key standing in until the owner's admin takes over. */
 			interimAdmin: z.literal(true).optional(),
+			/** The token's switch-off delay in seconds (its MERCHANT_MIN_DELAY..MAX_DELAY); `verify` reports a manifest without it unpinned. */
+			merchantDelay: z.number().int().min(3600).max(86_400).optional(),
 			proxy: l2InstanceSchema,
 			token: l2InstanceSchema,
 			bridge: l2InstanceSchema,

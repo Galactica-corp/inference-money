@@ -23,8 +23,13 @@ import {
 	accountFor,
 	bridgeOf,
 	buildBridgeContracts,
+	deployEvm,
+	deployRouter,
 	guardianDelay,
+	initializePortal,
 	LOCAL_ADMIN_SECRET,
+	l1Signer,
+	localL1Account,
 	openBridgeWallet,
 	proposeAdmin,
 	readBundle,
@@ -36,7 +41,7 @@ import { REPO_ROOT } from "@inference-money/local-network"
 import { encodeAbiParameters, type Hex, keccak256, pad } from "viem"
 import { l2Actor } from "./actors"
 import { harness, INTEGRATION } from "./harness"
-import { asAdmin, blockTimestamp, sponsored } from "./token"
+import { asAdmin, blockTimestamp, listMerchant, sponsored } from "./token"
 
 const CLI = join(REPO_ROOT, "packages", "deployer", "src", "cli.ts")
 
@@ -54,14 +59,22 @@ async function ok(...args: string[]): Promise<string> {
 }
 
 let evm: ReturnType<typeof buildBridgeContracts> | undefined
+const built = () => {
+	evm ??= buildBridgeContracts(harness().runId, false, process.env)
+	return evm
+}
 
-/** The names of the checks `verify` fails for `m` against the chain as it is now. */
+/** The names of the checks `verify` fails for `m` against the chain as it is now; other specs leave merchant changes in flight. */
 async function failing(m: BridgeManifest = harness().manifest): Promise<string[]> {
-	const { runId, l1, node } = harness()
-	evm ??= buildBridgeContracts(runId, false, process.env)
-	const checks = await verifyDeployment(m, evm, l1.publicClient, node)
+	const { l1, node } = harness()
+	const checks = await verifyDeployment(m, built(), l1.publicClient, node, "complete", { allowPending: true })
 	return checks.filter((c) => !c.ok).map((c) => c.name)
 }
+
+const CREATED = (name: string) => `${name} creation tx == fresh forge build, sent by the L1 deployer`
+
+/** MockUsdc is OpenZeppelin's ERC20: balances are the mapping at slot 0. */
+const usdcSlot = (holder: Hex) => keccak256(encodeAbiParameters([{ type: "address" }, { type: "uint256" }], [holder, 0n]))
 
 const bridgeAt = () => bridgeOf(harness().wallet, harness().manifest)
 const tokenAt = () => tokenOf(harness().wallet, harness().manifest)
@@ -97,7 +110,8 @@ describe.skipIf(!INTEGRATION)("operator CLI", () => {
 		const tour = join(dir, "tour.json")
 		await ok("smoke", manifestPath, "--record", tour)
 		await ok("smoke", manifestPath)
-		await ok("verify", manifestPath, "--tour", tour)
+		// Other specs leave merchant changes in flight on this shared deployment.
+		await ok("verify", manifestPath, "--tour", tour, "--allow-pending")
 		const steps = parseTour(JSON.parse(readFileSync(tour, "utf8"))).steps
 		expect(steps.filter((s) => s.verdict === "refused").map((s) => s.rule)).toEqual(["transfer", "exitDestination"])
 		expect(steps.find((s) => s.id === "withdraw")?.l1?.txHash).toMatch(/^0x[0-9a-f]{64}$/)
@@ -109,6 +123,30 @@ describe.skipIf(!INTEGRATION)("operator CLI", () => {
 			expect(await failing()).toEqual([])
 			expect(await failing({ ...m, l1: { ...m.l1, deployer: `0x${"ab".repeat(20)}` } })).toEqual([
 				"portal.initializer == L1 deployer",
+				CREATED("portal"),
+				CREATED("router"),
+			])
+		})
+
+		it("a manifest naming another tx as the portal's creation", async () => {
+			const m = harness().manifest
+			expect(await failing({ ...m, l1: { ...m.l1, portalTx: m.l1.routerTx } })).toEqual([CREATED("portal")])
+		})
+
+		// Same key, same runtime and getters, wired and backed like the real one: only how it was created differs.
+		it("a portal created with init code other than the fresh build's", async () => {
+			const { manifest: m, l1 } = harness()
+			const signer = l1Signer(l1.rpcUrl, l1.chain.id, localL1Account())
+			const copy = await deployEvm(signer, "TokenPortal", { ...built().portal, bytecode: `${built().portal.bytecode}00` })
+			const router = await deployRouter(signer, built(), m.l1.permit2, copy.address, m.l1.usdc)
+			const binding = { registry: m.l1.registry, usdc: m.l1.usdc, l2Bridge: m.l2.bridge.address, router: router.address }
+			await initializePortal(signer, built(), copy.address, binding)
+			const reserve = (await l1.publicClient.getStorageAt({ address: m.l1.usdc, slot: usdcSlot(m.l1.portal) })) ?? pad("0x0")
+			await l1.test.setStorageAt({ address: m.l1.usdc, index: usdcSlot(copy.address), value: reserve })
+			const l1Fields = { portal: copy.address, portalTx: copy.tx, router: router.address, routerTx: router.tx }
+			expect(await failing({ ...m, l1: { ...m.l1, ...l1Fields, deployBlock: Number(router.block) } })).toEqual([
+				CREATED("portal"),
+				"bridge config.portal",
 			])
 		})
 
@@ -120,8 +158,7 @@ describe.skipIf(!INTEGRATION)("operator CLI", () => {
 
 		it("a portal holding less USDC than the L2 supply", async () => {
 			const { manifest: m, l1 } = harness()
-			// MockUsdc is OpenZeppelin's ERC20: balances are the mapping at slot 0.
-			const slot = keccak256(encodeAbiParameters([{ type: "address" }, { type: "uint256" }], [m.l1.portal, 0n]))
+			const slot = usdcSlot(m.l1.portal)
 			const held = (await l1.publicClient.getStorageAt({ address: m.l1.usdc, slot })) ?? pad("0x0")
 			await l1.test.setStorageAt({ address: m.l1.usdc, index: slot, value: pad("0x0") })
 			try {
@@ -189,8 +226,9 @@ describe.skipIf(!INTEGRATION)("operator CLI", () => {
 			const { receipt } = await tokenAt().methods.set_merchant_delay!(MERCHANT_MIN_DELAY).send(asAdmin())
 			try {
 				const drifted = await failing()
-				expect(drifted.length).toBeGreaterThan(0)
-				expect(drifted.filter((name) => !/^merchant 0x[0-9a-f]{64} delay == setting$/.test(name))).toEqual([])
+				expect(drifted.length).toBeGreaterThan(1)
+				const unsynced = /^merchant 0x[0-9a-f]{64} delay == setting$/
+				expect(drifted.filter((name) => !unsynced.test(name))).toEqual(["merchant delay setting == manifest"])
 				const token = AztecAddress.fromStringUnsafe(harness().manifest.l2.token.address)
 				const slot = await guardianDelay(harness().node, token, receipt.blockNumber!, await blockTimestamp(receipt))
 				expect(await emitted("token", "MerchantDelaySet", { txHash: receipt.txHash })).toEqual([
@@ -200,6 +238,17 @@ describe.skipIf(!INTEGRATION)("operator CLI", () => {
 				await tokenAt().methods.set_merchant_delay!(MERCHANT_MAX_DELAY).send(asAdmin())
 			}
 			expect(await failing()).toEqual([])
+		})
+
+		it("a merchant's switch-off in flight: strict verify fails it, --allow-pending warns", async () => {
+			const merchant = await l2Actor()
+			await listMerchant(merchant)
+			await tokenAt().methods.schedule_merchant_off!(merchant, true).send(asAdmin())
+			const line = (verdict: string) => `${verdict} merchant ${merchant} switch pending: switches off at `
+			const strict = await bridge("verify", harness().manifestPath)
+			expect([strict.code, strict.out.includes(line("FAIL"))], strict.out).toEqual([1, true])
+			const allowing = await bridge("verify", harness().manifestPath, "--allow-pending")
+			expect([allowing.code, allowing.out.includes(line("warn"))], allowing.out).toEqual([0, true])
 		})
 
 		// A whole, well-formed run, so the deployment's identity is the only thing wrong with it.

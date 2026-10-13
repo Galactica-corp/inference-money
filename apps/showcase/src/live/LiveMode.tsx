@@ -13,12 +13,15 @@ import { Layout } from "@/ui/Layout"
 import { Stage } from "@/ui/Stage"
 import { Verdict } from "@/ui/Verdict"
 import { WorldFeed } from "@/ui/WorldFeed"
-import { ACTION_LABEL, actionsFor, LIVE_ACTORS, type LiveAction, needsAmount, targetsOf } from "./draft"
+import { ACTION_LABEL, actionsFor, DEPOSITS_CLOSED, type Draft, LIVE_ACTORS, type LiveAction, needsAmount, targetsOf } from "./draft"
 import type { ArchivedDeposit, LiveEngine, Payout } from "./engine"
 import { type LiveView, useLive } from "./useLive"
 
-/** The page's wallet as live mode sees it. */
-export type WalletStatus = { status: "opening" } | { status: "ready" } | { status: "failed"; message: string }
+/** The page's wallet as live mode sees it; `depositsOpen` is the portal's state when the page opened. */
+export type WalletStatus = { status: "opening" } | { status: "ready"; depositsOpen: boolean } | { status: "failed"; message: string }
+
+const depositsClosed = (w: WalletStatus): boolean => w.status === "ready" && !w.depositsOpen
+const depositBlocked = (d: Draft, w: WalletStatus): boolean => d.action === "deposit" && depositsClosed(w)
 
 /** Presto in "Try it yourself": the visitor's consent, and where the page's proofs run. */
 export interface LivePresto {
@@ -129,6 +132,30 @@ function Payouts({ payouts }: { payouts: readonly Payout[] }) {
 	)
 }
 
+function Notices({ wallet, presto }: { wallet: WalletStatus; presto?: LivePresto }) {
+	const closed = depositsClosed(wallet)
+	const ribbon = presto && PrestoRibbon
+	if (!closed && !ribbon) return null
+	return (
+		<>
+			{closed && (
+				<p
+					role="status"
+					data-testid={TESTIDS.depositsClosed}
+					className="m-0 rounded-xl border border-[#e8d3aa] bg-wait-soft px-4 py-3 text-sm text-wait"
+				>
+					{DEPOSITS_CLOSED}
+				</p>
+			)}
+			{ribbon && (
+				<Suspense>
+					<PrestoRibbon consent={presto.consent} />
+				</Suspense>
+			)}
+		</>
+	)
+}
+
 function ArchivedDeposits(p: { deposits: readonly ArchivedDeposit[]; onCheck: (id: string) => void; disabled: boolean }) {
 	if (p.deposits.length === 0) return null
 	return (
@@ -175,7 +202,12 @@ export function LiveMode(p: { header: ReactNode; engine: LiveEngine | undefined;
 			}
 			fields={<Fields v={v} locked={v.busy} />}
 			action={
-				<Button className="w-full" data-testid={TESTIDS.tryIt} disabled={!ready || v.busy} onClick={v.run}>
+				<Button
+					className="w-full"
+					data-testid={TESTIDS.tryIt}
+					disabled={!ready || v.busy || depositBlocked(v.draft, wallet)}
+					onClick={v.run}
+				>
 					{v.busy ? "Running…" : "Try it"}
 				</Button>
 			}
@@ -192,14 +224,7 @@ export function LiveMode(p: { header: ReactNode; engine: LiveEngine | undefined;
 	return (
 		<Layout
 			header={header}
-			notice={
-				presto &&
-				PrestoRibbon && (
-					<Suspense>
-						<PrestoRibbon consent={presto.consent} />
-					</Suspense>
-				)
-			}
+			notice={<Notices wallet={wallet} presto={presto} />}
 			composer={composer}
 			stage={<Stage ethereum={ethereum} aztec={aztec} flight={v.flight} />}
 			verdict={

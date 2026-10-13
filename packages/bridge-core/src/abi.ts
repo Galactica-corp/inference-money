@@ -266,6 +266,7 @@ export const TOKEN_PORTAL_ABI = [
 	view("l2Bridge", "bytes32"),
 	view("rollupVersion", "uint256"),
 	view("initializer", "address"),
+	view("rollup", "address"),
 	view("inbox", "address"),
 	view("outbox", "address"),
 	{
@@ -339,5 +340,3 @@ export const OUTBOX_ABI = [
 ] as const
 
 export const REGISTRY_ABI = [view("getCanonicalRollup", "address")] as const
-
-export const ROLLUP_ABI = [view("getInbox", "address"), view("getOutbox", "address"), view("getVersion", "uint256")] as const

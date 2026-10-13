@@ -13,6 +13,8 @@ export interface VerifyFlags {
 	l1Rpc?: string | undefined
 	/** The guardian the deployment should have, in office and scheduled; none when absent. */
 	guardian?: string | undefined
+	/** Accept merchant entries' changes in flight, as `delayPolicyChecks` allows. */
+	allowPending?: boolean
 	log: (m: string) => void
 }
 
@@ -27,14 +29,16 @@ function tourChecks(path: string, ref: ManifestRef): Check[] {
 
 /**
  * Strict and keyless: every read-back of the deployment (the handover complete), plus the recorded tour's schema and
- * identity with `--tour`. It trusts the endpoints it reads through: pass your own with `--node` and `--l1-rpc`.
+ * identity with `--tour`; `--allow-pending` accepts merchant changes still in flight. It trusts the endpoints it reads
+ * through: pass your own with `--node` and `--l1-rpc`.
  */
 export async function verifyManifest(ref: ManifestRef, flags: VerifyFlags): Promise<number> {
 	const { nodeUrl, l1RpcUrl } = endpointsFor(ref, { node: flags.node, l1Rpc: flags.l1Rpc })
 	// The origin only: a provider URL carries its API key in the path or the query.
 	flags.log(`verifying ${ref.path} through node ${new URL(nodeUrl).origin}`)
 	const l1 = createPublicClient({ transport: http(l1RpcUrl) }) as PublicClient
-	const checks = await verifyDeployment(ref.m, buildFresh(), l1, createAztecNodeClient(nodeUrl), "complete", flags.guardian)
+	const { guardian, allowPending } = flags
+	const checks = await verifyDeployment(ref.m, buildFresh(), l1, createAztecNodeClient(nodeUrl), "complete", { guardian, allowPending })
 	if (flags.tour) checks.push(...tourChecks(flags.tour, ref))
 	try {
 		assertAllPass(checks, flags.log)
@@ -45,7 +49,7 @@ export async function verifyManifest(ref: ManifestRef, flags: VerifyFlags): Prom
 		}
 		throw e
 	}
-	const warnings = checks.filter((c) => c.warn).length
-	flags.log(`verify: every check passed${warnings ? `, ${warnings} warning(s)` : ""}`)
+	const warnings = checks.filter((c) => c.warn).map((c) => c.name)
+	flags.log(`verify: every check passed${warnings.length ? `, with ${warnings.length} warning(s): ${warnings.join("; ")}` : ""}`)
 	return 0
 }

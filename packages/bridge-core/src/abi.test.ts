@@ -3,7 +3,6 @@ import { readFileSync } from "node:fs"
 import { join } from "node:path"
 import { OutboxAbi } from "@aztec-foundation/l1-artifacts/OutboxAbi"
 import { RegistryAbi } from "@aztec-foundation/l1-artifacts/RegistryAbi"
-import { RollupAbi } from "@aztec-foundation/l1-artifacts/RollupAbi"
 import { encodeErrorResult } from "viem"
 import {
 	OUTBOX_ABI,
@@ -12,7 +11,6 @@ import {
 	PERMIT2_SIGNATURE_ERRORS,
 	PORTAL_BUBBLED_ERRORS,
 	REGISTRY_ABI,
-	ROLLUP_ABI,
 	TOKEN_PORTAL_ABI,
 } from "./abi"
 
@@ -72,9 +70,8 @@ describe("hand-written ABIs equal the compiled contracts", () => {
 		expect(encodeErrorResult({ abi: PERMIT2_SIGNATURE_ERRORS, errorName: "InvalidContractSignature" })).toBe("0xb0669cbc")
 		expect(encodeErrorResult({ abi: PERMIT2_SIGNATURE_ERRORS, errorName: "InvalidSigner" })).toBe("0x815e1d64")
 	})
-	it("Outbox, Registry, Rollup", () => {
+	it("Outbox, Registry", () => {
 		expectPinned(OUTBOX_ABI, OutboxAbi as readonly Entry[])
 		expectPinned(REGISTRY_ABI, RegistryAbi as readonly Entry[])
-		expectPinned(ROLLUP_ABI, RollupAbi as readonly Entry[])
 	})
 })

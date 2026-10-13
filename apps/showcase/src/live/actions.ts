@@ -10,6 +10,7 @@ import {
 	type DepositDraft,
 	decodeClaimTicket,
 	decodeDepositDraft,
+	depositsOpen,
 	ExitRevertedError,
 	encodeTicket,
 	exitToL1,
@@ -51,7 +52,7 @@ import { type Explorer, type FeedRow, PUBLIC_TEXT, rowOf } from "@/tour/player"
 import { HOLDER_NAME } from "@/ui/cards"
 import { usdc2 } from "@/ui/format"
 import type { Stage } from "@/ui/Verdict"
-import type { LiveAction, ValidDraft } from "./draft"
+import { DEPOSITS_CLOSED, type LiveAction, type ValidDraft } from "./draft"
 import { classify, type Outcome } from "./outcome"
 
 export interface LiveCtx {
@@ -127,6 +128,8 @@ async function deposit(ctx: LiveCtx, d: ValidDraft, report: Report): Promise<Out
 	const user = d.actor as User
 	const amount = d.amount as bigint
 	const signer = demoL1(ctx.l1RpcUrl, ctx.m, user)
+	// The page's notice is opening-time state: a rollup switch since then must stop the deposit before it signs.
+	if (!(await depositsOpen(signer.publicClient, ctx.m))) return { kind: "failed", detail: DEPOSITS_CLOSED }
 	const short = await shortfall(signer, ctx.m, amount)
 	if (short) return user === "alice" ? replay(ctx, "deposit", short) : { kind: "failed", detail: short }
 	const pending = { id: crypto.randomUUID(), user, since: Date.now() }

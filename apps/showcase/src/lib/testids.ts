@@ -22,4 +22,5 @@ export const TESTIDS = {
 	payout: "payout",
 	archivedDeposit: "archived-deposit",
 	prestoRibbon: "presto-ribbon",
+	depositsClosed: "deposits-closed",
 } as const

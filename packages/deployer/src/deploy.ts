@@ -2,9 +2,10 @@ import { execFileSync } from "node:child_process"
 import type { Fr } from "@aztec-labs/aztec.js/fields"
 import type { AztecNode } from "@aztec-labs/aztec.js/node"
 import type { EmbeddedWallet } from "@aztec-labs/wallets/embedded"
-import { type BridgeManifest, PROTOCOL_VERSION, parseManifest } from "@inference-money/bridge-core"
+import { type BridgeManifest, L2_DONE, MERCHANT_MAX_DELAY, PROTOCOL_VERSION, parseManifest } from "@inference-money/bridge-core"
 import { REPO_ROOT } from "@inference-money/local-network"
 import { type Address, getAddress, type Hex } from "viem"
+import { tokenOf } from "./admin"
 import { deployPortal, deployRouter, initializePortal } from "./deploy-l1"
 import { deployBridgeL2, ensureAccount, type L2Fees } from "./deploy-l2"
 import type { BridgeEvmArtifacts } from "./evm"
@@ -28,6 +29,8 @@ export interface DeployContext {
 	/** The L2 owner of proxy and bridge. */
 	deployerSecret: Fr
 	fees: L2Fees
+	/** Set once after `initialize`, where it differs from the token's 86 400 s default; a second set would restart the guardian slot's decrease. */
+	merchantDelay?: bigint
 	sponsoredFpc: Hex | undefined
 	log: (m: string) => void
 }
@@ -46,7 +49,8 @@ export async function deployBridge(c: DeployContext): Promise<BridgeManifest> {
 	const l1c = info.l1ContractAddresses
 	const registry = getAddress(c.registry ?? l1c.registryAddress.toString())
 	const deployer = await ensureAccount(c.wallet, c.deployerSecret, c.fees, c.log, "deployer")
-	await ensureStandardContracts(c.wallet, c.node, { from: deployer, ...(c.fees.tx ? { fee: { paymentMethod: c.fees.tx } } : {}) }, c.log)
+	const fee = c.fees.tx ? { fee: { paymentMethod: c.fees.tx } } : {}
+	await ensureStandardContracts(c.wallet, c.node, { from: deployer, ...fee }, c.log)
 	const portal = await deployPortal(c.l1, c.evm)
 	c.log(`portal ${portal.address}`)
 	const router = await deployRouter(c.l1, c.evm, c.permit2, portal.address, c.usdc)
@@ -55,7 +59,8 @@ export async function deployBridge(c: DeployContext): Promise<BridgeManifest> {
 	const binding = { registry, usdc: c.usdc, l2Bridge: l2.bridge.address, router: router.address }
 	await initializePortal(c.l1, c.evm, portal.address, binding)
 	c.log("portal initialized")
-	return parseManifest({
+	const merchantDelay = c.merchantDelay ?? MERCHANT_MAX_DELAY
+	const m = parseManifest({
 		protocolVersion: PROTOCOL_VERSION,
 		network: c.network,
 		sourceCommit: sourceCommit(),
@@ -70,13 +75,21 @@ export async function deployBridge(c: DeployContext): Promise<BridgeManifest> {
 			outbox: getAddress(l1c.outboxAddress.toString()),
 			deployBlock: Number(router.block),
 			deployer: c.l1.account.address,
+			portalTx: portal.tx,
+			routerTx: router.tx,
 		},
 		l2: {
 			nodeVersion: info.nodeVersion,
 			rollupVersion: Number(info.rollupVersion),
 			nodeUrl: c.nodeUrl,
 			...(c.sponsoredFpc ? { sponsoredFpc: c.sponsoredFpc } : {}),
+			merchantDelay: Number(merchantDelay),
 			...l2,
 		},
 	})
+	if (merchantDelay !== MERCHANT_MAX_DELAY) {
+		await tokenOf(c.wallet, m).methods.set_merchant_delay!(merchantDelay).send({ from: deployer, ...fee, wait: L2_DONE })
+		c.log(`merchant delay ${merchantDelay} s`)
+	}
+	return m
 }

@@ -1,6 +1,6 @@
 import type { AztecAddress } from "@aztec-labs/aztec.js/addresses"
 import type { Address, PublicClient } from "viem"
-import { REGISTRY_ABI, ROLLUP_ABI } from "./abi"
+import { REGISTRY_ABI, TOKEN_PORTAL_ABI } from "./abi"
 import type { BridgeManifest } from "./manifest"
 import type { L1Ctx } from "./types"
 
@@ -52,17 +52,36 @@ export async function assertReaderChain(l1: Pick<PublicClient, "getChainId">, ch
 	if (actual !== chainId) throw new NetworkMismatchError([`the L1 reader's chain is ${actual}, expected ${chainId}`])
 }
 
-/** The node and the L1 chain (read through the registry's canonical rollup) must both be the manifest's network. */
-export async function assertNetworkIdentity(node: NodeIdentitySource, l1: PublicClient, m: BridgeManifest): Promise<void> {
-	const [info, chainId, rollup] = await Promise.all([
+/**
+ * The portal's own deposit test: its bound rollup is still the registry's canonical one. Once Aztec makes another rollup
+ * canonical every deposit reverts (`RollupNotCanonical`), while exits keep paying from the bound rollup's outbox.
+ */
+export async function depositsOpen(l1: Pick<PublicClient, "readContract">, m: BridgeManifest): Promise<boolean> {
+	const [canonical, bound] = await Promise.all([
+		l1.readContract({ address: m.l1.registry, abi: REGISTRY_ABI, functionName: "getCanonicalRollup" }),
+		l1.readContract({ address: m.l1.portal, abi: TOKEN_PORTAL_ABI, functionName: "rollup" }),
+	])
+	return addr(canonical) === addr(bound)
+}
+
+/**
+ * The node and the portal must both be on the manifest's network. The portal's stored registry, inbox, outbox and
+ * version are pinned rather than the canonical rollup's, so the gate still passes after a rollup switch; it then
+ * reports `depositsOpen: false`. A node that followed the new rollup still fails it.
+ */
+export async function assertNetworkIdentity(
+	node: NodeIdentitySource,
+	l1: PublicClient,
+	m: BridgeManifest,
+): Promise<{ depositsOpen: boolean }> {
+	const portal = { address: m.l1.portal, abi: TOKEN_PORTAL_ABI } as const
+	const [info, chainId, registry, inbox, outbox, version] = await Promise.all([
 		node.getNodeInfo(),
 		l1.getChainId(),
-		l1.readContract({ address: m.l1.registry, abi: REGISTRY_ABI, functionName: "getCanonicalRollup" }),
-	])
-	const [inbox, outbox, version] = await Promise.all([
-		l1.readContract({ address: rollup, abi: ROLLUP_ABI, functionName: "getInbox" }),
-		l1.readContract({ address: rollup, abi: ROLLUP_ABI, functionName: "getOutbox" }),
-		l1.readContract({ address: rollup, abi: ROLLUP_ABI, functionName: "getVersion" }),
+		l1.readContract({ ...portal, functionName: "registry" }),
+		l1.readContract({ ...portal, functionName: "inbox" }),
+		l1.readContract({ ...portal, functionName: "outbox" }),
+		l1.readContract({ ...portal, functionName: "rollupVersion" }),
 	])
 	const l1c = info.l1ContractAddresses
 	const bad = mismatches([
@@ -73,11 +92,13 @@ export async function assertNetworkIdentity(node: NodeIdentitySource, l1: Public
 		["the node's inbox", addr(l1c.inboxAddress), addr(m.l1.inbox)],
 		["the node's outbox", addr(l1c.outboxAddress), addr(m.l1.outbox)],
 		["the L1 chain", chainId, m.l1.chainId],
-		["the canonical rollup's inbox", addr(inbox), addr(m.l1.inbox)],
-		["the canonical rollup's outbox", addr(outbox), addr(m.l1.outbox)],
-		["the canonical rollup's version", version, BigInt(m.l2.rollupVersion)],
+		["the portal's registry", addr(registry), addr(m.l1.registry)],
+		["the portal's inbox", addr(inbox), addr(m.l1.inbox)],
+		["the portal's outbox", addr(outbox), addr(m.l1.outbox)],
+		["the portal's rollup version", version, BigInt(m.l2.rollupVersion)],
 	])
 	if (bad.length > 0) throw new NetworkMismatchError(bad)
+	return { depositsOpen: await depositsOpen(l1, m) }
 }
 
 /**

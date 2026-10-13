@@ -15,12 +15,13 @@ export const deploymentStore = () => localKeyValue(`inference-money/${MANIFEST.l
 export async function startDemo(): Promise<DemoWallet> {
 	const node = createAztecNodeClient(MANIFEST.l2.nodeUrl)
 	const l1 = createPublicClient({ chain: L1_CHAIN, transport: http(L1_RPC_URL) })
-	await assertNetworkIdentity(node, l1, MANIFEST)
+	const { depositsOpen } = await assertNetworkIdentity(node, l1, MANIFEST)
 	const presto = PROVES ? (await import("@/presto")).pagePresto(__SHOWCASE_PRESTO__) : undefined
 	return openDemoWallet(node, MANIFEST, {
 		usersTag: USERS_TAG,
 		proves: PROVES,
 		payments: browserPaymentStore(deploymentStore()),
 		presto,
+		depositsOpen,
 	})
 }

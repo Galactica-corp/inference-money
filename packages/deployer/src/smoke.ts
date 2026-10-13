@@ -53,6 +53,7 @@ import { usersTagOf } from "./demo"
 import { enlist, type Log, logWait, type Player, withHeartbeat } from "./demo-flows"
 import { keepAbandonedDraft, type StateDir, withStateDir } from "./run-state"
 import { type ManifestRef, type Session, withSession } from "./session"
+import { ROLLUP_MOVED } from "./verify"
 import type { SentTx } from "./wallet"
 
 export const SMOKE_STEPS = TOUR_STEPS
@@ -331,7 +332,8 @@ function writeTour(path: string, r: Run): void {
 async function startRun(s: Session, dir: StateDir, tag: string, log: Log): Promise<Run> {
 	const rpc = s.endpoints.l1RpcUrl
 	const aDemo = demoL1(rpc, s.m, "alice")
-	await assertNetworkIdentity(s.node, aDemo.publicClient, s.m)
+	const { depositsOpen } = await assertNetworkIdentity(s.node, aDemo.publicClient, s.m)
+	if (!depositsOpen) log(`warn: ${ROLLUP_MOVED}`)
 	const cast = await enlist(s, ["alice", "bob", "galactica"] as const, tag)
 	const stored = dir.read<SmokeState>(STATE)
 	const state = stored ?? { baseline: asStrings(await balances({ s, cast, aDemo })), done: [], tour: {} }

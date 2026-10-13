@@ -8,7 +8,9 @@ import {
 	addMerchants,
 	cancelMerchantChange,
 	describeMerchants,
+	merchantDelayVerdict,
 	proposeAdmin,
+	readBackDelay,
 	scheduleGuardian,
 	scheduleMerchant,
 	setMerchantDelay,
@@ -103,11 +105,24 @@ export const HANDLERS: Record<Command, Handler> = {
 			await scheduleMerchant(s, admin, aztecAddress(inv.args[1] as string), false)
 			log("switch-on scheduled: it takes effect after the merchant's delay")
 		}),
-	"merchants delay": (inv) =>
-		asAdmin(inv, async (s, admin) => {
-			const { txs, synced } = await setMerchantDelay(s, admin, parseDelay(inv.args[1] as string))
-			log(`delay set and synced to the ${synced} merchant(s) the node lists, in ${txs} tx(s); a decrease applies after old − new`)
-		}),
+	"merchants delay"(inv) {
+		const ref = loadManifest(inv.args[0] as string)
+		const requested = parseDelay(inv.args[1] as string)
+		return withSession(ref, {}, async (s) => {
+			const admin = await adminAccount(s)
+			let sendError: string | undefined
+			try {
+				const { txs, synced } = await setMerchantDelay(s, admin, requested)
+				log(`sent the setting and ${synced} merchant sync(s) in ${txs} tx(s)`)
+			} catch (e) {
+				sendError = e instanceof Error ? e.message : String(e)
+			}
+			const verdict = merchantDelayVerdict(requested, await readBackDelay(s.node, s.m, requested, sendError))
+			if (verdict.record) writeManifest(ref.path, { ...s.m, l2: { ...s.m.l2, merchantDelay: Number(requested) } })
+			for (const line of verdict.lines) log(line)
+			return verdict.exit
+		})
+	},
 	"merchants guardian": (inv) =>
 		asAdmin(inv, async (s, admin) => {
 			await scheduleGuardian(s, admin, aztecAddress(inv.args[1] as string))
@@ -139,6 +154,7 @@ export const HANDLERS: Record<Command, Handler> = {
 			node: flag(inv, "node"),
 			l1Rpc: flag(inv, "l1-rpc"),
 			guardian: guardian ? aztecAddress(guardian).toString() : undefined,
+			allowPending: inv.flags["allow-pending"] === true,
 			log,
 		})
 	},

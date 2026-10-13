@@ -33,7 +33,7 @@ Gotchas that cost a past run and would bite other work, one line each with its a
 ## viem / L1
 
 - viem caches `getBlockNumber` ~4 s per client, so a tip read after a receipt can predate the tx: use `cacheTime: 0`, scan through `max(tip, finalized)`. [phase-6](archive/usdc-bridge/lessons/phase-6.md)
-- viem's receipt wait follows replacements, cancellations too: check the expected event (Outbox `MessageConsumed`) in the receipt. One `TransactionNotFound` from a load-balanced RPC is not a drop. [phase-7](archive/usdc-bridge/lessons/phase-7.md), [phase-10](archive/usdc-bridge/lessons/phase-10.md)
+- viem trusts its RPC: a receipt wait follows replacements and cancellations, `deployContract` returns the echoed hash, `prepareTransactionRequest` keeps a filled `chainId` (2.56.7). Sign in process; check the chain id, the receipt's hash or event. One `TransactionNotFound` from a load-balanced RPC is not a drop. [phase-7](archive/usdc-bridge/lessons/phase-7.md), [phase-10](archive/usdc-bridge/lessons/phase-10.md), [phase-5](archive/audit-fixes-deploy-verify/lessons/phase-5.md)
 - Anvil caps `eth_estimateGas` at balance ÷ `maxFeePerGas`. Past that cap, an out-of-gas inside a call reverts with empty data ("unknown reason") while `eth_call` passes, and the local publisher's tips climb to 120 gwei (#40). [phase-4](archive/audit-fixes-claims/lessons/phase-4.md)
 
 ## Browser e2e

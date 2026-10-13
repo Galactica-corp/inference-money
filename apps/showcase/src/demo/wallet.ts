@@ -49,6 +49,8 @@ export interface DemoWallet {
 	stages: StageFeed
 	/** Presto's side of the page's proofs, on a build that proves for real. */
 	presto?: PagePresto
+	/** Whether the portal took deposits when the page opened; a deposit reads it again before it signs. */
+	depositsOpen: boolean
 }
 
 export interface DemoWalletOptions {
@@ -58,6 +60,7 @@ export interface DemoWalletOptions {
 	payments: PaymentStore
 	/** The prover the PXE proves through instead of its own, and the simulator they share. */
 	presto?: PagePresto
+	depositsOpen: boolean
 }
 
 type Around = <T>(prove: () => Promise<T>) => Promise<T>
@@ -168,5 +171,6 @@ export async function openDemoWallet(node: AztecNode, m: BridgeManifest, opts: D
 		const account = await wallet.createSchnorrAccount(member.secret, Fr.ZERO, member.signingKey, actor)
 		cast[actor] = { ...member, address: account.address }
 	}
-	return { wallet, node, gate, sends, cast, sentAt, sent, onNextSend, exclusive: oneAtATime(), stages, presto: opts.presto }
+	const { presto, depositsOpen } = opts
+	return { wallet, node, gate, sends, cast, sentAt, sent, onNextSend, exclusive: oneAtATime(), stages, presto, depositsOpen }
 }

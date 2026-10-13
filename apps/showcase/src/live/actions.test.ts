@@ -9,6 +9,7 @@ import type { DemoWallet } from "@/demo/wallet"
 import { oneAtATime } from "@/lib/one-at-a-time"
 import type { LiveCtx } from "./actions"
 import { archivedDeposits, recheckDeposit, replay, runDraft, withConflictRetry } from "./actions"
+import { DEPOSITS_CLOSED } from "./draft"
 import type { Outcome } from "./outcome"
 
 /** Requests the page opened, in order, each held open until `hold` settles. */
@@ -27,6 +28,8 @@ const claims = vi.hoisted(() => ({
 	binding: "matches" as "binds" | "matches",
 	consent: undefined as unknown,
 }))
+
+const portal = vi.hoisted(() => ({ open: true, deposits: 0 }))
 
 /** What the L1 reader answers for each stored draft, by its text: a verdict, or "found" for its ticket. */
 const deposits = vi.hoisted(() => ({ verdicts: new Map<string, string>() }))
@@ -53,6 +56,7 @@ vi.mock("@inference-money/bridge-core", async (original) => {
 			return ticket
 		},
 		syncMerchantList: async () => ({}),
+		depositsOpen: async () => portal.open,
 		claimBinding: async () => claims.binding,
 		openRequest: async () => {
 			requests.order.push("open")
@@ -79,6 +83,10 @@ vi.mock("@inference-money/demo", async (original) => ({
 		claims.sent++
 		claims.consent = consent
 		return claims.result
+	},
+	castDeposit: async () => {
+		portal.deposits++
+		throw new Error("no deposit flow in these tests")
 	},
 }))
 
@@ -196,6 +204,17 @@ describe("replay", () => {
 			detail: /less than that\. This replays the recorded run instead, so nothing moved now\.$/,
 		})
 		expect(outcome.kind === "settled" && outcome.rows.map((r) => [r.key, r.source])).toEqual([["deposit", "recorded"]])
+	})
+})
+
+describe("deposit", () => {
+	it("re-reads the portal first: a rollup switch since the page opened refuses it before any read or signature", async () => {
+		portal.open = false
+		// Nothing listens there: a balance read or a signature would fail with a connection error instead.
+		const ctx: LiveCtx = { ...ctxWith(false), l1RpcUrl: "http://127.0.0.1:9" }
+		const outcome = await runDraft(ctx, { actor: "bob", action: "deposit", to: "bob", amount: 10_000n }, WALLETS, () => {})
+		expect([outcome, portal.deposits]).toEqual([{ kind: "failed", detail: DEPOSITS_CLOSED }, 0])
+		portal.open = true
 	})
 })
 

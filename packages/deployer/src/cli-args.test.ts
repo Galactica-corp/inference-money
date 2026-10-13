@@ -14,6 +14,10 @@ describe("bridge CLI arguments", () => {
 			flags: { tour: "t.json", "l1-rpc": "http://x" },
 		})
 		expect(parseInvocation(["demo", "setup", "local", "--rotate"]).flags).toEqual({ rotate: true })
+		expect(parseInvocation(["verify", "local", "--allow-pending", "--node", "http://n"]).flags).toEqual({
+			"allow-pending": true,
+			node: "http://n",
+		})
 		expect(parseInvocation(["disposable", "exec", "deploy", "testnet", "--merchant-delay", "3600"]).args).toEqual([
 			"deploy",
 			"testnet",
