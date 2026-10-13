@@ -89,3 +89,7 @@ Codex: "One new Low-severity bug and one comment correction. High confidence." N
 ### Confirmation pass — same session, resumed with the `b73505b` diff
 
 Codex: "**No new material findings.** Both fixes are correct (high confidence)." The Arc 1 loop has converged.
+
+## Moved from lessons.md
+
+- Homelab: git signs tags (fixtures need `git tag -m`), perl warns under the host locale (use `LC_ALL=C`), a shared `~/nargo` fails `noir-deps.sh --exact` (CI's clean cache passes), and `node` is off PATH (vitest's jsdom workers and the showcase's Vite config then fail under Bun: put Node 24 first). [phase-1](../../harden-security-whole-repo/lessons/phase-1.md), [phase-18](../../pashov-audit-fizz/lessons/phase-18.md)
