@@ -11,6 +11,7 @@ export const TOKEN_REFUSALS = {
 	zeroPayment: "Payment refused: the amount is zero",
 	notAdmin: "Only the merchant admin",
 	notAdminOrGuardian: "Only the merchant admin or guardian",
+	notAdminLowersDelay: "Only the merchant admin lowers a delay",
 	notPendingAdmin: "Only the pending merchant admin",
 	noPendingChange: "No pending change",
 	alreadyAdded: "Merchant already added",
@@ -43,7 +44,7 @@ export function bridgeRefusalOf(error: unknown): BridgeRule | undefined {
 	return (Object.entries(BRIDGE_REFUSALS) as [BridgeRule, string][]).find(([, text]) => message.includes(text))?.[0]
 }
 
-// Longest first: "Only the merchant admin" is a prefix of two other refusals.
+// Longest first: "Only the merchant admin" begins two longer refusals.
 const BY_LENGTH = (Object.entries(TOKEN_REFUSALS) as [TokenRule, string][]).sort(([, a], [, b]) => b.length - a.length)
 
 /** The token rule an error's message carries (a simulation failure or a revert), or undefined. */

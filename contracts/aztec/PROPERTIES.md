@@ -257,16 +257,18 @@
   Test goes in: token/src/test/merchants.nr :: the_guardian_slot_follows_a_lowered_delay_setting
 
 - [~] **GL-22** — Only the merchant admin changes the list: `add_merchant`, `schedule_merchant_off`,
-  `set_merchant_delay`, `sync_merchant_delay` and `schedule_merchant_guardian` refuse a user, a merchant, a stranger, a
-  proposed admin that has not accepted, and the guardian in office. `cancel_merchant_change` is for the admin or a
-  non-zero guardian already in office, and a removed guardian loses it once its removal lands. If it's the guardian, it
-  can only cancel. (Category: STATE_TRANSITION; Guarantee: SHOULD-HOLD — archived plan: "The guardian can do nothing
+  `set_merchant_delay` and `schedule_merchant_guardian` refuse a user, a merchant, a stranger, a proposed admin that has
+  not accepted, and the guardian in office. Anyone may `sync_merchant_delay` an entry to a setting at or above its delay
+  in force; only the admin starts a decrease, so a guardian's cancel holds against everyone else.
+  `cancel_merchant_change` is for the admin or a non-zero guardian already in office, and a removed guardian loses it
+  once its removal lands. Beyond what anyone may do, the guardian can only cancel. (Category: STATE_TRANSITION; Guarantee: SHOULD-HOLD — archived plan: "The guardian can do nothing
   else"; docs/operations.md: "Schedules the guardian (cancel-only)"; A20; Priority: MEDIUM; Scope: always-on; Sources:
   SPEC-30, ADV-28, ST-14, ST-08, ADV-31)
   Coverage: PARTIAL by token/src/test/merchants.nr: add_merchant_is_admin_only, switch_off_is_admin_only,
   the_delay_setting_is_admin_only, the_guardian_is_scheduled_by_the_admin_only, cancel_is_admin_or_guardian_only,
-  a_scheduled_guardian_cannot_cancel_before_taking_office — a non-admin `sync_merchant_delay`, any mutator called by the
-  guardian in office or by a pending admin, and a cancel by a removed guardian are untested
+  a_scheduled_guardian_cannot_cancel_before_taking_office, a_strangers_sync_never_lowers_the_delay_in_force,
+  a_guardians_cancel_holds_against_a_strangers_sync — any mutator called by the guardian in office or by a pending
+  admin, and a cancel by a removed guardian are untested
   (the_guardian_is_scheduled_by_the_admin_only calls as bob before any appointment, so bob is a stranger there).
   Test goes in: token/src/test/merchants.nr :: the_guardian_in_office_can_only_cancel; a_removed_guardian_cannot_cancel
 
@@ -794,13 +796,16 @@
 
 - [x] **SP-23** — `set_merchant_delay` changes the setting at once and no entry; an entry adopts it only when synced
   or added; on sync an increase applies at once and a decrease waits old − new; a sync of an entry already on the
-  setting changes nothing; a merchant added at any setting starts on it. (Category: STATE_TRANSITION; Guarantee:
+  setting changes nothing; a merchant added at any setting starts on it. Anyone may sync an entry to a setting at or
+  above its delay in force, which restores an entry left alone on a shorter delay at once and never restarts a pending
+  decrease. (Category: STATE_TRANSITION; Guarantee:
   SHOULD-HOLD — docs/operations.md "Delay": "An increase applies at once; a decrease waits old − new"; archived plan
   "Non-obvious mechanics" 2; Priority: MEDIUM; Scope: after set_merchant_delay, sync_merchant_delay, add_merchant;
   Sources: ST-11, RT-17, SPEC-33)
   Coverage: COVERED by token/src/test/merchants.nr: a_delay_decrease_waits_the_difference_and_an_increase_applies_at_once,
   sync_is_a_no_op_on_a_synced_entry (`assert(status(w, w.m1) == before);`), add_merchant_is_instant_on_the_delay_setting,
-  a_switch_off_uses_the_entrys_delay_once_synced.
+  a_switch_off_uses_the_entrys_delay_once_synced, a_stranger_restores_a_targeted_entry_at_once,
+  a_strangers_sync_never_restarts_a_pending_decrease.
 
 - [~] **SP-24** — Every way of undoing a pending delay decrease restores the old delay at once and leaves no shorter
   window: a cancel by the admin or the guardian, or setting the old value back and syncing before the decrease lands,
