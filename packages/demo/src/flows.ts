@@ -119,25 +119,34 @@ export interface DepositPlan {
 	amount: bigint
 }
 
+/** A stored draft from an earlier attempt, and how its owner keeps it once the L1 reader calls it never sent. */
+export interface PriorDraft {
+	draft: DepositDraft
+	/** Stores the whole draft somewhere the next `persist` cannot overwrite, synchronously; throws if it cannot. */
+	abandon(): void
+}
+
 /**
- * Deposits from a demo Ethereum account, handing the draft to `persist` once it may be broadcast, so a crash after that
- * point recovers it (`prior`) instead of depositing twice. A prior draft that provably never landed is deposited anew.
- * Refused before any approval, since either could only be returned: a public deposit to anyone but a switched-on
+ * Deposits from a demo Ethereum account, handing the draft to `persist` once it may be broadcast and again once its tx
+ * hash is known, so a crash after that point recovers it (`prior`) instead of depositing twice. A prior the L1 reader
+ * calls never sent is abandoned, never overwritten (the reader may lie, and only its salt claims it), then deposited
+ * anew. Refused before any approval, since either could only be returned: a public deposit to anyone but a switched-on
  * merchant, and a private one to an account bound to another funding address (the session's wallet holds the cast).
  */
 export async function castDeposit(
 	s: DemoSession,
 	signer: DemoL1,
 	p: DepositPlan,
-	prior: DepositDraft | undefined,
+	prior: PriorDraft | undefined,
 	persist: (d: DepositDraft) => void,
 	on?: (stage: DepositStage) => void,
 ): Promise<ClaimTicket> {
 	const l1 = l1CtxOf(signer)
 	if (prior) {
-		const found = await reconcileDeposit(prior, l1, s.m)
+		const found = await reconcileDeposit(prior.draft, l1, s.m)
 		if (found === "pending") throw new Error("A stored deposit is not readable on Ethereum yet; try again in a few minutes.")
 		if (found !== "not-deposited") return found
+		prior.abandon()
 	}
 	if (p.kind === "public") assertPublicRecipient(await syncMerchantList(s.node, tokenOf(s.m)), p.to)
 	else await claimBinding(s.wallet, s.m, p.to, signer.account.address)
@@ -148,6 +157,7 @@ export async function castDeposit(
 		if (stage === "depositing") persist(d)
 		on?.(stage)
 	})
+	persist(d)
 	return confirmDeposit(d, l1, s.m, on)
 }
 

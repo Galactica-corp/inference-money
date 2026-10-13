@@ -1,6 +1,7 @@
 /**
  * The L1 ABI surface bridge-core calls, hand-written so browsers never load forge artifacts. abi.test.ts pins every
- * entry to the compiled contracts (router, portal) and to @aztec-foundation/l1-artifacts (Outbox, Registry, Rollup).
+ * entry to the compiled contracts (router, portal, Permit2's interface) and to @aztec-foundation/l1-artifacts (Outbox,
+ * Registry, Rollup).
  */
 
 /** OpenZeppelin's ECDSA recovery errors: a compact, high-s or unrecoverable signature, refused before Permit2. */
@@ -76,6 +77,20 @@ export const PERMIT2_DEPOSIT_ROUTER_ABI = [
 	...PERMIT2_DEPOSIT_ROUTER_ERRORS,
 	...PERMIT2_SIGNATURE_ERRORS,
 	...PORTAL_BUBBLED_ERRORS,
+] as const
+
+/** Permit2's unordered nonces: bit `nonce & 0xff` of word `nonce >> 8` is set once a permit with that nonce is used. */
+export const PERMIT2_NONCE_ABI = [
+	{
+		type: "function",
+		name: "nonceBitmap",
+		stateMutability: "view",
+		inputs: [
+			{ name: "owner", type: "address" },
+			{ name: "wordPos", type: "uint256" },
+		],
+		outputs: [{ name: "", type: "uint256" }],
+	},
 ] as const
 
 const view = <const N extends string, const T extends string>(name: N, type: T) =>

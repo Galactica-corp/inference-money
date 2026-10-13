@@ -9,8 +9,8 @@ export interface ReclaimSteps {
 }
 
 /**
- * A checkpointed claim can still be pruned, so its ticket, the only copy of the secret, is kept until the claim is
- * final. Only a deposit proven never to have reached L1 gives it up; every other failure is retried.
+ * A checkpointed claim can still be pruned, so it is claimed again until final. A deposit the L1 reader calls never
+ * sent stops this by throwing, the ticket still stored; every other failure is retried.
  */
 export async function keepUntilFinal(first: ClaimTicket, steps: ReclaimSteps): Promise<void> {
 	let t = first

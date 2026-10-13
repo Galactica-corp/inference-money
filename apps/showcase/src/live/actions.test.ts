@@ -8,7 +8,7 @@ import type { PendingDeposit, Tickets } from "@/demo/tickets"
 import type { DemoWallet } from "@/demo/wallet"
 import { oneAtATime } from "@/lib/one-at-a-time"
 import type { LiveCtx } from "./actions"
-import { replay, runDraft, withConflictRetry } from "./actions"
+import { archivedDeposits, recheckDeposit, replay, runDraft, withConflictRetry } from "./actions"
 import type { Outcome } from "./outcome"
 
 /** Requests the page opened, in order, each held open until `hold` settles. */
@@ -28,8 +28,11 @@ const claims = vi.hoisted(() => ({
 	consent: undefined as unknown,
 }))
 
-// A deposit this page sent is still unconfirmed on Ethereum (a "broken" one cannot even be read back); a claim
-// ticket's nullifier is wherever `claims` says.
+/** What the L1 reader answers for each stored draft, by its text: a verdict, or "found" for its ticket. */
+const deposits = vi.hoisted(() => ({ verdicts: new Map<string, string>() }))
+
+// A deposit this page sent is still unconfirmed on Ethereum unless `deposits` says otherwise (a "broken" one cannot
+// even be read back); a claim ticket's nullifier is wherever `claims` says.
 vi.mock("@inference-money/bridge-core", async (original) => {
 	const real = await original<typeof import("@inference-money/bridge-core")>()
 	const { Fr } = await import("@aztec-labs/aztec.js/fields")
@@ -41,7 +44,8 @@ vi.mock("@inference-money/bridge-core", async (original) => {
 		decodeDepositDraft: (s: string) => ({ marker: s }),
 		reconcileDeposit: async (d: { marker: string }) => {
 			if (d.marker === "broken") throw new Error("Cannot read properties of undefined (reading 'message')")
-			return "pending"
+			const verdict = deposits.verdicts.get(d.marker) ?? "pending"
+			return verdict === "found" ? { ...ticket, draft: d } : verdict
 		},
 		decodeClaimTicket: (s: string) => {
 			if (s === "unreadable") throw new Error("not a claim ticket")
@@ -226,12 +230,69 @@ describe("claim", () => {
 		expect((await claim()).kind).toBe("settled")
 		expect([claims.sent, store.get("d1")?.claimed]).toEqual([1, true])
 		claims.state = "finalized"
-		expect([await claim(), store.size]).toEqual([nothing, 0])
+		expect([await claim(), store.get("d1")]).toEqual([
+			nothing,
+			{ id: "d1", user: "bob", since: 0, claim: "ticket", claimed: true, final: true },
+		])
 		store.set("d2", { id: "d2", user: "bob", since: 1, claim: "unreadable" })
 		store.set("d4", { id: "d4", user: "bob", since: 1, claim: "tampered" })
 		store.set("d3", { id: "d3", user: "bob", since: 2, claim: "ticket" })
 		claims.state = "pruned"
-		expect([(await claim()).kind, claims.sent, [...store.keys()]]).toEqual(["settled", 2, ["d3"]])
+		expect([(await claim()).kind, claims.sent, [...store.keys()]]).toEqual(["settled", 2, ["d1", "d3"]])
+	})
+
+	it("keeps a ticket's secret when the node calls final a claim this page never sent", async () => {
+		const store = new Map<string, PendingDeposit>([["d1", { id: "d1", user: "bob", since: 0, claim: "ticket" }]])
+		const tickets = {
+			deposits: () => [...store.values()],
+			putDeposit: (d: PendingDeposit) => store.set(d.id, d),
+			dropDeposit: (id: string) => store.delete(id),
+		} as unknown as Tickets
+		const claim = () => runDraft({ ...ctxWith(false), tickets }, { actor: "bob", action: "claim", to: "bob" }, WALLETS, () => {})
+		Object.assign(claims, { state: "finalized", result: "already" })
+		try {
+			expect((await claim()).kind).toBe("settled")
+			expect(await claim()).toEqual({ kind: "failed", detail: "There is nothing to claim: deposit first." })
+			expect(store.get("d1")).toEqual({ id: "d1", user: "bob", since: 0, claim: "ticket", claimed: true, final: true })
+		} finally {
+			claims.result = "claimed"
+		}
+	})
+
+	it("archives a deposit Ethereum does not show, never offers it, and a re-check moves it on or keeps it, salt intact", async () => {
+		const archived: PendingDeposit = { id: "a1", user: "bob", since: 0, draft: "gone", archived: true }
+		const store = new Map<string, PendingDeposit>([["a1", { id: "a1", user: "bob", since: 0, draft: "gone" }]])
+		const tickets = {
+			deposits: () => [...store.values()],
+			putDeposit: (d: PendingDeposit) => store.set(d.id, d),
+			dropDeposit: (id: string) => store.delete(id),
+		} as unknown as Tickets
+		const ctx: LiveCtx = { ...ctxWith(false), l1RpcUrl: "http://127.0.0.1:9", tickets }
+		const claim = () => runDraft(ctx, { actor: "bob", action: "claim", to: "bob" }, WALLETS, () => {})
+		deposits.verdicts.set("gone", "not-deposited")
+		try {
+			expect(await claim()).toEqual({ kind: "failed", detail: expect.stringContaining("keeps its record below") })
+			expect(store.get("a1")).toEqual(archived)
+			expect(await claim()).toEqual({ kind: "failed", detail: "There is nothing to claim: deposit first." })
+			expect(archivedDeposits(ctx)).toEqual([{ id: "a1", user: "bob", amount: undefined }])
+			for (const [verdict, after] of [
+				["not-deposited", ["gone", true, undefined]],
+				["pending", ["gone", undefined, undefined]],
+				["found", [undefined, undefined, "gone"]],
+			] as const) {
+				store.set("a1", archived)
+				deposits.verdicts.set("gone", verdict)
+				await recheckDeposit(ctx, "a1")
+				const p = store.get("a1")
+				const salt = p?.claim && (JSON.parse(p.claim) as { ticket: { draft: { marker: string } } }).ticket.draft.marker
+				expect([p?.draft, p?.archived, salt], verdict).toEqual([...after])
+			}
+			store.set("a1", { ...archived, final: true, archived: undefined })
+			const gone = "There is nothing to check there any more."
+			expect([await recheckDeposit(ctx, "a1"), await recheckDeposit(ctx, "missing")]).toEqual([gone, gone])
+		} finally {
+			deposits.verdicts.clear()
+		}
 	})
 
 	it("asks before a first claim binds the account: a decline sends nothing and keeps the ticket, an accept consents", async () => {

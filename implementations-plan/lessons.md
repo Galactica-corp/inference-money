@@ -26,7 +26,7 @@ Gotchas that cost a past run and would bite other work, one line each with its a
 - bun reads `bunfig.toml` from the cwd only: a nested standalone project misses the root's age gate and linker, and `bun run --cwd` its preload. [phase-3](archive/usdc-bridge/lessons/phase-3.md), [phase-10](archive/usdc-bridge/lessons/phase-10.md)
 - bun's age gate applies only at resolution: lock a young version under a temporary `minimumReleaseAgeExcludes` entry, never commit one; an optional package skipped before it joined stays skipped until its parent leaves `bun.lock` (`aztec-wsdb binary not found`). [phase-11](archive/usdc-bridge/lessons/phase-11.md), [phase-1](archive/presto-showcase/lessons/phase-1.md)
 - Pin `@types/node` to bun-types' version; another becomes the isolated linker's hoisted fallback and breaks typecheck. [phase-8](archive/usdc-bridge/lessons/phase-8.md)
-- `Bun.spawn` (1.4.0) ignores `process.env` deletions: spawn a child that must not inherit a secret through `node:child_process` or `Bun.$`. [phase-8](archive/galactica-compliant-usdc/lessons/phase-8.md)
+- `Bun.spawn` (1.4.0–1.4.2) ignores `process.env` deletions: spawn a child that must not inherit a secret through `node:child_process` or `Bun.$`. [phase-8](archive/galactica-compliant-usdc/lessons/phase-8.md)
 - A closure's inner functions count toward its function's 80-line budget; use a class with private methods. [phase-9](archive/usdc-bridge/lessons/phase-9.md)
 - Assert the failure reason: a spec passing on "not deployed", self-test fixtures sharing one dir and `fail_on_revert = false` invariants all passed vacuously. [phase-3](archive/usdc-bridge/lessons/phase-3.md), [phase-6](archive/usdc-bridge/lessons/phase-6.md)
 
@@ -34,6 +34,7 @@ Gotchas that cost a past run and would bite other work, one line each with its a
 
 - viem caches `getBlockNumber` ~4 s per client, so a tip read after a receipt can predate the tx: use `cacheTime: 0`, scan through `max(tip, finalized)`. [phase-6](archive/usdc-bridge/lessons/phase-6.md)
 - viem's receipt wait follows replacements, cancellations too: check the expected event (Outbox `MessageConsumed`) in the receipt. One `TransactionNotFound` from a load-balanced RPC is not a drop. [phase-7](archive/usdc-bridge/lessons/phase-7.md), [phase-10](archive/usdc-bridge/lessons/phase-10.md)
+- Anvil caps `eth_estimateGas` at balance ÷ `maxFeePerGas`. Past that cap, an out-of-gas inside a call reverts with empty data ("unknown reason") while `eth_call` passes, and the local publisher's tips climb to 120 gwei (#40). [phase-4](archive/audit-fixes-claims/lessons/phase-4.md)
 
 ## Browser e2e
 

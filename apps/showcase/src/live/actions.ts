@@ -150,12 +150,12 @@ const NOTHING_TO_CLAIM = "There is nothing to claim: deposit first."
 const ALREADY_CONSUMED = "That deposit was already taken on Aztec, by an earlier claim or a return, so nothing was minted now."
 
 /**
- * Whether `p`'s claim still holds at the proposed tip, where this page claims; its record goes once the claim is final.
- * One no longer there was pruned, which makes the deposit claimable again.
+ * Whether `p`'s claim still holds at the proposed tip, where this page claims. One no longer there was pruned, which
+ * makes the deposit claimable again; one the node calls finalized is marked final, and kept.
  */
 async function stillClaimed(ctx: LiveCtx, p: PendingDeposit, t: ClaimTicket): Promise<boolean> {
 	if (await isClaimConsumed(t, ctx.demo.node, ctx.m, "finalized")) {
-		ctx.tickets.dropDeposit(p.id)
+		ctx.tickets.putDeposit({ ...p, final: true })
 		return true
 	}
 	return isClaimConsumed(t, ctx.demo.node, ctx.m, "proposed")
@@ -163,12 +163,17 @@ async function stillClaimed(ctx: LiveCtx, p: PendingDeposit, t: ClaimTicket): Pr
 
 type Claimable = { p: PendingDeposit; ticket: ClaimTicket } | string
 
+const NOT_ON_ETHEREUM =
+	"Ethereum shows no sign of that deposit, and its signature has expired, so it can no longer go through. This page keeps its record below: check it again later, or deposit again."
+
+const readerOf = (ctx: LiveCtx, p: PendingDeposit) => l1CtxOf(demoL1(ctx.l1RpcUrl, ctx.m, p.user))
+
 async function fromDraft(ctx: LiveCtx, p: PendingDeposit, draft: DepositDraft): Promise<Claimable> {
-	const found = await reconcileDeposit(draft, l1CtxOf(demoL1(ctx.l1RpcUrl, ctx.m, p.user)), ctx.m)
+	const found = await reconcileDeposit(draft, readerOf(ctx, p), ctx.m)
 	if (found === "pending") return "That deposit is still confirming on Ethereum; try again in a minute."
 	if (found === "not-deposited") {
-		ctx.tickets.dropDeposit(p.id)
-		return "That deposit never reached Ethereum; deposit again."
+		ctx.tickets.putDeposit({ ...p, archived: true })
+		return NOT_ON_ETHEREUM
 	}
 	const next = { ...p, draft: undefined, claim: encodeTicket("claim", found) }
 	ctx.tickets.putDeposit(next)
@@ -195,8 +200,12 @@ const claimReadable = (t: ClaimTicket): boolean =>
 	t.draft.intent?.recipient instanceof AztecAddress &&
 	typeof t.draft.intent.amount === "bigint"
 
-/** `p` as a claim, a reason it cannot claim yet, or nothing to try; an entry that no longer decodes is dropped. */
+/**
+ * `p` as a claim, a reason it cannot claim yet, or nothing to try: an archived or final entry is never offered, and one
+ * that no longer decodes is dropped.
+ */
 async function claimableEntry(ctx: LiveCtx, p: PendingDeposit): Promise<Claimable | undefined> {
+	if (p.archived || p.final) return undefined
 	const d = decodedDeposit(p)
 	if (!d) {
 		ctx.tickets.dropDeposit(p.id)
@@ -227,6 +236,43 @@ async function claimable(ctx: LiveCtx, user: User): Promise<Claimable> {
 	if (waiting !== undefined) return waiting
 	if (failure !== undefined) throw failure
 	return NOTHING_TO_CLAIM
+}
+
+/** A deposit the L1 reader called never sent, kept for the visitor to check again. */
+export interface ArchivedDeposit {
+	id: string
+	user: User
+	amount: bigint | undefined
+}
+
+export function archivedDeposits(ctx: LiveCtx): ArchivedDeposit[] {
+	return ctx.tickets
+		.deposits()
+		.filter((p) => p.archived)
+		.map((p) => {
+			const amount = decodedDeposit(p)?.draft?.intent?.amount
+			return { id: p.id, user: p.user, amount: typeof amount === "bigint" ? amount : undefined }
+		})
+}
+
+/**
+ * Reads an archived deposit's fate again, one at a time with the page's runs: found, it can claim (its ticket carries
+ * the same salt); possibly still landing, it waits with the others; neither, it stays archived. Says what it found.
+ */
+export function recheckDeposit(ctx: LiveCtx, id: string): Promise<string> {
+	return ctx.demo.exclusive(async () => {
+		const p = ctx.tickets.deposits().find((d) => d.id === id)
+		const draft = p?.archived ? decodedDeposit(p)?.draft : undefined
+		if (!p || !draft) return "There is nothing to check there any more."
+		const found = await reconcileDeposit(draft, readerOf(ctx, p), ctx.m)
+		if (found === "not-deposited") return "Still no sign of it on Ethereum. Its record stays here."
+		if (found === "pending") {
+			ctx.tickets.putDeposit({ ...p, archived: undefined })
+			return "Ethereum may still take it: it is back with the deposits waiting to be claimed."
+		}
+		ctx.tickets.putDeposit({ ...p, archived: undefined, draft: undefined, claim: encodeTicket("claim", found) })
+		return `Found it on Ethereum: ${HOLDER_NAME[p.user]} can claim it now.`
+	})
 }
 
 /** Asks before a first private claim binds `user`'s account for good; undefined when the visitor declines. */

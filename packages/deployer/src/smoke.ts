@@ -51,7 +51,7 @@ import type { Hex } from "viem"
 import { tokenOf } from "./admin"
 import { usersTagOf } from "./demo"
 import { enlist, type Log, logWait, type Player, withHeartbeat } from "./demo-flows"
-import { type StateDir, withStateDir } from "./run-state"
+import { keepAbandonedDraft, type StateDir, withStateDir } from "./run-state"
 import { type ManifestRef, type Session, withSession } from "./session"
 import type { SentTx } from "./wallet"
 
@@ -179,8 +179,9 @@ const STEPS: Record<SmokeStep, (r: Run) => Promise<TourStep>> = {
 			r.state.draft = encodeTicket("draft", d)
 			save(r)
 		}
-		const prior = r.state.draft ? decodeDepositDraft(r.state.draft) : undefined
+		const draft = r.state.draft ? decodeDepositDraft(r.state.draft) : undefined
 		const plan = { from: "alice", to: r.cast.alice.address, kind: "private", amount: A.deposit } as const
+		const prior = draft && { draft, abandon: () => keepAbandonedDraft(r.dir, draft) }
 		const t = await castDeposit(r.s, r.aDemo, plan, prior, persist)
 		r.state.claim = encodeTicket("claim", t)
 		return ethereumEntry(r, "deposit", t.draft.l1TxHash, depositWorld(t))

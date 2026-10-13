@@ -222,10 +222,10 @@ export interface WaitClaimFinalizedOptions {
 }
 
 /**
- * Waits until this ticket's claim is in a finalized block, the first point at which its secret may be forgotten: an
- * epoch that misses its proof window is pruned, and an L1 reorg can remove a proof that landed near its deadline.
- * "dropped" once the nullifier is not even proposed any more, so the caller claims again; a failed read counts as not
- * final yet.
+ * Waits until this ticket's claim is in a finalized block: before that, an epoch that misses its proof window is
+ * pruned, and an L1 reorg can remove a proof that landed near its deadline. "dropped" once the nullifier is not even
+ * proposed any more, so the caller claims again; a failed read counts as not final yet. "finalized" is the node's
+ * unproven word: mark the ticket final and keep it, never delete the only copy of its secret on this answer.
  */
 export async function waitClaimFinalized(
 	t: ClaimTicket,
@@ -250,7 +250,7 @@ async function claimFinality(t: ClaimTicket, node: NullifierNode, m: BridgeManif
 /**
  * Mints the deposit on L2 from `from`: a private claim only from its recipient, a public one from anyone (the mint
  * goes to the merchant the message names), paid per {@link FeeChoice}. Both outcomes hold only at `opts.wait`'s tip, a
- * checkpoint by default: keep the secret until {@link waitClaimFinalized} says "finalized". "consumed-unknown" needs
+ * checkpoint by default: keep the secret, also past {@link waitClaimFinalized}'s "finalized". "consumed-unknown" needs
  * this ticket's nullifier on L2 at that tip: a nullifier error can come from any part of the tx. A first private claim
  * needs `allowBind` ({@link ClaimConsent}).
  */

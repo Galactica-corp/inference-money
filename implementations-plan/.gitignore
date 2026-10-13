@@ -3,3 +3,5 @@ plan-*.md
 _*.md
 eli5.html
 !**/lessons/**
+narration.mp3
+narration.mp4

@@ -27,6 +27,8 @@ function fakeEngine(answer: (d: ValidDraft) => Outcome = () => ({ kind: "settled
 		balances: async () => ({ alice: 10_000_000n, galactica: 7_000_000n }),
 		reset: async () => ({ actor: "galactica", action: "send", to: "alice", amount: 3_000_000n }),
 		payouts: async () => [],
+		archived: () => [],
+		recheck: async () => "",
 		stages: {
 			emit: (s) => {
 				for (const f of listeners) f(s)
@@ -60,6 +62,25 @@ describe("LiveMode", () => {
 		await waitFor(() =>
 			expect(screen.getAllByTestId(TESTIDS.balance).find((b) => b.dataset.holder === "galactica")).toHaveTextContent("7.00"),
 		)
+	})
+
+	it("lists a deposit Ethereum does not show with Check again, which reads it again and says what it found", async () => {
+		const { engine } = fakeEngine()
+		const kept = [{ id: "d1", user: "alice" as const, amount: 100_000n }]
+		const checked: string[] = []
+		engine.archived = () => kept
+		engine.recheck = async (id) => {
+			checked.push(id)
+			kept.length = 0
+			return "Found it on Ethereum: Alice can claim it now."
+		}
+		render(<LiveMode header={null} engine={engine} wallet={ready} />)
+		const row = await screen.findByTestId(TESTIDS.archivedDeposit)
+		expect(row).toHaveTextContent("0.10 USDC from Alice's Ethereum wallet")
+		await act(async () => fireEvent.click(within(row).getByRole("button", { name: "Check again" })))
+		expect(checked).toEqual(["d1"])
+		await waitFor(() => expect(verdict()).toHaveTextContent("Found it on Ethereum: Alice can claim it now."))
+		await waitFor(() => expect(screen.queryByTestId(TESTIDS.archivedDeposit)).toBeNull())
 	})
 
 	/** A simulation's error carries the rule; bridge-core's exit check, which runs first, words it for the CLI. */

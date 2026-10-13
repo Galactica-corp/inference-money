@@ -11,13 +11,26 @@ let bound: `0x${string}` | undefined
 const reads: string[] = []
 const claimWaits: unknown[] = []
 const consents: unknown[] = []
+const ONE = "0x0000000000000000000000000000000000000001"
+/** castDeposit past its approval: the reader's verdict on a prior draft, and each step taken, in order. */
+const flow = { verdict: "not-deposited" as unknown, events: [] as string[] }
 mock.module("@inference-money/bridge-core", () => ({
 	...core,
 	syncMerchantList: async () => ({ block: 1, at: 0n, entries: new Map() }),
 	fundingAddress: async () => bound,
 	ensurePermit2Allowance: async (a: { needed: bigint }) => {
 		approvals.push(a.needed)
+		flow.events.push("approve")
 	},
+	reconcileDeposit: async () => flow.verdict,
+	prepareDeposit: async () => ({}),
+	submitDeposit: async (d: { l1TxHash?: string }, _l1: unknown, _m: unknown, _n: unknown, on?: (stage: string) => void) => {
+		on?.("depositing")
+		flow.events.push("send")
+		d.l1TxHash = "0x7e"
+		return d.l1TxHash
+	},
+	confirmDeposit: async (d: unknown) => ({ draft: d }),
 	isClaimConsumed: async (_t: unknown, _n: unknown, _m: unknown, at: string) => {
 		reads.push(at)
 		return false
@@ -55,6 +68,36 @@ describe("castDeposit", () => {
 		bound = "0x0000000000000000000000000000000000000001"
 		await expect(castDeposit(s, signer, plan("private"), undefined, () => {})).rejects.toThrow("past the approval")
 		expect(approvals).toEqual([5n, 5n])
+	})
+
+	it("keeps a prior the reader calls never sent before it deposits anew, and stores the new draft again with its hash", async () => {
+		const signer = { account: { address: ONE }, publicClient: { getBlock: async () => ({ timestamp: 1n }) } } as never
+		const s = { m: { l2: { token: { address: AztecAddress.ZERO.toString() } } }, node: {} } as never
+		const plan = { from: "alice", to: await AztecAddress.random(), kind: "private", amount: 5n } as const
+		const persist = (d: { l1TxHash?: string }) => flow.events.push(`persist ${d.l1TxHash ?? "unsent"}`)
+		const prior = (abandon: () => void) => ({ draft: {} as never, abandon })
+		bound = ONE
+		flow.events = []
+		await castDeposit(
+			s,
+			signer,
+			plan,
+			prior(() => flow.events.push("abandon")),
+			persist,
+		)
+		expect(flow.events).toEqual(["abandon", "approve", "persist unsent", "send", "persist 0x7e"])
+
+		flow.events = []
+		const disk = () => {
+			throw new Error("disk full")
+		}
+		await expect(castDeposit(s, signer, plan, prior(disk), persist)).rejects.toThrow("disk full")
+		const ticket = { messageHash: "0x01" }
+		flow.verdict = ticket
+		expect(await castDeposit(s, signer, plan, prior(disk), persist)).toBe(ticket as never)
+		expect(flow.events, "nothing approved, stored or sent past an unkept or a found prior").toEqual([])
+		flow.verdict = "not-deposited"
+		bound = undefined
 	})
 })
 

@@ -10,6 +10,7 @@ import {
 	fundingAuthorizationTypedData,
 	isClaimConsumed,
 	NetworkMismatchError,
+	PERMIT2_NONCE_ABI,
 	PublicDepositToUserError,
 	prepareDeposit,
 	reconcileDeposit,
@@ -45,6 +46,40 @@ import {
 } from "./actors"
 import { harness, INTEGRATION } from "./harness"
 import { merchantList } from "./token"
+
+/**
+ * Reconciles a landed deposit through a reader whose log scan finds nothing and whose finalized block (real, once it
+ * covers the deposit) reports a time past the deadline: only the real Permit2 nonce read can keep it pending. Asserts
+ * that read completed with the bit set, so a failed read, which also answers pending, cannot pass this.
+ */
+async function spentNonceKeepsPending(...[d, l1, m]: Parameters<typeof reconcileDeposit>) {
+	const mined = await l1.publicClient.getBlockNumber({ cacheTime: 0 })
+	let finalized = await l1.publicClient.getBlock({ blockTag: "finalized" })
+	for (let i = 0; finalized.number < mined && i < 90; i++) {
+		await Bun.sleep(2_000)
+		finalized = await l1.publicClient.getBlock({ blockTag: "finalized" })
+	}
+	expect(finalized.number, "L1 finality reached the deposit").toBeGreaterThanOrEqual(mined)
+	const { nonce } = d.typedData.message
+	const read = { address: m.l1.permit2, abi: PERMIT2_NONCE_ABI, functionName: "nonceBitmap", args: [l1.account, nonce >> 8n] } as const
+	const word = await l1.publicClient.readContract({ ...read, blockNumber: finalized.number })
+	expect((word >> (nonce & 0xffn)) & 1n, "the deposit spent its nonce").toBe(1n)
+	const reads: unknown[] = []
+	const blind = {
+		...l1.publicClient,
+		getLogs: async () => [],
+		getBlock: async (q: Parameters<PublicClient["getBlock"]>[0] & {}) =>
+			q.blockTag === "finalized" ? { ...finalized, timestamp: d.typedData.message.deadline + 1n } : l1.publicClient.getBlock(q),
+		readContract: async (q: Parameters<PublicClient["readContract"]>[0]) => {
+			const r = await l1.publicClient.readContract(q)
+			reads.push(r)
+			return r
+		},
+	} as unknown as PublicClient
+	const verdict = await reconcileDeposit(d, { ...l1, publicClient: blind }, m)
+	expect(reads, "the verdict read the same word").toEqual([word])
+	return verdict
+}
 
 describe.skipIf(!INTEGRATION)("deposits and claims", () => {
 	it("[A1][A9] public deposit → claim_public: L1 escrows into the portal, L2 mints the merchant's public balance", async () => {
@@ -210,7 +245,7 @@ describe.skipIf(!INTEGRATION)("deposits and claims", () => {
 		expect(await depositsBy(l1.account)).toBe(1)
 	})
 
-	it("[A11] a wallet that broadcasts and then loses the response: the log scan finds the deposit, one deposit, claimed", async () => {
+	it("[A11] a wallet that broadcasts and then loses the response: the log scan finds the deposit, one deposit, claimed; an empty scan past the deadline stays pending on the spent Permit2 nonce", async () => {
 		const { manifest: m } = harness()
 		const [l1, bob] = await Promise.all([l1Actor(), l2Actor()])
 		const lossy = {
@@ -225,6 +260,7 @@ describe.skipIf(!INTEGRATION)("deposits and claims", () => {
 		expect([d.submission !== undefined, d.l1TxHash]).toEqual([true, undefined])
 		const t = await reconcileDeposit(d, l1, m)
 		if (typeof t === "string") throw new Error(`reconcile returned ${t}`)
+		expect(await spentNonceKeepsPending(d, l1, m)).toBe("pending")
 		await claimable(t, bob)
 		expect(await claimFor(t)).toBe("claimed")
 		expect(await depositsBy(l1.account)).toBe(1)

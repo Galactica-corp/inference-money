@@ -1,19 +1,24 @@
 import { describe, expect, it } from "bun:test"
-import type { ClaimTicket, DepositDraft } from "@inference-money/bridge-core"
+import { type ClaimTicket, type DepositDraft, encodeTicket } from "@inference-money/bridge-core"
 import { BIND_SEEDS, type PlanStore, runSetup, type Seed, type SetupOps, type SetupPlan } from "./demo"
 
 const memoryStore = () => {
 	let plan: SetupPlan | undefined
+	const kept = { abandoned: [] as DepositDraft[], archived: new Map<string, SetupPlan>() }
 	const store: PlanStore = {
 		read: () => (plan ? structuredClone(plan) : undefined),
 		write: (p) => {
 			plan = structuredClone(p)
 		},
-		clear: () => {
+		abandon: (d) => {
+			kept.abandoned.push(d)
+		},
+		archive: (tag) => {
+			if (plan) kept.archived.set(tag, plan)
 			plan = undefined
 		},
 	}
-	return { store, current: () => plan }
+	return { store, current: () => plan, kept }
 }
 
 const draftOf = (seed: Seed) => ({ intent: { amount: 1n, kind: "private" }, seed }) as unknown as DepositDraft
@@ -57,8 +62,8 @@ function fakeOps(over: Partial<SetupOps> & { finality?: SetupOps["final"]["final
 }
 
 describe("demo setup", () => {
-	it("publishes the users' tag and drops the secrets only once every claim is finalized, re-claiming a pruned one first", async () => {
-		const { store, current } = memoryStore()
+	it("publishes the users' tag and archives the secrets only once every claim is finalized, re-claiming a pruned one first", async () => {
+		const { store, current, kept } = memoryStore()
 		const floatFinal = Promise.withResolvers<"finalized">()
 		const floatAnswers: Promise<"finalized" | "dropped">[] = [Promise.resolve("dropped"), floatFinal.promise]
 		let asked = 0
@@ -80,7 +85,23 @@ describe("demo setup", () => {
 		await run
 		expect(calls.claims).toEqual(["galacticaBind", "supplierBind", "alice", "bob", "galactica"])
 		expect(published).toHaveLength(1)
-		expect(current()).toBeUndefined()
+		expect(current(), "nothing left for a resume").toBeUndefined()
+		expect(Object.keys(kept.archived.get(published[0] as string)?.tickets ?? {})).toHaveLength(5)
+	})
+
+	it("keeps a stored draft the reader calls never sent before depositing that seed anew", async () => {
+		const { store, kept } = memoryStore()
+		const tag = "a".repeat(32)
+		store.write({ tag, drafts: { galacticaBind: encodeTicket("draft", draftOf("galacticaBind")) }, tickets: {} })
+		const { ops } = fakeOps({
+			deposit: async (seed, _tag, prior) => {
+				prior?.abandon()
+				return ticketOf(seed)
+			},
+		})
+		await runSetup(store, ops, () => {})
+		expect(kept.abandoned).toEqual([draftOf("galacticaBind")])
+		expect(kept.archived.get(tag)?.drafts).toEqual({})
 	})
 
 	it("binds both merchants and lists them before any user seed, and resumes past a listing it stopped for", async () => {
@@ -147,7 +168,7 @@ describe("demo setup", () => {
 		const priors: (Seed | undefined)[] = []
 		const resume = fakeOps({
 			deposit: async (seed, _tag, prior) => {
-				priors.push(prior && (prior as unknown as { seed: Seed }).seed)
+				priors.push(prior && (prior.draft as unknown as { seed: Seed }).seed)
 				return ticketOf(seed)
 			},
 		})

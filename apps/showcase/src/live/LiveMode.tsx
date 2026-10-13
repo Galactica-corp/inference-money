@@ -14,7 +14,7 @@ import { Stage } from "@/ui/Stage"
 import { Verdict } from "@/ui/Verdict"
 import { WorldFeed } from "@/ui/WorldFeed"
 import { ACTION_LABEL, actionsFor, LIVE_ACTORS, type LiveAction, needsAmount, targetsOf } from "./draft"
-import type { LiveEngine, Payout } from "./engine"
+import type { ArchivedDeposit, LiveEngine, Payout } from "./engine"
 import { type LiveView, useLive } from "./useLive"
 
 /** The page's wallet as live mode sees it. */
@@ -31,6 +31,7 @@ const PrestoRibbon = PROVES ? lazy(() => import("@/presto/PrestoRibbon").then((m
 
 const control =
 	"h-11 w-full min-w-0 rounded-lg border border-field bg-white px-2.5 text-sm font-semibold text-ink disabled:bg-idle-soft disabled:text-muted"
+const linkButton = "cursor-pointer font-medium text-usdc underline-offset-2 hover:underline disabled:cursor-default disabled:text-muted"
 
 /** Ethereum wallets read as such in the TO field; the stage's lane already says so on the cards. */
 const targetName = (h: Holder): string =>
@@ -128,6 +129,28 @@ function Payouts({ payouts }: { payouts: readonly Payout[] }) {
 	)
 }
 
+function ArchivedDeposits(p: { deposits: readonly ArchivedDeposit[]; onCheck: (id: string) => void; disabled: boolean }) {
+	if (p.deposits.length === 0) return null
+	return (
+		<section className="rounded-xl border border-line bg-white px-4 py-3 text-sm" aria-labelledby="archived-title">
+			<h3 id="archived-title" className="m-0 mb-1.5 font-mono text-[11px] font-semibold tracking-[0.08em] text-muted">
+				DEPOSITS ETHEREUM DOES NOT SHOW
+			</h3>
+			<ul className="m-0 flex list-none flex-col gap-1 p-0">
+				{p.deposits.map((d) => (
+					<li key={d.id} data-testid={TESTIDS.archivedDeposit}>
+						{d.amount === undefined ? "A deposit" : `${usdc2(d.amount)} USDC`} from{" "}
+						{targetName(d.user === "bob" ? "B_demo" : "A_demo")}: Ethereum showed no sign of it, so this page keeps its record.{" "}
+						<button type="button" className={linkButton} disabled={p.disabled} onClick={() => p.onCheck(d.id)}>
+							Check again
+						</button>
+					</li>
+				))}
+			</ul>
+		</section>
+	)
+}
+
 /** "Try it yourself": the composer drives the page's own wallet, live, and the stage shows the chains' balances. */
 export function LiveMode(p: { header: ReactNode; engine: LiveEngine | undefined; wallet: WalletStatus; presto?: LivePresto }) {
 	const { header, engine, wallet, presto } = p
@@ -146,12 +169,7 @@ export function LiveMode(p: { header: ReactNode; engine: LiveEngine | undefined;
 			hintTestId={TESTIDS.walletStatus}
 			hintStatus={wallet.status}
 			aside={
-				<button
-					type="button"
-					className="cursor-pointer font-medium text-usdc underline-offset-2 hover:underline disabled:cursor-default disabled:text-muted"
-					disabled={!ready || v.busy}
-					onClick={v.reset}
-				>
+				<button type="button" className={linkButton} disabled={!ready || v.busy} onClick={v.reset}>
 					Reset balances
 				</button>
 			}
@@ -188,6 +206,7 @@ export function LiveMode(p: { header: ReactNode; engine: LiveEngine | undefined;
 				<>
 					<Verdict state={v.verdict} stages={v.stages} proof={v.proof} />
 					<Payouts payouts={v.payouts} />
+					<ArchivedDeposits deposits={v.archived} onCheck={(id) => void v.recheck(id)} disabled={!ready || v.busy} />
 				</>
 			}
 			feed={<WorldFeed rows={v.rows} />}

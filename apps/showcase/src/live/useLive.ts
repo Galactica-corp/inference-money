@@ -8,7 +8,7 @@ import { usdc2 } from "@/ui/format"
 import type { Flight } from "@/ui/Stage"
 import { STAGES, type Stage, type VerdictState } from "@/ui/Verdict"
 import { type Draft, PRESETS, settle, tripOf, type ValidDraft, validate } from "./draft"
-import type { LiveEngine, Payout } from "./engine"
+import type { ArchivedDeposit, LiveEngine, Payout } from "./engine"
 import type { Outcome } from "./outcome"
 
 /** Between runs, payouts are checked this often: an epoch proves on the order of minutes. */
@@ -31,14 +31,16 @@ const stagesFor = (d: Pick<Draft, "action">): readonly Stage[] => (d.action === 
 
 const coinLabel = (d: ValidDraft): string => (d.amount === undefined ? d.action : usdc2(d.amount))
 
-/** What the chains showed: the feed's live rows, the balances, and the payouts still to come, checked between runs. */
+/** What the chains showed, refreshed after each run, with outstanding payouts polled between runs. */
 function useChains(engine: LiveEngine | undefined, running: RefObject<boolean>) {
 	const [rows, setRows] = useState<FeedRow[]>([])
 	const [balances, setBalances] = useState<Partial<Record<Holder, bigint>>>()
 	const [payouts, setPayouts] = useState<Payout[]>([])
+	const [archived, setArchived] = useState<ArchivedDeposit[]>([])
 	const addRow = useCallback((row: FeedRow) => setRows((r) => [row, ...r.filter((x) => x.key !== row.key)]), [])
 	const refresh = useCallback(async () => {
 		if (!engine) return
+		setArchived(engine.archived())
 		const [b, p] = await Promise.all([engine.balances().catch(() => undefined), engine.payouts(addRow).catch(() => undefined)])
 		if (b) setBalances(b)
 		if (p) setPayouts(p)
@@ -51,7 +53,7 @@ function useChains(engine: LiveEngine | undefined, running: RefObject<boolean>) 
 		const timer = setInterval(() => void (running.current || refresh()), PAYOUT_POLL_MS)
 		return () => clearInterval(timer)
 	}, [engine, payouts.length, refresh, running])
-	return { rows, addRow, balances, payouts, refresh }
+	return { rows, addRow, balances, payouts, archived, refresh }
 }
 
 /**
@@ -101,7 +103,23 @@ function useRun(
 		},
 		[engine, running, addRow, refresh, proofs],
 	)
-	return { busy, verdict, setVerdict, flight, stages, execute, proof }
+	const recheck = useCallback(
+		async (id: string) => {
+			if (!engine || running.current) return
+			running.current = true
+			setBusy(true)
+			try {
+				const detail = await engine.recheck(id).catch((e: unknown) => (e instanceof Error ? e.message : String(e)))
+				setVerdict({ kind: "idle", detail })
+			} finally {
+				running.current = false
+				setBusy(false)
+				void refresh()
+			}
+		},
+		[engine, running, refresh],
+	)
+	return { busy, verdict, setVerdict, flight, stages, execute, proof, recheck }
 }
 
 export type LiveView = ReturnType<typeof useLive>

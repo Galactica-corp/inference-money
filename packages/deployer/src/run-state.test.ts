@@ -1,9 +1,10 @@
 import { afterEach, describe, expect, it } from "bun:test"
 import { spawn } from "node:child_process"
-import { existsSync, mkdtempSync, rmSync, statSync, writeFileSync } from "node:fs"
+import { existsSync, mkdtempSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { StateDir, withStateDir } from "./run-state"
+import { type DepositDraft, decodeDepositDraft } from "@inference-money/bridge-core"
+import { keepAbandonedDraft, StateDir, withStateDir } from "./run-state"
 
 /** Above every platform's pid range, so never alive. */
 const DEAD = 999_999_999
@@ -40,6 +41,19 @@ describe("StateDir", () => {
 			r,
 		)
 		expect(() => StateDir.acquire("smoke", "0xb", r).release()).not.toThrow()
+	})
+
+	it("renames a state file in place, and keeps an abandoned draft under its permit nonce, once however often kept", () => {
+		const s = StateDir.acquire("demo", "0xb", root())
+		s.write("setup.json", { tag: "t" })
+		s.rename("setup.json", "setup-t.json")
+		expect([s.read("setup.json"), s.read("setup-t.json")]).toEqual([undefined, { tag: "t" }])
+		const d = { intent: { amount: 1n }, typedData: { message: { nonce: 0xabcn } } } as unknown as DepositDraft
+		keepAbandonedDraft(s, d)
+		keepAbandonedDraft(s, d)
+		expect(readdirSync(s.dir).filter((f) => f.startsWith("abandoned-"))).toEqual(["abandoned-abc.json"])
+		expect(decodeDepositDraft(s.read<{ draft: string }>("abandoned-abc.json")?.draft ?? "")).toEqual(d)
+		s.release()
 	})
 
 	it("refuses a lock its holder left behind, naming it for removal, and never removes another holder's lock", () => {

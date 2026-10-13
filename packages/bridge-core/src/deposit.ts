@@ -16,7 +16,7 @@ import {
 	size,
 	slice,
 } from "viem"
-import { PERMIT2_DEPOSIT_ROUTER_ABI } from "./abi"
+import { PERMIT2_DEPOSIT_ROUTER_ABI, PERMIT2_NONCE_ABI } from "./abi"
 import { deriveClaimSecret } from "./claim-secret"
 import { isUserRejection } from "./errors"
 import { type AwaitL1ReceiptOptions, awaitL1Receipt } from "./l1-receipt"
@@ -64,7 +64,10 @@ export interface ClaimTicket {
 	depositor: Address
 }
 
-/** `not-deposited` only after an error-free scan through a finalized block past the permit deadline. */
+/**
+ * `not-deposited` only after an error-free scan through a finalized block past the permit deadline, at which Permit2
+ * still holds the permit's nonce unused. It is still one reader's word: keep the draft, never delete it on this.
+ */
 export type Reconciled = ClaimTicket | "pending" | "not-deposited"
 
 export type DepositStage = "signing" | "depositing" | "confirming"
@@ -200,11 +203,18 @@ async function signAndSend(d: DepositDraft, l1: L1Ctx, m: BridgeManifest, l2: Pa
 	try {
 		d.l1TxHash = await l1.walletClient.writeContract({ ...call, gas, chain: sendChain(l1, m.l1.chainId) })
 	} catch (e) {
-		// An explicit refusal means nothing was broadcast; any other failure may have been, so the draft stays submitted.
-		if (isUserRejection(e)) d.submission = undefined
+		// A wallet's explicit refusal means nothing was broadcast; any other failure may have been, so the draft stays
+		// submitted. A local key's raw send has no user to refuse it: a refusal there is the RPC's word.
+		if (asksItsUser(l1) && isUserRejection(e)) d.submission = undefined
 		throw e
 	}
 	return d.l1TxHash
+}
+
+/** A JSON-RPC wallet sends on its user's say-so; a local account signs in process and hands the RPC a raw tx. */
+function asksItsUser(l1: L1Ctx): boolean {
+	const signer = signerOf(l1)
+	return typeof signer === "string" || signer.type === "json-rpc"
 }
 
 type DepositArgs = { depositor: Address; aztecRecipient: Hex; key: Hex; index: bigint; amount: bigint; secretHash: Hex; isPrivate: boolean }
@@ -296,8 +306,23 @@ async function locateDeposit(d: DepositDraft, pub: PublicClient, m: BridgeManife
 	const to = latest > finalized.number ? latest : finalized.number
 	const found = await scanForDeposit(d, pub, m, fromBlock, to)
 	if (found) return found
-	// Timestamps only grow, so once a finalized block is past the deadline Permit2 rejects any later inclusion.
-	return finalized.timestamp > d.typedData.message.deadline ? "not-deposited" : "pending"
+	// Timestamps only grow, so once a finalized block is past the deadline Permit2 rejects any later inclusion: a deposit
+	// that mined at all used its nonce at or below that block, whatever the log index says.
+	if (finalized.timestamp <= d.typedData.message.deadline) return "pending"
+	return (await permitNonceUsed(d, pub, s.account, finalized.number)) ? "pending" : "not-deposited"
+}
+
+/** Set once the permit was used, or its owner cancelled the nonce; the router names its caller as the owner. */
+async function permitNonceUsed(d: DepositDraft, pub: PublicClient, owner: Address, blockNumber: bigint): Promise<boolean> {
+	const { nonce } = d.typedData.message
+	const word = await pub.readContract({
+		address: d.typedData.domain.verifyingContract,
+		abi: PERMIT2_NONCE_ABI,
+		functionName: "nonceBitmap",
+		args: [owner, nonce >> 8n],
+		blockNumber,
+	})
+	return ((word >> (nonce & 0xffn)) & 1n) === 1n
 }
 
 /**

@@ -8,6 +8,7 @@ import { encodeErrorResult } from "viem"
 import {
 	OUTBOX_ABI,
 	PERMIT2_DEPOSIT_ROUTER_ABI,
+	PERMIT2_NONCE_ABI,
 	PERMIT2_SIGNATURE_ERRORS,
 	PORTAL_BUBBLED_ERRORS,
 	REGISTRY_ABI,
@@ -65,6 +66,8 @@ describe("hand-written ABIs equal the compiled contracts", () => {
 		const swapped = { ...deposit, inputs: [deposit.inputs[1], deposit.inputs[0], ...deposit.inputs.slice(2)] }
 		expect(() => expectPinned([swapped], forgeAbi("Permit2DepositRouter"))).toThrow()
 	})
+	it("Permit2's nonce bitmap, as the repo's ISignatureTransfer declares it", () =>
+		expectPinned(PERMIT2_NONCE_ABI, forgeAbi("ISignatureTransfer")))
 	it("Permit2's signature errors, by selector", () => {
 		expect(encodeErrorResult({ abi: PERMIT2_SIGNATURE_ERRORS, errorName: "InvalidContractSignature" })).toBe("0xb0669cbc")
 		expect(encodeErrorResult({ abi: PERMIT2_SIGNATURE_ERRORS, errorName: "InvalidSigner" })).toBe("0x815e1d64")
