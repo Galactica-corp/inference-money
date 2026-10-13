@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from "node:fs"
 import { dirname, join } from "node:path"
-import type { BridgeManifest } from "@inference-money/bridge-core"
+import type { BridgeManifest } from "@galactica-net/inference-money-core"
 import { z } from "zod"
 // The extension lets Node load this file: the showcase's build config imports it outside any bundler.
 import { USERS_TAG } from "./users-tag.ts"

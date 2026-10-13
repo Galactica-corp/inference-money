@@ -1,4 +1,4 @@
-import { ACTORS, USERS } from "@inference-money/demo"
+import { ACTORS, USERS } from "@galactica-net/inference-money-demo"
 import { z } from "zod"
 import { type KeyValue, setDurably } from "./store"
 

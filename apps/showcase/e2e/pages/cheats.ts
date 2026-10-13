@@ -1,4 +1,4 @@
-import { BRIDGE_REFUSALS, TOKEN_REFUSALS } from "@inference-money/bridge-core/rules"
+import { BRIDGE_REFUSALS, TOKEN_REFUSALS } from "@galactica-net/inference-money-core/rules"
 import { expect, type Page } from "@playwright/test"
 import { TESTIDS } from "../../src/lib/testids"
 import { L1_SENDS, L2_SEND, type RpcLog } from "../fixtures/rpc"

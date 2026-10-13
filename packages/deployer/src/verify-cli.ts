@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs"
 import { createAztecNodeClient } from "@aztec-labs/aztec.js/node"
-import { parseTour, tourMismatches } from "@inference-money/demo"
+import { parseTour, tourMismatches } from "@galactica-net/inference-money-demo"
 import { createPublicClient, http, type PublicClient } from "viem"
 import type { Check } from "./preflight"
 import { endpointsFor, type ManifestRef } from "./session"

@@ -1,7 +1,16 @@
 {
 	"name": "inference-money",
 	"private": true,
+	"homepage": "https://privateinference.gg/",
+	"bugs": {
+		"url": "https://github.com/Galactica-corp/inference-money/issues"
+	},
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/Galactica-corp/inference-money.git"
+	},
 	"license": "Apache-2.0",
+	"author": "Galactica Network",
 	"type": "module",
 	"workspaces": [
 		"apps/*",
@@ -21,6 +30,8 @@
 		"net:up": "bun packages/local-network/src/cli.ts up",
 		"prepare": "husky",
 		"probe:testnet": "bun --no-env-file packages/deployer/src/cli.ts probe testnet",
+		"release:check": "bun run lint && bun run typecheck && bun run --cwd packages/bridge-core test && bun run release:pack",
+		"release:pack": "bun run --cwd packages/bridge-core pack:npm && bun run --cwd packages/bridge-core smoke:npm",
 		"secrets:scan": "bun --no-env-file packages/deployer/src/cli.ts scan secrets",
 		"test": "bun run --filter './packages/*' --filter './apps/*' --filter './contracts/*' --if-present test",
 		"test:e2e": "bun run --cwd apps/showcase test:e2e",

@@ -1,8 +1,19 @@
 {
-	"name": "@inference-money/integration",
+	"name": "@galactica-net/inference-money-integration",
 	"version": "0.0.0",
 	"private": true,
 	"description": "Integration suite: bridge-core flows against a per-run local network with the bridge deployed.",
+	"homepage": "https://privateinference.gg/",
+	"bugs": {
+		"url": "https://github.com/Galactica-corp/inference-money/issues"
+	},
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/Galactica-corp/inference-money.git",
+		"directory": "packages/integration"
+	},
+	"license": "Apache-2.0",
+	"author": "Galactica Network",
 	"type": "module",
 	"scripts": {
 		"test:clock": "INTEGRATION=1 bun test --preload ../../test-preload.ts --preload ./clock/setup.ts --timeout 900000 ./clock",
@@ -14,10 +25,10 @@
 		"@aztec-labs/aztec.js": "6.0.0-rc.1",
 		"@aztec-labs/stdlib": "6.0.0-rc.1",
 		"@aztec-labs/wallets": "6.0.0-rc.1",
-		"@inference-money/bridge-core": "workspace:*",
-		"@inference-money/demo": "workspace:*",
-		"@inference-money/deployer": "workspace:*",
-		"@inference-money/local-network": "workspace:*",
+		"@galactica-net/inference-money-core": "workspace:*",
+		"@galactica-net/inference-money-demo": "workspace:*",
+		"@galactica-net/inference-money-deployer": "workspace:*",
+		"@galactica-net/inference-money-local-network": "workspace:*",
 		"viem": "2.56.7"
 	},
 	"devDependencies": {

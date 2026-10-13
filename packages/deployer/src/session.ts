@@ -11,8 +11,8 @@ import {
 	registerBridgeContracts,
 	registerSponsor,
 	signingKeyFor,
-} from "@inference-money/bridge-core"
-import { resolveEndpoints, runIdFor } from "@inference-money/local-network"
+} from "@galactica-net/inference-money-core"
+import { resolveEndpoints, runIdFor } from "@galactica-net/inference-money-local-network"
 import { localManifestPath, readManifest } from "./manifest"
 import { TESTNET } from "./networks"
 import { aztecSecretFrom, KEYED, keyedEnv } from "./secrets"

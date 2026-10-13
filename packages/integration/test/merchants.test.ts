@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test"
-import { MERCHANT_MAX_DELAY, merchantHorizon, merchantStatus, TOKEN_REFUSALS } from "@inference-money/bridge-core"
+import { MERCHANT_MAX_DELAY, merchantHorizon, merchantStatus, TOKEN_REFUSALS } from "@galactica-net/inference-money-core"
 import { l2Actor } from "./actors"
 import { INTEGRATION } from "./harness"
 import { as, asAdmin, blockTimestamp, listMerchant, merchantList, token } from "./token"

@@ -1,7 +1,7 @@
 import { closeSync, existsSync, fsyncSync, linkSync, mkdirSync, openSync, readFileSync, renameSync, rmSync, writeSync } from "node:fs"
 import { constants, homedir } from "node:os"
 import { join, resolve } from "node:path"
-import { memoryPaymentStore, type PaymentRecord, type PaymentStore } from "@inference-money/bridge-core"
+import { memoryPaymentStore, type PaymentRecord, type PaymentStore } from "@galactica-net/inference-money-core"
 
 export const STATE_ROOT = join(homedir(), ".cache", "inference-money")
 /** The keyed-run checkout that `scripts/keyed-worktree.sh` maintains. */

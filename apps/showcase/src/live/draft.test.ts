@@ -1,4 +1,4 @@
-import { BRIDGE_REFUSALS, TOKEN_REFUSALS } from "@inference-money/bridge-core/rules"
+import { BRIDGE_REFUSALS, TOKEN_REFUSALS } from "@galactica-net/inference-money-core/rules"
 import { describe, expect, it } from "vitest"
 import { SCENES } from "@/tour/scenes"
 import { actionsFor, PRESETS, settle, targetsOf, validate } from "./draft"

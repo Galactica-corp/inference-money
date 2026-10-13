@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test"
-import type { ClaimTicket, DepositDraft } from "@inference-money/bridge-core"
+import type { ClaimTicket, DepositDraft } from "@galactica-net/inference-money-core"
 import { BIND_SEEDS, type PlanStore, runSetup, type Seed, type SetupOps, type SetupPlan } from "./demo"
 
 const memoryStore = () => {

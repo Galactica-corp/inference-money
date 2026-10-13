@@ -27,7 +27,7 @@ import {
 	tipOf,
 	transferPrivate,
 	waitClaimable,
-} from "@inference-money/bridge-core"
+} from "@galactica-net/inference-money-core"
 import {
 	type Account,
 	type Address,

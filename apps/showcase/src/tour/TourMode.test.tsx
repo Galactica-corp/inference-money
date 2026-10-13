@@ -1,4 +1,4 @@
-import { BRIDGE_REFUSALS, TOKEN_REFUSALS } from "@inference-money/bridge-core"
+import { BRIDGE_REFUSALS, TOKEN_REFUSALS } from "@galactica-net/inference-money-core"
 import { act, fireEvent, render, screen, within } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { TESTIDS } from "@/lib/testids"

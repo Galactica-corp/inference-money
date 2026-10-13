@@ -1,9 +1,9 @@
 import { readFileSync } from "node:fs"
 import { basename, dirname, resolve } from "node:path"
-import { type BridgeManifest, parseManifest } from "@inference-money/bridge-core/manifest"
-import { readDemoFile } from "@inference-money/demo/files"
-import { TESTNET } from "@inference-money/deployer/networks"
-import { resolveEndpoints } from "@inference-money/local-network/handle"
+import { type BridgeManifest, parseManifest } from "@galactica-net/inference-money-core/manifest"
+import { readDemoFile } from "@galactica-net/inference-money-demo/files"
+import { TESTNET } from "@galactica-net/inference-money-deployer/networks"
+import { resolveEndpoints } from "@galactica-net/inference-money-local-network/handle"
 
 export type Proofs = "real" | "fake"
 

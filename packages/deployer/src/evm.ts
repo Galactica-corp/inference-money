@@ -2,37 +2,21 @@ import { execFileSync } from "node:child_process"
 import { readFileSync } from "node:fs"
 import { homedir } from "node:os"
 import { join, resolve } from "node:path"
-import type { Abi, Hex } from "viem"
+import {
+	BRIDGE_EVM_SOURCES,
+	type BridgeEvmArtifacts,
+	type EvmArtifact,
+	evmArtifactFromForge,
+} from "@galactica-net/inference-money-core/deploy"
+import type { Hex } from "viem"
 
 export const EVM_ROOT = resolve(import.meta.dir, "../../../contracts/evm")
 
-export interface EvmArtifact {
-	abi: Abi
-	bytecode: Hex
-	deployedBytecode: Hex
-	/** Byte ranges of the runtime code that the constructor fills with immutables. */
-	immutableRanges: { start: number; length: number }[]
-}
+export type { BridgeEvmArtifacts, EvmArtifact }
 
-/** The contracts a deploy and its verification use, read once right after the build that produced them. */
-export interface BridgeEvmArtifacts {
-	portal: EvmArtifact
-	router: EvmArtifact
-	mockUsdc: EvmArtifact
-}
-
-function readArtifact(outDir: string, source: string, name: string): EvmArtifact {
-	const raw = JSON.parse(readFileSync(join(outDir, source, `${name}.json`), "utf8")) as {
-		abi: Abi
-		bytecode: { object: Hex }
-		deployedBytecode: { object: Hex; immutableReferences?: Record<string, { start: number; length: number }[]> }
-	}
-	return {
-		abi: raw.abi,
-		bytecode: raw.bytecode.object,
-		deployedBytecode: raw.deployedBytecode.object,
-		immutableRanges: Object.values(raw.deployedBytecode.immutableReferences ?? {}).flat(),
-	}
+const readArtifact = (outDir: string, key: keyof BridgeEvmArtifacts): EvmArtifact => {
+	const { source, name } = BRIDGE_EVM_SOURCES[key]
+	return evmArtifactFromForge(JSON.parse(readFileSync(join(outDir, source, `${name}.json`), "utf8")))
 }
 
 export const forgeRunDir = (runId: string) => join(homedir(), ".cache", "inference-money", "forge", runId)
@@ -49,11 +33,7 @@ export function buildBridgeContracts(runId: string, force: boolean, env: NodeJS.
 	const args = ["build", "--out", join(dir, "out"), "--cache-path", join(dir, "cache"), ...skip, ...(force ? ["--force"] : [])]
 	execFileSync("forge", args, { cwd: EVM_ROOT, stdio: "inherit", env })
 	const out = join(dir, "out")
-	return {
-		portal: readArtifact(out, "TokenPortal.sol", "TokenPortal"),
-		router: readArtifact(out, "Permit2DepositRouter.sol", "Permit2DepositRouter"),
-		mockUsdc: readArtifact(out, "MockUsdc.sol", "MockUsdc"),
-	}
+	return { portal: readArtifact(out, "portal"), router: readArtifact(out, "router"), mockUsdc: readArtifact(out, "mockUsdc") }
 }
 
 /** Runtime code with every immutable range zeroed; compares on-chain code to an artifact independent of constructor args. */

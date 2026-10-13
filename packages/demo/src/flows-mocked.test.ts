@@ -1,7 +1,7 @@
 import { describe, expect, it, mock } from "bun:test"
 import { AztecAddress } from "@aztec-labs/aztec.js/addresses"
 import { TxHash, TxStatus } from "@aztec-labs/aztec.js/tx"
-import * as core from "@inference-money/bridge-core"
+import * as core from "@galactica-net/inference-money-core"
 
 /** Every Permit2 approval castDeposit asked for; nothing past it runs, since the signer cannot read a block. */
 const approvals: bigint[] = []
@@ -11,7 +11,7 @@ let bound: `0x${string}` | undefined
 const reads: string[] = []
 const claimWaits: unknown[] = []
 const consents: unknown[] = []
-mock.module("@inference-money/bridge-core", () => ({
+mock.module("@galactica-net/inference-money-core", () => ({
 	...core,
 	syncMerchantList: async () => ({ block: 1, at: 0n, entries: new Map() }),
 	fundingAddress: async () => bound,

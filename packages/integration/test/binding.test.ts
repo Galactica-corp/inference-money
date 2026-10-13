@@ -8,7 +8,7 @@ import {
 	fundingAddress,
 	NotFundingAddressError,
 	waitClaimable,
-} from "@inference-money/bridge-core"
+} from "@galactica-net/inference-money-core"
 import { type Address, isAddressEqual } from "viem"
 import {
 	claimable,

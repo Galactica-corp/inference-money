@@ -1,4 +1,4 @@
-import type { ClaimTicket, Reconciled } from "@inference-money/bridge-core"
+import type { ClaimTicket, Reconciled } from "@galactica-net/inference-money-core"
 
 export interface ReclaimSteps {
 	finality(t: ClaimTicket): Promise<"finalized" | "dropped">

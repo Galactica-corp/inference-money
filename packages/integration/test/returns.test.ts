@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test"
-import { BRIDGE_REFUSALS, fundingAddress } from "@inference-money/bridge-core"
+import { BRIDGE_REFUSALS, fundingAddress } from "@galactica-net/inference-money-core"
 import { isAddressEqual } from "viem"
 import {
 	claimable,

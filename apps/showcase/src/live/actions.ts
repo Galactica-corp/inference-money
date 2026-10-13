@@ -23,7 +23,7 @@ import {
 	reconcileDeposit,
 	syncMerchantList,
 	TOKEN_REFUSALS,
-} from "@inference-money/bridge-core"
+} from "@galactica-net/inference-money-core"
 import {
 	aztecWorld,
 	castClaim,
@@ -44,7 +44,7 @@ import {
 	totalSupplySlot,
 	type User,
 	usdcOf,
-} from "@inference-money/demo"
+} from "@galactica-net/inference-money-demo"
 import type { PendingDeposit, PendingExit, Tickets } from "@/demo/tickets"
 import type { DemoWallet } from "@/demo/wallet"
 import { type Explorer, type FeedRow, PUBLIC_TEXT, rowOf } from "@/tour/player"

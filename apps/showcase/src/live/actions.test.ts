@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { TxStatus } from "@aztec-labs/aztec.js/tx"
-import { memoryPaymentStore, PaymentGate } from "@inference-money/bridge-core"
-import type { SentTx } from "@inference-money/demo"
+import { memoryPaymentStore, PaymentGate } from "@galactica-net/inference-money-core"
+import type { SentTx } from "@galactica-net/inference-money-demo"
 import { describe, expect, it, vi } from "vitest"
 import { MANIFEST, TOUR, WALLETS } from "@/config/network"
 import type { PendingDeposit, Tickets } from "@/demo/tickets"
@@ -30,8 +30,8 @@ const claims = vi.hoisted(() => ({
 
 // A deposit this page sent is still unconfirmed on Ethereum (a "broken" one cannot even be read back); a claim
 // ticket's nullifier is wherever `claims` says.
-vi.mock("@inference-money/bridge-core", async (original) => {
-	const real = await original<typeof import("@inference-money/bridge-core")>()
+vi.mock("@galactica-net/inference-money-core", async (original) => {
+	const real = await original<typeof import("@galactica-net/inference-money-core")>()
 	const { Fr } = await import("@aztec-labs/aztec.js/fields")
 	const { AztecAddress } = await import("@aztec-labs/aztec.js/addresses")
 	const intent = { recipient: AztecAddress.ZERO, amount: 10_000n, kind: "private" }
@@ -69,8 +69,8 @@ vi.mock("@inference-money/bridge-core", async (original) => {
 		},
 	}
 })
-vi.mock("@inference-money/demo", async (original) => ({
-	...(await original<typeof import("@inference-money/demo")>()),
+vi.mock("@galactica-net/inference-money-demo", async (original) => ({
+	...(await original<typeof import("@galactica-net/inference-money-demo")>()),
 	castClaim: async (_s: unknown, _t: unknown, _on: unknown, consent: unknown) => {
 		claims.sent++
 		claims.consent = consent

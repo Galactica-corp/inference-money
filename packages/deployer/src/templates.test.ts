@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test"
 import { readFileSync } from "node:fs"
 import { join } from "node:path"
-import { REPO_ROOT } from "@inference-money/local-network"
+import { REPO_ROOT } from "@galactica-net/inference-money-local-network"
 
 /** One item per role: `op-remote create` makes a template's item whole and refuses one that exists. */
 const DEPLOY_ITEM = "op://Keyed-Runs/InferenceMoney-Testnet"

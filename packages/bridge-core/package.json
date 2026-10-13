@@ -1,16 +1,41 @@
 {
-	"name": "@inference-money/bridge-core",
-	"version": "0.0.0",
+	"name": "@galactica-net/inference-money-core",
+	"version": "0.1.0",
 	"private": true,
-	"description": "Framework-agnostic USDC bridge protocol logic: hashes, secrets, Permit2 typed data, deposit/claim/exit/withdraw flows, the manifest schema.",
+	"description": "The inference-money USDC bridge between Ethereum and Aztec: protocol SDK, contract artifacts, L1 ABIs, the testnet deployment, and a deploy library for instances of your own.",
+	"keywords": [
+		"aztec",
+		"usdc",
+		"bridge",
+		"privacy",
+		"stablecoin",
+		"x402"
+	],
+	"homepage": "https://privateinference.gg/",
+	"bugs": {
+		"url": "https://github.com/Galactica-corp/inference-money/issues"
+	},
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/Galactica-corp/inference-money.git",
+		"directory": "packages/bridge-core"
+	},
+	"license": "Apache-2.0",
+	"author": "Galactica Network",
 	"type": "module",
 	"exports": {
 		".": "./src/index.ts",
+		"./deploy": "./src/deploy/index.ts",
+		"./deployments": "./src/deployments.ts",
 		"./manifest": "./src/manifest.ts",
+		"./networks": "./src/deploy/networks.ts",
 		"./rules": "./src/rules.ts",
 		"./types": "./src/types.ts"
 	},
 	"scripts": {
+		"embed:evm": "bun run --cwd ../../contracts/evm build && bun scripts/embed-evm.ts",
+		"pack:npm": "bun scripts/pack.ts",
+		"smoke:npm": "bun scripts/smoke-package.ts",
 		"test": "bun run --cwd ../../contracts/evm build && bun test --preload ../../test-preload.ts src",
 		"typecheck": "tsc --noEmit -p tsconfig.json"
 	},
@@ -19,13 +44,23 @@
 		"@aztec-labs/constants": "6.0.0-rc.1",
 		"@aztec-labs/foundation": "6.0.0-rc.1",
 		"@aztec-labs/noir-contracts.js": "6.0.0-rc.1",
+		"@aztec-labs/standard-contracts": "6.0.0-rc.1",
 		"@aztec-labs/stdlib": "6.0.0-rc.1",
+		"@aztec-labs/wallets": "6.0.0-rc.1",
 		"viem": "2.56.7",
 		"zod": "4.6.5"
 	},
 	"devDependencies": {
 		"@aztec-foundation/l1-artifacts": "6.0.0-rc.1",
 		"@types/bun": "1.4.2",
+		"tsup": "8.5.1",
 		"typescript": "6.0.3"
+	},
+	"engines": {
+		"node": ">=22"
+	},
+	"publishConfig": {
+		"access": "public",
+		"registry": "https://registry.npmjs.org/"
 	}
 }

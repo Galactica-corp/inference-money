@@ -4,9 +4,10 @@ import type { Writable } from "node:stream"
 import type { AztecAddress } from "@aztec-labs/aztec.js/addresses"
 import { Fr } from "@aztec-labs/aztec.js/fields"
 import { createAztecNodeClient } from "@aztec-labs/aztec.js/node"
-import { parseManifest, randomSecret, signingKeyFor, tokenBridgeArtifact } from "@inference-money/bridge-core"
-import { aztecAddressOf } from "@inference-money/demo"
-import { REPO_ROOT } from "@inference-money/local-network"
+import { parseManifest, randomSecret, signingKeyFor, tokenBridgeArtifact } from "@galactica-net/inference-money-core"
+import { layoutSlot, publicReader, type Roles, readRoles } from "@galactica-net/inference-money-core/deploy"
+import { aztecAddressOf } from "@galactica-net/inference-money-demo"
+import { REPO_ROOT } from "@galactica-net/inference-money-local-network"
 import type { Address } from "viem"
 import { generatePrivateKey, privateKeyToAddress } from "viem/accounts"
 import { type Command, type Invocation, parseInvocation } from "./cli-args"
@@ -16,7 +17,6 @@ import { DISPOSABLE_DIR, keyedWorktree, StateDir, syncDir, withStateDir, writeDu
 import { scanFailed, scanForSecrets, scanLine } from "./scan"
 import { aztecSecretFrom, KEYED, l1PrivateKeyFrom, scrubbedEnv, secretNeedles } from "./secrets"
 import type { ManifestRef } from "./session"
-import { layoutSlot, publicReader, type Roles, readRoles } from "./token-reads"
 
 /** The disposable fallback's keys: owner-only, outside every checkout, until `destroy`. */
 export const DISPOSABLE_FILE = join(DISPOSABLE_DIR, "testnet.env")

@@ -1,7 +1,7 @@
-import { type BridgeManifest, parseManifest } from "@inference-money/bridge-core/manifest"
-import { ethereumKey } from "@inference-money/demo/keys"
-import { parseTour, type Tour } from "@inference-money/demo/tour"
-import { type NetworkPins, TESTNET } from "@inference-money/deployer/networks"
+import { type BridgeManifest, parseManifest } from "@galactica-net/inference-money-core/manifest"
+import { ethereumKey } from "@galactica-net/inference-money-demo/keys"
+import { parseTour, type Tour } from "@galactica-net/inference-money-demo/tour"
+import { type NetworkPins, TESTNET } from "@galactica-net/inference-money-deployer/networks"
 import { type Address, type Chain, defineChain } from "viem"
 import { privateKeyToAddress } from "viem/accounts"
 

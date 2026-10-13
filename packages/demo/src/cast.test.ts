@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test"
 import { Fr } from "@aztec-labs/aztec.js/fields"
-import { signingKeyFor } from "@inference-money/bridge-core"
+import { signingKeyFor } from "@galactica-net/inference-money-core"
 import { MANIFEST } from "../../bridge-core/src/test/fixtures"
 import { aztecAddressOf, aztecSecret, castMember, newUsersTag } from "./cast"
 import { ethereumKey } from "./keys"

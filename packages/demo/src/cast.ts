@@ -1,7 +1,7 @@
 import { getSchnorrAccountContractAddress } from "@aztec-labs/accounts/schnorr/lazy"
 import type { AztecAddress } from "@aztec-labs/aztec.js/addresses"
 import { type Fq, Fr } from "@aztec-labs/aztec.js/fields"
-import { type BridgeManifest, signingKeyFor } from "@inference-money/bridge-core"
+import { type BridgeManifest, signingKeyFor } from "@galactica-net/inference-money-core"
 import { type Address, bytesToHex, type Hex } from "viem"
 import { privateKeyToAddress } from "viem/accounts"
 import { type Actor, isUser } from "./actors"

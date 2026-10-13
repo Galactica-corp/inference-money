@@ -5,7 +5,9 @@ import { BlockNumber } from "@aztec-labs/foundation/branded-types"
 import type { ContractArtifact } from "@aztec-labs/stdlib/abi"
 import { DelayedPublicMutableValues } from "@aztec-labs/stdlib/delayed-public-mutable"
 import { deriveStorageSlotInMap } from "@aztec-labs/stdlib/hash"
-import { type BridgeManifest, delayAt, MERCHANT_MIN_DELAY, tokenArtifact, tokenBridgeArtifact } from "@inference-money/bridge-core"
+import { tokenArtifact, tokenBridgeArtifact } from "../artifacts"
+import type { BridgeManifest } from "../manifest"
+import { delayAt, MERCHANT_MIN_DELAY } from "../merchants"
 
 /** A delayed slot's delay in force at `at`, the one scheduled to follow, and when that takes over. */
 export interface DelayState {

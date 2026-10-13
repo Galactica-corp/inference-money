@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { TxHash, TxStatus } from "@aztec-labs/aztec.js/tx"
-import { type ExitTicket, encodeTicket } from "@inference-money/bridge-core"
+import { type ExitTicket, encodeTicket } from "@galactica-net/inference-money-core"
 import { describe, expect, it, vi } from "vitest"
 import { MANIFEST, TOUR, WALLETS } from "@/config/network"
 import type { PendingExit, Tickets } from "@/demo/tickets"
@@ -24,8 +24,8 @@ const chain = vi.hoisted(() => ({
 	located: "ticket" as "ticket" | "reverted" | "reverted-unfinalized",
 	hold: undefined as Promise<void> | undefined,
 }))
-vi.mock("@inference-money/bridge-core", async (original) => ({
-	...(await original<typeof import("@inference-money/bridge-core")>()),
+vi.mock("@galactica-net/inference-money-core", async (original) => ({
+	...(await original<typeof import("@galactica-net/inference-money-core")>()),
 	locateWithdrawal: async () => (chain.located === "ticket" ? TICKET : chain.located),
 	isExitWithdrawn: async () => false,
 	finishWithdrawal: async () => {

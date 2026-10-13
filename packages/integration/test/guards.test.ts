@@ -16,7 +16,7 @@ import {
 	submitDeposit,
 	tokenBridgeArtifact,
 	tokenMinterProxyArtifact,
-} from "@inference-money/bridge-core"
+} from "@galactica-net/inference-money-core"
 import { claimable, claimFor, deposit, depositsBy, l1Actor, l1Now, l2Actor, l2Balances, merchantActor, setPaused, USDC } from "./actors"
 import { harness, INTEGRATION } from "./harness"
 

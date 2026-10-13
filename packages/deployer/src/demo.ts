@@ -13,7 +13,8 @@ import {
 	sponsorInstance,
 	syncMerchantList,
 	waitClaimFinalized,
-} from "@inference-money/bridge-core"
+} from "@galactica-net/inference-money-core"
+import { addMerchants, l1Signer } from "@galactica-net/inference-money-core/deploy"
 import {
 	aztecAddressOf,
 	castClaim,
@@ -31,16 +32,14 @@ import {
 	sponsoredFee,
 	USERS,
 	usdcOf,
-} from "@inference-money/demo"
-import { type DemoFile, demoFilePath, readDemoFile } from "@inference-money/demo/files"
+} from "@galactica-net/inference-money-demo"
+import { type DemoFile, demoFilePath, readDemoFile } from "@galactica-net/inference-money-demo/files"
 import { isAddressEqual } from "viem"
 import { privateKeyToAccount } from "viem/accounts"
-import { addMerchants } from "./admin"
 import { keepUntilFinal, type ReclaimSteps } from "./claim-finality"
 import { deployPlayers, enlist, type Log, logWait, type Player, withHeartbeat } from "./demo-flows"
 import { anvilFaucet, fundDemoL1, signerFaucet } from "./demo-l1"
 import { topUpSponsor } from "./fee-juice"
-import { l1Signer } from "./l1"
 import { TESTNET } from "./networks"
 import { type StateDir, withStateDir } from "./run-state"
 import { l1PrivateKeyFrom } from "./secrets"

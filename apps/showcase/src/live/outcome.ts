@@ -1,4 +1,4 @@
-import { BRIDGE_REFUSALS, bridgeRefusalOf, TOKEN_REFUSALS, tokenRefusalOf } from "@inference-money/bridge-core/rules"
+import { BRIDGE_REFUSALS, bridgeRefusalOf, TOKEN_REFUSALS, tokenRefusalOf } from "@galactica-net/inference-money-core/rules"
 import type { FeedRow } from "@/tour/player"
 import { HOLDER_NAME } from "@/ui/cards"
 import type { ValidDraft } from "./draft"

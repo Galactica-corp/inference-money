@@ -1,5 +1,5 @@
 {
-	"name": "@inference-money/aztec-toolchain",
+	"name": "@galactica-net/inference-money-aztec-toolchain",
 	"private": true,
 	"description": "Pinned Aztec JS toolchain (aztec compile, bb, the TXE oracle server) for the Noir scripts; installed with --frozen-lockfile by scripts/toolchain.sh.",
 	"dependencies": {

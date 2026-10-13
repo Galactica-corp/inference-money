@@ -14,7 +14,7 @@ import {
 	registerBridgeContracts,
 	registerSponsor,
 	signingKeyFor,
-} from "@inference-money/bridge-core"
+} from "@galactica-net/inference-money-core"
 import {
 	deployLocal,
 	enterOwnedTmpDir,
@@ -26,8 +26,8 @@ import {
 	recordingNode,
 	type SentTx,
 	startBlockHeartbeat,
-} from "@inference-money/deployer"
-import { L1_CHAIN_ID, localDeploymentDir, netDown, netUp, resolveEndpoints, runIdFor } from "@inference-money/local-network"
+} from "@galactica-net/inference-money-deployer"
+import { L1_CHAIN_ID, localDeploymentDir, netDown, netUp, resolveEndpoints, runIdFor } from "@galactica-net/inference-money-local-network"
 import { type Chain, createPublicClient, createTestClient, http, type PublicClient, type TestClient } from "viem"
 
 export const INTEGRATION = Boolean(process.env.INTEGRATION)

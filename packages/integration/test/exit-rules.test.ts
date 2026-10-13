@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test"
-import { BRIDGE_REFUSALS, ExitDestinationError, type ExitIntent, exitToL1, isBridgePaused } from "@inference-money/bridge-core"
+import { BRIDGE_REFUSALS, ExitDestinationError, type ExitIntent, exitToL1, isBridgePaused } from "@galactica-net/inference-money-core"
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts"
 import {
 	claimable,
