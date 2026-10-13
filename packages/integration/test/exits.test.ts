@@ -9,8 +9,10 @@ import {
 	AlreadyWithdrawnError,
 	type ExitIntent,
 	type ExitTicket,
+	ExitUnconfirmedError,
 	exitTicketFromTx,
 	exitToL1,
+	locateWithdrawal,
 	sponsoredPayment,
 	tokenArtifact,
 	tokenBridgeArtifact,
@@ -19,9 +21,9 @@ import {
 } from "@inference-money/bridge-core"
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts"
 import { funded, l1Actor, l2Actor, l2Balances, merchantActor, payFor, sentDuring, USDC, usdcOf, withdraw } from "./actors"
-import { harness, INTEGRATION } from "./harness"
+import { harness, INTEGRATION, loseNextReply } from "./harness"
 
-const exit = (e: ExitIntent) => exitToL1(e, harness().wallet, harness().node, harness().manifest, { fee: payFor(e.kind) })
+const exit = (e: ExitIntent) => exitToL1(e, harness().wallet, harness().sends, harness().manifest, { fee: payFor(e.kind) })
 
 const provenQuickly = { pollMs: 2_000, timeoutMs: 15 * 60_000 }
 
@@ -80,6 +82,25 @@ describe.skipIf(!INTEGRATION)("exits and withdrawals", () => {
 		if (typeof resumed === "string") throw new Error(resumed)
 		await withdraw(resumed, l1)
 		expect(await usdcOf(recipient)).toBe(3n * USDC)
+	})
+
+	it("[A14] an exit the node took before its reply was lost is unconfirmed, with the real tx's hash to resume from", async () => {
+		const { manifest: m, node } = harness()
+		const [l1, bob, shop] = await Promise.all([l1Actor(), l2Actor(), merchantActor()])
+		await funded(l1, "private", bob, USDC)
+		await funded(l1, "public", shop, USDC)
+		for (const e of [
+			{ kind: "private", from: bob, recipientL1: l1.account, amount: USDC },
+			{ kind: "public", from: shop, recipientL1: l1.account, amount: USDC },
+		] as const) {
+			loseNextReply()
+			const err = await exit(e).catch((x: unknown) => x)
+			expect(err, e.kind).toBeInstanceOf(ExitUnconfirmedError)
+			const sent = (err as ExitUnconfirmedError).sent ?? []
+			expect(sent, e.kind).toHaveLength(1)
+			const resumed = await locateWithdrawal(l1.account, USDC, sent[0]!.txHash, node, m)
+			expect(resumed, e.kind).toMatchObject({ l2TxHash: sent[0]!.txHash, recipient: l1.account, amount: USDC })
+		}
 	})
 
 	it("[A13] replaying a completed L1 withdraw is refused as already withdrawn and pays nothing", async () => {

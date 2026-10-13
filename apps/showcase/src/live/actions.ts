@@ -383,7 +383,7 @@ async function withdraw(ctx: LiveCtx, d: ValidDraft, wallets: Record<"A_demo" | 
 	}
 	ctx.demo.onNextSend.fn = journal
 	try {
-		const ticket = await exitToL1(exit, ctx.demo.wallet, ctx.demo.node, ctx.m, { wait: L2_PROPOSED })
+		const ticket = await exitToL1(exit, ctx.demo.wallet, ctx.demo.sends, ctx.m, { wait: L2_PROPOSED })
 		ctx.tickets.putExit({ ...entry, ticket: encodeTicket("exit", ticket) })
 	} catch (e) {
 		if (e instanceof ExitRevertedError && e.final) ctx.tickets.dropExit(entry.id)

@@ -4,7 +4,14 @@ import type { AztecNode } from "@aztec-labs/aztec.js/node"
 import { openBrowserStore, PXE_DATA_SCHEMA_VERSION } from "@aztec-labs/pxe/client/lazy"
 import type { Tx } from "@aztec-labs/stdlib/tx"
 import { EmbeddedWallet } from "@aztec-labs/wallets/embedded"
-import { type BridgeManifest, PaymentGate, type PaymentStore, registerBridgeContracts, registerSponsor } from "@inference-money/bridge-core"
+import {
+	type BridgeManifest,
+	PaymentGate,
+	type PaymentStore,
+	registerBridgeContracts,
+	registerSponsor,
+	SendJournal,
+} from "@inference-money/bridge-core"
 import { ACTORS, type Actor, type CastMember, castMember, recordingNode, type SentTx } from "@inference-money/demo"
 import { oneAtATime } from "@/lib/one-at-a-time"
 import type { PagePresto } from "@/presto"
@@ -28,6 +35,8 @@ export interface DemoWallet {
 	/** The node, read directly; the wallet sends through the gate's, so `payRequest` accepts it. */
 	node: AztecNode
 	gate: PaymentGate
+	/** Under the gate's node; the wallet is bound to it too, so `exitToL1` accepts it. */
+	sends: SendJournal
 	cast: Record<Actor, Player>
 	/** `performance.now()` as each tx reached the node: everything before it is the page simulating and proving. */
 	sentAt: number[]
@@ -144,11 +153,12 @@ export async function openDemoWallet(node: AztecNode, m: BridgeManifest, opts: D
 	}
 	const stages = stageFeed()
 	const store = await openPxeStore(node, m)
-	const gate = new PaymentGate(recordingNode(stamping(node, sentAt, stages), sent, journal), opts.payments)
+	const sends = new SendJournal(recordingNode(stamping(node, sentAt, stages), sent, journal))
+	const gate = new PaymentGate(sends.node, opts.payments)
 	const proofs = opts.presto?.proofs
 	const Staged = stagedWallet(stages, proofs?.around ?? ((prove) => prove()))
 	const pxe = { proverEnabled: opts.proves, store, proverOrOptions: proofs?.prover, simulator: proofs?.simulator }
-	const wallet = await gate.bindWallet((gated) => Staged.create(gated, { pxe }))
+	const wallet = await gate.bindWallet((gated) => sends.bindWallet(() => Staged.create(gated, { pxe })))
 	await registerSponsor(wallet, m)
 	await registerBridgeContracts(wallet, m)
 	const cast = {} as Record<Actor, Player>
@@ -158,5 +168,5 @@ export async function openDemoWallet(node: AztecNode, m: BridgeManifest, opts: D
 		const account = await wallet.createSchnorrAccount(member.secret, Fr.ZERO, member.signingKey, actor)
 		cast[actor] = { ...member, address: account.address }
 	}
-	return { wallet, node, gate, cast, sentAt, sent, onNextSend, exclusive: oneAtATime(), stages, presto: opts.presto }
+	return { wallet, node, gate, sends, cast, sentAt, sent, onNextSend, exclusive: oneAtATime(), stages, presto: opts.presto }
 }

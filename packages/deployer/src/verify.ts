@@ -219,13 +219,18 @@ async function verifyDemoCast(node: AztecNode, m: BridgeManifest): Promise<Check
 	return [check("no demo merchant listed", listed.length === 0, listed.join(", ") || "none")]
 }
 
-async function verifyEnvironment(node: AztecNode, m: BridgeManifest): Promise<Check[]> {
+/** The sponsor is the only fee payer that keeps an account out of its private claims, exits and payments. */
+const NO_SPONSOR = "none: private flows would have to name the account as fee payer"
+
+export async function verifyEnvironment(node: AztecNode, m: BridgeManifest): Promise<Check[]> {
 	const standard = await Promise.all(
 		(await standardContractAddresses()).map(async (s) =>
 			check(`standard ${s.name} published`, (await node.getContract(s.address)) !== undefined, s.address.toString()),
 		),
 	)
-	if (!m.l2.sponsoredFpc) return [...standard, check("SponsoredFPC", true, "none on this network")]
+	if (!m.l2.sponsoredFpc) {
+		return [...standard, check("SponsoredFPC", m.network === "local", m.network === "local" ? "none on this network" : NO_SPONSOR)]
+	}
 	const pinned = (await sponsorInstance()).address
 	const fpc = AztecAddress.fromStringUnsafe(m.l2.sponsoredFpc)
 	const [balance, published] = await Promise.all([getFeeJuiceBalance(fpc, node), node.getContract(fpc)])

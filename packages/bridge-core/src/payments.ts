@@ -34,8 +34,17 @@ import { SiloedTag, Tag } from "@aztec-labs/stdlib/logs"
 import { MerkleTreeId } from "@aztec-labs/stdlib/trees"
 import type { OffchainEffect, Tx } from "@aztec-labs/stdlib/tx"
 import { tokenArtifact } from "./artifacts"
-import { L2_DONE, type L2Wait } from "./claim"
-import { type MerchantList, merchantSide, paymentSide, Side, sideCapsule, withFreshList } from "./merchants"
+import { type FeeChoice, L2_DONE, type L2Wait } from "./claim"
+import {
+	MERCHANT_MAX_DELAY,
+	type MerchantList,
+	merchantSide,
+	merchantStatus,
+	paymentSide,
+	Side,
+	sideCapsule,
+	withFreshList,
+} from "./merchants"
 import { TOKEN_REFUSALS } from "./rules"
 import { bucketCapsule, liveBuckets, REQUEST_OPENED_EFFECT, type RequestStamp, requestStampAt, STANDARD_TX_LIFETIME, stamp } from "./stamp"
 
@@ -155,7 +164,19 @@ export function openedCommitment(effects: readonly OffchainEffect[], token: Azte
 	return opened[0]!.data[1]!
 }
 
-type SendFee = { paymentMethod: FeePaymentMethod } | undefined
+/**
+ * Who pays a payment call's fee, a public field of every tx: a payment method, the sponsor's keeping the account out of
+ * it, or "account-public", the sending account from its own Fee Juice, named as the payer of the opening, transfer or
+ * payment. There is no default: the account's payment is a choice to publish it.
+ */
+export type PaymentFee = { paymentMethod: FeePaymentMethod } | Extract<FeeChoice, "account-public">
+
+// An untyped caller can omit the fee, which the wallet would read as the account paying.
+function sendFee(fee: PaymentFee): { paymentMethod: FeePaymentMethod } | undefined {
+	if (fee === "account-public") return undefined
+	if (!fee?.paymentMethod) throw new Error('Name the fee payer: a sponsor\'s payment method, or "account-public".')
+	return fee
+}
 
 export interface ListOptions {
 	/**
@@ -165,13 +186,13 @@ export interface ListOptions {
 	list: MerchantList
 	/** Re-syncs the list; a call refused on a merchant rule is retried once on the fresh one. */
 	resync?: () => Promise<MerchantList>
-	fee?: SendFee
+	fee: PaymentFee
 	/** How far {@link openRequest} and {@link payRequest} wait for their tx; default {@link L2_DONE}. */
 	wait?: L2Wait
 }
 
 export interface RequestIntent {
-	/** The account sending the opening tx: the recipient itself, or a payer opening one for it. */
+	/** The account sending the opening tx: the recipient itself, or a merchant opening one for another account. */
 	from: AztecAddress
 	/** The account the payment reaches. */
 	to: AztecAddress
@@ -179,10 +200,17 @@ export interface RequestIntent {
 	completer: AztecAddress
 }
 
+const OPENER_REFUSAL = "Only a merchant opens a request for another account: ask the merchant to open it."
+
+/** A merchant at the list's block and after any change it has scheduled lands, which is never later than the delay's maximum. */
+const staysMerchant = (list: MerchantList, account: AztecAddress) =>
+	merchantStatus(list, account).merchant && merchantStatus(list, account, list.at + MERCHANT_MAX_DELAY).merchant
+
 /**
  * Opens a request and returns once it reaches `opts.wait` (a checkpoint by default), when a payer's PXE, anchored at
- * the proposed tip, can prove its stamp. Refused before proving unless the recipient or the creator is a merchant; a
- * merchant recipient's request is stamped.
+ * the proposed tip, can prove its stamp. Refused before proving unless the recipient or the creator is a merchant, and
+ * when anyone but a merchant opens one for another account; a merchant recipient's request is stamped. The opener's
+ * status is read from `opts.list`: one kept over an hour can miss a switch-off scheduled since.
  */
 export async function openRequest(
 	wallet: Wallet,
@@ -191,11 +219,15 @@ export async function openRequest(
 	r: RequestIntent,
 	opts: ListOptions,
 ): Promise<{ commitment: Fr; txHash: TxHash }> {
+	const fee = sendFee(opts.fee)
 	const sent = await withFreshList(opts.list, opts.resync, async (list) => {
+		// An opening for another account announces that account once per pair: a user opening for its merchant would
+		// publish whom it pays, and the token proves the merchant recipient's side whoever opens.
+		if (!r.from.equals(r.to) && !staysMerchant(list, r.from)) throw new Error(OPENER_REFUSAL)
 		const side = merchantSide(list, r.to, r.from, true)
 		if (side === Side.Neither) throw new Error(TOKEN_REFUSALS.request)
 		const open = Contract.at(token, tokenArtifact, wallet).methods.initialize_transfer_commitment!(r.to, r.completer)
-		return open.with({ capsules: [sideCapsule(token, side)] }).send({ from: r.from, fee: opts.fee, wait: NO_WAIT })
+		return open.with({ capsules: [sideCapsule(token, side)] }).send({ from: r.from, fee, wait: NO_WAIT })
 	})
 	const commitment = openedCommitment(sent.offchainEffects, token)
 	await waitForTx(node as AztecNode, sent.txHash, opts.wait ?? L2_DONE)
@@ -213,12 +245,13 @@ export async function transferPrivate(
 	t: { from: AztecAddress; to: AztecAddress; amount: bigint },
 	opts: ListOptions,
 ): Promise<TxHash> {
+	const fee = sendFee(opts.fee)
 	const toSelf = t.from.equals(t.to)
 	const sent = await withFreshList(opts.list, opts.resync, async (list) => {
 		const side = toSelf ? Side.Neither : merchantSide(list, t.to, t.from, false)
 		if (side === Side.Neither && !toSelf) throw new Error(TOKEN_REFUSALS.transfer)
 		const call = Contract.at(token, tokenArtifact, wallet).methods.transfer_private_to_private!(t.from, t.to, t.amount, 0)
-		return call.with({ capsules: [sideCapsule(token, side)] }).send({ from: t.from, fee: opts.fee, wait: NO_WAIT })
+		return call.with({ capsules: [sideCapsule(token, side)] }).send({ from: t.from, fee, wait: NO_WAIT })
 	})
 	return sent.txHash
 }
@@ -492,6 +525,7 @@ export async function payRequest(
 	opts: ListOptions,
 ): Promise<TxHash> {
 	if (!gate.isBound(wallet)) throw new Error("payRequest needs a wallet built on its gate's node, by PaymentGate.bindWallet.")
+	const fee = sendFee(opts.fee)
 	const key = paymentKey(token, p.commitment)
 	const owner = await gate.reserve(key)
 	try {
@@ -503,7 +537,7 @@ export async function payRequest(
 			const throughStamp = p.kind === "private" && side === Side.First
 			if (throughStamp && found?.state === "live") await gate.refuseStale(key, owner)
 			const call = paymentCall(wallet, token, p, side, throughStamp ? found?.bucket : undefined)
-			const send = async () => (await call.send({ from: p.from, fee: opts.fee, wait: NO_WAIT })).txHash
+			const send = async () => (await call.send({ from: p.from, fee, wait: NO_WAIT })).txHash
 			// A merchant payer's read can shorten between `found.at` and the proving anchor; a stamp it could have used would not name it.
 			return gate.sending(key, owner, token, p.commitment, send, p.kind === "private" && found !== undefined)
 		})

@@ -7,6 +7,7 @@ import { BindConsentRequiredError, NotFundingAddressError } from "./binding"
 import {
 	type ClaimNode,
 	claim,
+	feeFor,
 	L2_PROPOSED,
 	type NullifierNode,
 	registerSponsor,
@@ -59,8 +60,10 @@ describe("claim", () => {
 		expect(pub.sent[0]).toMatchObject({ calls: ["claim_public"], feePayer: undefined })
 
 		const chosen = fakeWallet()
-		await claim(await ticket("private"), NO_NULLIFIER, chosen.wallet, M, { from: recipient, fee: "wallet-default", allowBind: true })
+		await claim(await ticket("private"), NO_NULLIFIER, chosen.wallet, M, { from: recipient, fee: "account-public", allowBind: true })
 		expect(chosen.sent[0]).toMatchObject({ calls: ["claim_private"], feePayer: undefined })
+		// @ts-expect-error the account's public payment is named for what it publishes, never "wallet-default"
+		expect(() => feeFor("private", M, "wallet-default")).toThrow(/Unknown fee choice/)
 
 		const sponsoredPublic = fakeWallet()
 		await claim(await ticket("public"), NO_NULLIFIER, sponsoredPublic.wallet, M, { from: recipient, fee: "sponsored" })

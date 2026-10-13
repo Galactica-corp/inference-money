@@ -1,7 +1,14 @@
 import { beforeAll, describe, expect, it } from "bun:test"
 import type { AztecAddress } from "@aztec-labs/aztec.js/addresses"
 import { TxHash } from "@aztec-labs/aztec.js/tx"
-import { type ExitTicket, exitToL1, type L1Ctx, MERCHANT_MAX_DELAY, MERCHANT_MIN_DELAY } from "@inference-money/bridge-core"
+import {
+	type ExitTicket,
+	ExitUnconfirmedError,
+	exitToL1,
+	type L1Ctx,
+	MERCHANT_MAX_DELAY,
+	MERCHANT_MIN_DELAY,
+} from "@inference-money/bridge-core"
 import type { SentTx } from "@inference-money/deployer"
 import { funded, l1Actor, l2Actor, l2Balances, payFor, sentDuring, totalSupply, USDC } from "../test/actors"
 import { committedExpiry } from "../test/expiry"
@@ -22,7 +29,7 @@ describe.skipIf(!INTEGRATION)("a merchant's private exit across its switch-off",
 		exitToL1(
 			{ kind: "private", from: shop, recipientL1: l1.account, amount: AMOUNT, asMerchant: true },
 			harness().wallet,
-			harness().node,
+			harness().sends,
 			harness().manifest,
 			{ fee: payFor("private") },
 		)
@@ -47,7 +54,7 @@ describe.skipIf(!INTEGRATION)("a merchant's private exit across its switch-off",
 		expect((await l2Balances(shop)).private).toBe(2n * AMOUNT)
 	})
 
-	it("[A5] proven before the switch-off and sent after it, the exit is refused by the node: nothing burns, no message", async () => {
+	it("[A5] proven before the switch-off and sent after it, the exit is refused by the node and reported unconfirmed: nothing burns, no message", async () => {
 		const supply = await totalSupply()
 		const sends = holdSends()
 		const before = harness().sent.length
@@ -69,7 +76,10 @@ describe.skipIf(!INTEGRATION)("a merchant's private exit across its switch-off",
 
 		await warpTo(changeAt)
 		await sends.release()
-		expect(String(await held)).toContain("Invalid tx: Invalid expiration timestamp")
+		const err = await held
+		expect(err).toBeInstanceOf(ExitUnconfirmedError)
+		expect(String((err as ExitUnconfirmedError).cause)).toContain("Invalid tx: Invalid expiration timestamp")
+		expect((err as ExitUnconfirmedError).sent?.map((s) => String(s.txHash))).toEqual([record.hash])
 		expect(record.refused).toBe(true)
 		expect(await harness().node.getTxEffect(TxHash.fromString(record.hash))).toBeUndefined()
 		expect((await l2Balances(shop)).private).toBe(2n * AMOUNT)

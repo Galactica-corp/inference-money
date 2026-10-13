@@ -18,7 +18,7 @@ import {
 } from "./actors"
 import { harness, INTEGRATION } from "./harness"
 
-const exit = (e: ExitIntent) => exitToL1(e, harness().wallet, harness().node, harness().manifest, { fee: payFor(e.kind) })
+const exit = (e: ExitIntent) => exitToL1(e, harness().wallet, harness().sends, harness().manifest, { fee: payFor(e.kind) })
 const anywhere = () => privateKeyToAccount(generatePrivateKey()).address
 
 describe.skipIf(!INTEGRATION)("exit rules", () => {

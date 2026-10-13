@@ -232,11 +232,11 @@ const STEPS: Record<SmokeStep, (r: Run) => Promise<TourStep>> = {
 			amount: A.refused,
 			asMerchant: true,
 		} as const
-		return refusedEntry(r, "exit-refused", "exitDestination", bridgeRefusalOf, () => exitToL1(e, r.s.wallet, r.s.node, r.s.m))
+		return refusedEntry(r, "exit-refused", "exitDestination", bridgeRefusalOf, () => exitToL1(e, r.s.wallet, r.s.sends, r.s.m))
 	},
 	exit: async (r) => {
 		const e = { kind: "private", from: r.cast.alice.address, recipientL1: r.aDemo.account.address, amount: A.exit } as const
-		r.state.exit = encodeTicket("exit", await exitToL1(e, r.s.wallet, r.s.node, r.s.m))
+		r.state.exit = encodeTicket("exit", await exitToL1(e, r.s.wallet, r.s.sends, r.s.m))
 		return aztecEntry(r, "exit")
 	},
 	withdraw: async (r) => {

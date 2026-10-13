@@ -24,15 +24,18 @@ import type { StageSink } from "./types"
 export type ClaimResult = "claimed" | "consumed-unknown"
 
 /**
- * Who pays a tx's fee. The wallet's default payer usually links the user's account to a private claim or exit; the
- * sponsor does not. Default: sponsored for private ops, the wallet for public ones; an explicit choice overrides.
+ * Who pays a tx's fee, a public field of every tx. "sponsored": the network's sponsor, which keeps the account out of
+ * it. "account-public": the sending account, from its own Fee Juice, named as the tx's fee payer beside what the tx
+ * shows: a claim's amount, an exit's funding address, a return's depositor. Default: sponsored for private ops, the
+ * account for public ones, which publish it anyway; an explicit choice overrides.
  */
-export type FeeChoice = "sponsored" | "wallet-default"
+export type FeeChoice = "sponsored" | "account-public"
 
 export function feeFor(kind: "public" | "private", m: BridgeManifest, choice?: FeeChoice): { paymentMethod: FeePaymentMethod } | undefined {
-	return (choice ?? (kind === "private" ? "sponsored" : "wallet-default")) === "sponsored"
-		? { paymentMethod: sponsoredPayment(m) }
-		: undefined
+	const chosen = choice ?? (kind === "private" ? "sponsored" : "account-public")
+	if (chosen === "sponsored") return { paymentMethod: sponsoredPayment(m) }
+	if (chosen === "account-public") return undefined
+	throw new Error(`Unknown fee choice ${String(choice)}: name "sponsored" or "account-public".`)
 }
 
 /** The network's sponsor could not pay (exhausted, missing or refused); the ticket is untouched and can be retried. */
