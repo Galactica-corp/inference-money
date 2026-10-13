@@ -33,7 +33,7 @@ A claim must present the same depositor; any other address hashes to a message t
 
 ## Showcase
 
-`apps/showcase` is a static page that shows the bridge with the demo cast, never a visitor's own wallet. A build embeds one manifest, that deployment's recorded acceptance run (the tour) and the users' tag; nothing overrides them at runtime.
+`apps/showcase` is a static page that shows the bridge with the demo cast, never a visitor's own wallet. A build embeds one manifest, that deployment's recorded acceptance run (the tour) and the users' tag; nothing overrides them at runtime. The manifest names the Aztec node the page's wallet proves against, on testnet a third-party RPC, which learns what `docs/integration.md` lists under "Your node".
 
 **Recorded run** (`#recorded`, the header's "Watch a recorded run"). Replays the recording scene by scene: each step's verdict, and what an observer of each chain sees, linked to the real txs on testnet. It needs no Aztec SDK and sends nothing.
 

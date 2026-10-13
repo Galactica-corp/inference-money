@@ -874,9 +874,13 @@
 
 - [~] **SP-31** — Accepted: without a capsule, the hint asks the node about the second side unless the first is kept or
   its read already allows the longest expiry, so a user paying a merchant whose cap is shorter than the longest has its
-  own address queried. The query buys the later expiry on chain; bridge-core always attaches a capsule, which queries
-  nothing. hints.nr's header and docs/integration.md ("Your node") say so. (Category: VALID_STATE — when the counterparty
-  is a merchant; Guarantee: EXPLORATORY; Priority: MEDIUM; Scope: after merchant_side_hint; Sources: ADV-40)
+  own address queried. The query buys the later expiry on chain. bridge-core attaches a side capsule to each restricted
+  private token call it sends, plus a bucket capsule when a payment proves a stamp (`payments.ts`), which spares the
+  hint's node queries and nothing else: the PXE's own witness requests still carry a slot derived from the sending
+  account's address, and a merchant exit (`exitToL1`, through `try_prove_merchant`) carries no capsule and proves the
+  merchant's own entry. hints.nr's header states the probe's query, docs/integration.md ("Your node") all of them.
+  (Category: VALID_STATE — when the counterparty is a merchant; Guarantee: EXPLORATORY; Priority: MEDIUM; Scope: after
+  merchant_side_hint; Sources: ADV-40)
   Coverage: PARTIAL by token/src/test/hints.nr:of_two_merchants_the_probe_proves_the_one_with_the_later_cap
   (`assert_eq(side(w, w.m1, w.m2, false), SECOND);`) — it checks the side picked, never which accounts were queried.
 
