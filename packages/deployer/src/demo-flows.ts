@@ -1,9 +1,8 @@
 import type { AztecAddress } from "@aztec-labs/aztec.js/addresses"
 import { createAztecNodeClient } from "@aztec-labs/aztec.js/node"
 import { registerSponsor, sponsoredPayment } from "@galactica-net/inference-money-core"
-import { ensureAccount } from "@galactica-net/inference-money-core/deploy"
+import { ensureAccount, startBlockHeartbeat } from "@galactica-net/inference-money-core/deploy"
 import { type Actor, type CastMember, castMember } from "@galactica-net/inference-money-demo"
-import { startBlockHeartbeat } from "./local-actors"
 import { accountFor, type Session } from "./session"
 import { openBridgeWallet } from "./wallet"
 

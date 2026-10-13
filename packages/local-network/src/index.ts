@@ -9,7 +9,6 @@ export {
 	resolveEndpoints,
 	runIdFor,
 } from "./handle"
-export { withBlockHeartbeat } from "./heartbeat"
 export { ANVIL_ACCOUNTS, netDown, netStatus, netUp } from "./network"
 export { claimServicePorts } from "./ports"
 export { registeredPorts, releasePorts } from "./registry"

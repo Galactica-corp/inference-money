@@ -7,7 +7,7 @@ workspace stays private.
 |---|---|
 | `.` | The protocol SDK, the three Aztec artifacts (`contracts/aztec/*/target`), the L1 ABIs |
 | `./deployments` | `deployments/testnet.json` as `TESTNET_MANIFEST`, and `DEPLOYMENTS` by network |
-| `./deploy` | `deployBridge`, `deployTestBridge`, the admin and merchant calls, the L1 bytecode (`BRIDGE_EVM_ARTIFACTS`), the testnet pins |
+| `./deploy` | `deployBridge`, `deployTestBridge`, the admin and merchant calls, the L1 bytecode (`BRIDGE_EVM_ARTIFACTS`), the testnet pins, the local-network helpers (`installCanonicalPermit2`, `startBlockHeartbeat`) |
 | `./manifest`, `./rules`, `./types`, `./networks` | Leaf modules that load no Aztec SDK |
 
 **Why one package.** `contracts/evm` and `contracts/aztec` are Foundry and Noir projects with no JavaScript entry; what
