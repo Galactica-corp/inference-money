@@ -42,9 +42,11 @@ import { anvilFaucet, fundDemoL1, signerFaucet } from "./demo-l1"
 import { topUpSponsor } from "./fee-juice"
 import { l1Signer } from "./l1"
 import { TESTNET } from "./networks"
+import { probeNetwork } from "./preflight"
 import { type StateDir, withStateDir } from "./run-state"
 import { l1PrivateKeyFrom } from "./secrets"
 import { adminAccount, type ManifestRef, type Session, withSession } from "./session"
+import { assertAllPass } from "./verify"
 
 export { demoFilePath, readDemoFile }
 
@@ -286,6 +288,7 @@ export function demoFund(ref: ManifestRef, log: Log): Promise<void> {
 		}
 		// The cast's keys are public: ETH sent to them on any chain with value is anyone's.
 		if (s.m.l1.chainId !== TESTNET.l1ChainId) throw new Error(`demo fund runs on Sepolia only, not chain ${s.m.l1.chainId}`)
+		assertAllPass(await probeNetwork(TESTNET, rpc), log)
 		const key = l1PrivateKeyFrom()
 		await fundDemoL1(rpc, s.m, signerFaucet(l1Signer(rpc, s.m.l1.chainId, privateKeyToAccount(key)), s.m), log)
 		const { galactica } = await enlist(s, ["galactica"] as const)
@@ -296,7 +299,7 @@ export function demoFund(ref: ManifestRef, log: Log): Promise<void> {
 			from: galactica.address,
 			sponsor: (await sponsorInstance()).address,
 			fee: sponsoredFee(s.m),
-			bridge: { l1RpcUrl: rpc, l1PrivateKey: key, l1ChainId: s.m.l1.chainId },
+			bridge: { pins: TESTNET, l1RpcUrl: rpc, l1PrivateKey: key },
 			log,
 		})
 	})

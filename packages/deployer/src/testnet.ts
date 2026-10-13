@@ -66,9 +66,9 @@ function selfFundedFees(
 		accountDeploy: async (account: AztecAddress) => {
 			const claim = await bridgeFeeJuice({
 				node,
+				pins: TESTNET,
 				l1RpcUrl: l1.l1RpcUrl,
 				l1PrivateKey: l1.l1PrivateKey,
-				l1ChainId: TESTNET.l1ChainId,
 				to: account,
 				log,
 			})

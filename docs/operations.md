@@ -25,13 +25,13 @@ Every operation is one `bun run bridge <command>`. `<manifest>` is a path, or `l
 | `disposable init \| exec <command…> \| destroy <manifest>` | the disposable file | The fallback when the owner is away (see below) |
 | `manifest-path local` | none | This `RUN_ID`'s manifest path |
 | `probe` | none | Testnet pins, L1 wiring, assets and the fee budget, before a deploy |
-| `scan` | the run's own | Whether any of the run's secrets reached the checkout or the caches, and any wallet store left on disk: yes or no, never where |
+| `scan` | the run's own | Whether any of the run's secrets reached the checkout or the caches, and any wallet store left on disk: yes or no, never where. `walletDirs` above 0 is a leftover store holding an account secret: delete `~/.cache/inference-money/wallet-tmp/` once no command runs |
 
 Local commands skip proving unless `BRIDGE_PROVE=1`; testnet always proves.
 
 ## Keyed runs
 
-A keyed command runs in a process whose environment the owner fills, one approval at a time, from 1Password on their own machine (`env-exec request`, approved with `op-remote`). Values are never printed, logged, passed on argv or written to disk: the CLI re-runs itself as a child whose output is redacted line by line whenever its environment holds a secret, and that child moves them out of its environment before the command runs, so no process it spawns (a prover, a build, git) inherits one.
+A keyed command runs in a process whose environment the owner fills, one approval at a time, from 1Password on their own machine (`env-exec request`, approved with `op-remote`). Values are never printed, logged or passed on argv: the CLI re-runs itself as a child whose output is redacted line by line whenever its environment holds a secret, and that child moves them out of its environment before the command runs, so no process it spawns (a prover, a build, git) inherits one. One copy does reach the disk: the child's Aztec wallet store holds the account secret it rebuilds, in an owner-only `~/.cache/inference-money/wallet-tmp/<child pid>`, until the run ends; the parent deletes it once the child's process group is gone, however the child ended.
 
 1. Commit, push, then `bash scripts/keyed-worktree.sh sync`. It moves a detached worktree at `~/.cache/inference-money/keyed` to HEAD, pushes it as `keyed/testnet` (env-exec runs only a commit that is a branch tip), and installs with `--ignore-scripts`, so no install script ever sees a secret.
 2. From that worktree, file the request with one of the templates. Every chain ends in the scan: `bash -c 'trap "s=\$?; bun run secrets:scan || s=1; exit \$s" EXIT; <commands>'`. The first request of each role needs its 1Password item: `op-remote create <host> <id>` makes it from the template (generating the `# op: generate` fields, asking for the imported ones), then `op-remote <host> <id>` approves the run. It refuses an item that exists, so each role has its own: `Keyed-Runs/InferenceMoney-Testnet` (deploy and fund) and `Keyed-Runs/InferenceMoney-Testnet-Admin`.

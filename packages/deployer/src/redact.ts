@@ -1,5 +1,8 @@
 import { spawn } from "node:child_process"
+import { rmSync } from "node:fs"
+import { join } from "node:path"
 import type { Readable, Writable } from "node:stream"
+import { WALLET_TMP_ROOT } from "./owned-tmp"
 
 /** Set in the child's env only; never a secret. */
 export const REDACTED_CHILD = "INFERENCE_MONEY_REDACTED_CHILD"
@@ -40,19 +43,30 @@ function signalGroup(pgid: number, sig: NodeJS.Signals | 0): boolean {
 	}
 }
 
-/** SIGTERM, then SIGKILL for whatever outlives the grace period: done only when no member of the group is left. */
+async function groupGone(pgid: number): Promise<boolean> {
+	for (const end = Date.now() + GRACE_MS; Date.now() < end; await sleep(100)) if (!signalGroup(pgid, 0)) return true
+	return false
+}
+
+/**
+ * SIGTERM, then SIGKILL for whatever outlives the grace period. Done once the group is empty, or a grace period after
+ * the SIGKILL: a member still dying then (blocked in uninterruptible I/O) runs no more user code.
+ */
 async function reapGroup(pgid: number): Promise<void> {
 	signalGroup(pgid, "SIGTERM")
-	for (const end = Date.now() + GRACE_MS; Date.now() < end; await sleep(100)) if (!signalGroup(pgid, 0)) return
+	if (await groupGone(pgid)) return
 	signalGroup(pgid, "SIGKILL")
+	await groupGone(pgid)
 }
 
 /**
  * Runs `argv` under this runtime with stdout and stderr redacted line by line. Dependency loggers write to the fds
  * directly, so only a pipe catches everything; the child takes its secrets from `env`, never from argv. The child
  * leads its own process group, which is reaped on cancellation and after the child exits: a surviving descendant (a
- * prover, a build) would keep running, and could hold the pipes open. The child never loads a `.env` file: it would
- * read the one its parent was started without.
+ * prover, a build) would keep running, and could hold the pipes open. Once the group is reaped, the child's wallet dir
+ * under `walletRoot` is removed: its store holds the account secret the child rebuilt, and a child killed by a signal
+ * never reaches its own cleanup. The child never loads a `.env` file: it would read the one its parent was started
+ * without.
  */
 export async function runRedacted(
 	argv: string[],
@@ -60,6 +74,7 @@ export async function runRedacted(
 	out: Writable = process.stdout,
 	err: Writable = process.stderr,
 	env: NodeJS.ProcessEnv = process.env,
+	walletRoot = WALLET_TMP_ROOT,
 ): Promise<number> {
 	const childEnv = { ...env, [REDACTED_CHILD]: "1" }
 	const child = spawn(process.execPath, ["--no-env-file", ...argv], { env: childEnv, stdio: ["ignore", "pipe", "pipe"], detached: true })
@@ -68,15 +83,19 @@ export async function runRedacted(
 		reaping ??= child.pid === undefined ? Promise.resolve() : reapGroup(child.pid)
 		return reaping
 	}
+	const reapAndRemoveStore = async () => {
+		await reap()
+		if (child.pid !== undefined) rmSync(join(walletRoot, String(child.pid)), { recursive: true, force: true })
+	}
 	process.on("SIGINT", reap).on("SIGTERM", reap)
 	try {
 		const piped = Promise.all([pipeRedacted(child.stdout, out, needles), pipeRedacted(child.stderr, err, needles)])
 		const code = await new Promise<number>((done, fail) => child.once("exit", (c) => done(c ?? 1)).once("error", fail))
-		await reap()
+		await reapAndRemoveStore()
 		await Promise.race([piped, sleep(GRACE_MS)])
 		return code
 	} catch (e) {
-		await reap()
+		await reapAndRemoveStore()
 		throw e
 	} finally {
 		process.off("SIGINT", reap).off("SIGTERM", reap)

@@ -15,13 +15,17 @@ describe.skipIf(!INTEGRATION)("sponsor top-up", () => {
 		await l1.test.setBalance({ address: privateKeyToAccount(key).address, value: 10n ** 20n })
 		const sponsor = AztecAddress.fromStringUnsafe(m.l2.sponsoredFpc as string)
 		const before = await getFeeJuiceBalance(sponsor, node)
+		// The run's own node stands in for a live network's pins.
+		const { feeJuicePortalAddress: portal, feeAssetHandlerAddress: handler } = (await node.getNodeInfo()).l1ContractAddresses
+		if (!handler) throw new Error("the local network deployed no fee asset handler")
+		const pins = { l1ChainId: L1_CHAIN_ID, feeJuicePortal: portal.toString(), feeAssetHandler: handler.toString() }
 		const after = await topUpSponsor({
 			node,
 			wallet,
 			from: await l2Actor(),
 			sponsor,
 			fee: { paymentMethod: sponsoredPayment(m) },
-			bridge: { l1RpcUrl: l1.rpcUrl, l1PrivateKey: key, l1ChainId: L1_CHAIN_ID },
+			bridge: { pins, l1RpcUrl: l1.rpcUrl, l1PrivateKey: key },
 			log: () => {},
 		})
 		expect(after).toBeGreaterThan(before)
