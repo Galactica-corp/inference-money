@@ -32,4 +32,4 @@ export function withBridgeWallet<T>(nodeUrl: string, opts: BridgeWalletOptions, 
 	})
 }
 
-export { recordingNode, type SentTx } from "@inference-money/demo"
+export { recordingNode, type SentTx } from "@galactica-net/inference-money-demo"

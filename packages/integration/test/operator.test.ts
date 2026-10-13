@@ -16,8 +16,8 @@ import {
 	signingKeyFor,
 	tokenArtifact,
 	tokenBridgeArtifact,
-} from "@inference-money/bridge-core"
-import { parseTour, TOUR_STEPS, tourHeader } from "@inference-money/demo"
+} from "@galactica-net/inference-money-core"
+import { parseTour, TOUR_STEPS, tourHeader } from "@galactica-net/inference-money-demo"
 import {
 	acceptAdmin,
 	accountFor,
@@ -31,8 +31,8 @@ import {
 	readDemoFile,
 	tokenOf,
 	verifyDeployment,
-} from "@inference-money/deployer"
-import { REPO_ROOT } from "@inference-money/local-network"
+} from "@galactica-net/inference-money-deployer"
+import { REPO_ROOT } from "@galactica-net/inference-money-local-network"
 import { encodeAbiParameters, type Hex, keccak256, pad } from "viem"
 import { l2Actor } from "./actors"
 import { harness, INTEGRATION } from "./harness"

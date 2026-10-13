@@ -8,9 +8,15 @@
  * GET /health → 200 once the heartbeat runs.
  */
 import { createAztecNodeClient } from "@aztec-labs/aztec.js/node"
-import { registerBridgeContracts, registerSponsor } from "@inference-money/bridge-core"
-import { enterOwnedTmpDir, localManifestPath, openBridgeWallet, readManifest, startBlockHeartbeat } from "@inference-money/deployer"
-import { resolveEndpoints, runIdFor } from "@inference-money/local-network"
+import { registerBridgeContracts, registerSponsor } from "@galactica-net/inference-money-core"
+import {
+	enterOwnedTmpDir,
+	localManifestPath,
+	openBridgeWallet,
+	readManifest,
+	startBlockHeartbeat,
+} from "@galactica-net/inference-money-deployer"
+import { resolveEndpoints, runIdFor } from "@galactica-net/inference-money-local-network"
 
 async function main(): Promise<void> {
 	const runId = runIdFor()

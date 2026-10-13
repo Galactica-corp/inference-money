@@ -1,4 +1,4 @@
-import { MERCHANT_MAX_DELAY } from "@inference-money/bridge-core"
+import { MERCHANT_MAX_DELAY } from "@galactica-net/inference-money-core"
 
 /** A sent tx's committed expiry and the timestamp of the block it anchored at. */
 export type Sent = { expiresAt: bigint; anchorTs: bigint }

@@ -36,3 +36,6 @@ contracts/evm/x-ray/
 playwright-report/
 test-results/
 .playwright-mcp/
+
+# The publishable build of packages/bridge-core (docs/publishing.md).
+packages/bridge-core/publish/

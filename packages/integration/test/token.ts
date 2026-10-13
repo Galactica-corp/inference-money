@@ -1,7 +1,7 @@
 import { AztecAddress } from "@aztec-labs/aztec.js/addresses"
 import { Contract } from "@aztec-labs/aztec.js/contracts"
 import type { TxReceipt } from "@aztec-labs/aztec.js/tx"
-import { type MerchantList, sponsoredPayment, syncMerchantList, tokenArtifact } from "@inference-money/bridge-core"
+import { type MerchantList, sponsoredPayment, syncMerchantList, tokenArtifact } from "@galactica-net/inference-money-core"
 import { harness } from "./harness"
 
 export const tokenAddress = () => AztecAddress.fromStringUnsafe(harness().manifest.l2.token.address)

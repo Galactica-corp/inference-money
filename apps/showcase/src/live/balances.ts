@@ -1,5 +1,5 @@
-import { l2UsdcBalance } from "@inference-money/bridge-core"
-import { DEMO_SEED, demoL1, resetAmount, usdcOf } from "@inference-money/demo"
+import { l2UsdcBalance } from "@galactica-net/inference-money-core"
+import { DEMO_SEED, demoL1, resetAmount, usdcOf } from "@galactica-net/inference-money-demo"
 import type { Address } from "viem"
 import type { Holder } from "@/tour/player"
 import type { LiveCtx } from "./actions"

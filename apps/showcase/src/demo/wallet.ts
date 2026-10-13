@@ -4,8 +4,14 @@ import type { AztecNode } from "@aztec-labs/aztec.js/node"
 import { openBrowserStore, PXE_DATA_SCHEMA_VERSION } from "@aztec-labs/pxe/client/lazy"
 import type { Tx } from "@aztec-labs/stdlib/tx"
 import { EmbeddedWallet } from "@aztec-labs/wallets/embedded"
-import { type BridgeManifest, PaymentGate, type PaymentStore, registerBridgeContracts, registerSponsor } from "@inference-money/bridge-core"
-import { ACTORS, type Actor, type CastMember, castMember, recordingNode, type SentTx } from "@inference-money/demo"
+import {
+	type BridgeManifest,
+	PaymentGate,
+	type PaymentStore,
+	registerBridgeContracts,
+	registerSponsor,
+} from "@galactica-net/inference-money-core"
+import { ACTORS, type Actor, type CastMember, castMember, recordingNode, type SentTx } from "@galactica-net/inference-money-demo"
 import { oneAtATime } from "@/lib/one-at-a-time"
 import type { PagePresto } from "@/presto"
 

@@ -3,9 +3,9 @@
  * the testnet node and the L1 RPC, and every CSP violation the page reports, which fails the test.
  */
 import { readFileSync } from "node:fs"
-import { type BridgeManifest, parseManifest } from "@inference-money/bridge-core/manifest"
-import { parseTour, type Tour } from "@inference-money/demo/tour"
-import { TESTNET } from "@inference-money/deployer/networks"
+import { type BridgeManifest, parseManifest } from "@galactica-net/inference-money-core/manifest"
+import { parseTour, type Tour } from "@galactica-net/inference-money-demo/tour"
+import { TESTNET } from "@galactica-net/inference-money-deployer/networks"
 import { test as base, expect } from "@playwright/test"
 import { type RpcLog, recordRpc } from "../fixtures/rpc"
 

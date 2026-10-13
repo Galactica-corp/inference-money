@@ -1,5 +1,5 @@
 import { createAztecNodeClient } from "@aztec-labs/aztec.js/node"
-import { assertNetworkIdentity } from "@inference-money/bridge-core"
+import { assertNetworkIdentity } from "@galactica-net/inference-money-core"
 import { createPublicClient, http } from "viem"
 import { L1_CHAIN, L1_RPC_URL, MANIFEST, PROVES, USERS_TAG } from "@/config/network"
 import { browserPaymentStore, localKeyValue } from "./store"

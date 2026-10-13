@@ -3,7 +3,7 @@
   "configVersion": 1,
   "workspaces": {
     "": {
-      "name": "@inference-money/aztec-toolchain",
+      "name": "@galactica-net/inference-money-aztec-toolchain",
       "dependencies": {
         "@aztec-labs/aztec": "6.0.0-rc.1",
       },

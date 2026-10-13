@@ -1,10 +1,8 @@
-import { execFileSync } from "node:child_process"
 import type { Fr } from "@aztec-labs/aztec.js/fields"
 import type { AztecNode } from "@aztec-labs/aztec.js/node"
 import type { EmbeddedWallet } from "@aztec-labs/wallets/embedded"
-import { type BridgeManifest, PROTOCOL_VERSION, parseManifest } from "@inference-money/bridge-core"
-import { REPO_ROOT } from "@inference-money/local-network"
 import { type Address, getAddress, type Hex } from "viem"
+import { type BridgeManifest, PROTOCOL_VERSION, parseManifest } from "../manifest"
 import { deployPortal, deployRouter, initializePortal } from "./deploy-l1"
 import { deployBridgeL2, ensureAccount, type L2Fees } from "./deploy-l2"
 import type { BridgeEvmArtifacts } from "./evm"
@@ -29,11 +27,10 @@ export interface DeployContext {
 	deployerSecret: Fr
 	fees: L2Fees
 	sponsoredFpc: Hex | undefined
+	/** The commit whose code this deploys (40 hex): its CLI can still finish the deployment's tickets later. */
+	sourceCommit: string
 	log: (m: string) => void
 }
-
-/** The commit this checkout runs: a keyed run's is the pushed commit it was approved at. */
-export const sourceCommit = (): string => execFileSync("git", ["rev-parse", "HEAD"], { cwd: REPO_ROOT, encoding: "utf8" }).trim()
 
 /**
  * The one deploy order both networks run: the deployer account and the standard contracts the bridge calls in public
@@ -58,7 +55,7 @@ export async function deployBridge(c: DeployContext): Promise<BridgeManifest> {
 	return parseManifest({
 		protocolVersion: PROTOCOL_VERSION,
 		network: c.network,
-		sourceCommit: sourceCommit(),
+		sourceCommit: c.sourceCommit,
 		l1: {
 			chainId: info.l1ChainId,
 			usdc: c.usdc,

@@ -1,8 +1,6 @@
 import { AztecAddress } from "@aztec-labs/aztec.js/addresses"
 import { createAztecNodeClient } from "@aztec-labs/aztec.js/node"
-import { signingKeyFor, sponsoredPayment } from "@inference-money/bridge-core"
-import { aztecAddressOf } from "@inference-money/demo"
-import { REPO_ROOT, runIdFor } from "@inference-money/local-network"
+import { signingKeyFor, sponsoredPayment } from "@galactica-net/inference-money-core"
 import {
 	acceptAdmin,
 	addMerchants,
@@ -13,7 +11,9 @@ import {
 	scheduleMerchant,
 	setMerchantDelay,
 	setPaused,
-} from "./admin"
+} from "@galactica-net/inference-money-core/deploy"
+import { aztecAddressOf } from "@galactica-net/inference-money-demo"
+import { REPO_ROOT, runIdFor } from "@galactica-net/inference-money-local-network"
 import { type Command, type Invocation, parseDelay } from "./cli-args"
 import { demoFund, demoReset, demoSetup, demoStatus } from "./demo"
 import { DISPOSABLE_FILE, disposableDestroy, disposableExec, disposableInit, INTERIM_ADMIN } from "./disposable"

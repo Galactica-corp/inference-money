@@ -4,8 +4,8 @@ import { SetPublicAuthwitContractInteraction } from "@aztec-labs/aztec.js/author
 import { Fr } from "@aztec-labs/aztec.js/fields"
 import { TxStatus } from "@aztec-labs/aztec.js/tx"
 import type { EmbeddedWallet } from "@aztec-labs/wallets/embedded"
-import { type BridgeManifest, signingKeyFor, sponsoredPayment } from "@inference-money/bridge-core"
-import { withBlockHeartbeat } from "@inference-money/local-network"
+import { type BridgeManifest, signingKeyFor, sponsoredPayment } from "@galactica-net/inference-money-core"
+import { withBlockHeartbeat } from "@galactica-net/inference-money-local-network"
 
 /** A fresh Schnorr account in `wallet`, deployed through the sponsor; `secret` alone rebuilds it in any wallet. */
 export async function newSponsoredAccount(wallet: EmbeddedWallet, m: BridgeManifest, secret = Fr.random()): Promise<AztecAddress> {

@@ -3,22 +3,21 @@ import { join } from "node:path"
 import { AztecAddress } from "@aztec-labs/aztec.js/addresses"
 import { FeeJuicePaymentMethodWithClaim } from "@aztec-labs/aztec.js/fee"
 import type { createAztecNodeClient } from "@aztec-labs/aztec.js/node"
-import { type BridgeManifest, L2_DONE, sponsoredFpcArtifact, sponsorInstance } from "@inference-money/bridge-core"
-import { REPO_ROOT } from "@inference-money/local-network"
+import { type BridgeManifest, L2_DONE, sponsoredFpcArtifact, sponsorInstance } from "@galactica-net/inference-money-core"
+import type { L2Fees } from "@galactica-net/inference-money-core/deploy"
+import { deployBridge, type L1Signer, l1Signer, proposeAdmin, tokenOf } from "@galactica-net/inference-money-core/deploy"
+import { REPO_ROOT } from "@galactica-net/inference-money-local-network"
 import type { Hex } from "viem"
 import { privateKeyToAccount } from "viem/accounts"
-import { proposeAdmin, tokenOf } from "./admin"
-import { deployBridge } from "./deploy"
-import type { L2Fees } from "./deploy-l2"
 import { type BridgeEvmArtifacts, buildBridgeContracts, forgeRunDir } from "./evm"
 import { bridgeFeeJuice } from "./fee-juice"
-import { type L1Signer, l1Signer } from "./l1"
 import type { DeployOptions } from "./local"
 import { writeManifest } from "./manifest"
 import { TESTNET } from "./networks"
 import { probeNetwork } from "./preflight"
 import { aztecSecretFrom, KEYED, keyedEnv, l1PrivateKeyFrom, scrubbedEnv } from "./secrets"
 import { accountFor } from "./session"
+import { sourceCommit } from "./source-commit"
 import { assertAllPass, verifyDeployment } from "./verify"
 import { withBridgeWallet } from "./wallet"
 
@@ -105,6 +104,7 @@ export async function deployTestnet(opts: DeployOptions): Promise<BridgeManifest
 			permit2: TESTNET.permit2,
 			registry: TESTNET.registry,
 			deployerSecret,
+			sourceCommit: sourceCommit(),
 			fees: selfFundedFees(keys, node, log),
 			sponsoredFpc: TESTNET.sponsoredFpc,
 			log,

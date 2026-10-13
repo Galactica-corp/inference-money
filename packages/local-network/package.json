@@ -1,8 +1,19 @@
 {
-	"name": "@inference-money/local-network",
+	"name": "@galactica-net/inference-money-local-network",
 	"version": "0.0.0",
 	"private": true,
 	"description": "Per-run anvil + Aztec local network: registry-claimed ports, detached process groups torn down by verified identity, real-disk state.",
+	"homepage": "https://privateinference.gg/",
+	"bugs": {
+		"url": "https://github.com/Galactica-corp/inference-money/issues"
+	},
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/Galactica-corp/inference-money.git",
+		"directory": "packages/local-network"
+	},
+	"license": "Apache-2.0",
+	"author": "Galactica Network",
 	"type": "module",
 	"exports": {
 		".": "./src/index.ts",

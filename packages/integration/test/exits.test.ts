@@ -16,7 +16,7 @@ import {
 	tokenBridgeArtifact,
 	waitWithdrawable,
 	withdrawOnL1,
-} from "@inference-money/bridge-core"
+} from "@galactica-net/inference-money-core"
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts"
 import { funded, l1Actor, l2Actor, l2Balances, merchantActor, payFor, sentDuring, USDC, usdcOf, withdraw } from "./actors"
 import { harness, INTEGRATION } from "./harness"

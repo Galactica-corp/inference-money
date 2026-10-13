@@ -1,7 +1,7 @@
 import { AztecAddress } from "@aztec-labs/aztec.js/addresses"
 import type { Fr } from "@aztec-labs/aztec.js/fields"
 import { computePublicDataTreeLeafSlot } from "@aztec-labs/stdlib/hash"
-import { type BridgeManifest, type ClaimTicket, tokenArtifact } from "@inference-money/bridge-core"
+import { type BridgeManifest, type ClaimTicket, tokenArtifact } from "@galactica-net/inference-money-core"
 import type { WorldItem } from "./tour"
 
 /** The parts of a mined tx effect anyone can read from a node. */

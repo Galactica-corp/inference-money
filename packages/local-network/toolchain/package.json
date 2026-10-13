@@ -1,5 +1,5 @@
 {
-	"name": "@inference-money/aztec-node-toolchain",
+	"name": "@galactica-net/inference-money-aztec-node-toolchain",
 	"private": true,
 	"description": "The pinned Aztec node (toolchain.json aztecNode) for CI's local network, installed with --frozen-lockfile into the ~/.aztec/versions layout the local network resolves.",
 	"dependencies": {

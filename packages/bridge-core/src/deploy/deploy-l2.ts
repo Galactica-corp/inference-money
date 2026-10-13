@@ -6,15 +6,11 @@ import { Fr } from "@aztec-labs/aztec.js/fields"
 import { ContractInitializationStatus } from "@aztec-labs/aztec.js/wallet"
 import type { ContractArtifact } from "@aztec-labs/stdlib/abi"
 import type { EmbeddedWallet } from "@aztec-labs/wallets/embedded"
-import {
-	instanceRecord,
-	type L2InstanceRecord,
-	signingKeyFor,
-	tokenArtifact,
-	tokenBridgeArtifact,
-	tokenMinterProxyArtifact,
-} from "@inference-money/bridge-core"
 import type { Address } from "viem"
+import { tokenArtifact, tokenBridgeArtifact, tokenMinterProxyArtifact } from "../artifacts"
+import { instanceRecord } from "../instances"
+import type { L2InstanceRecord } from "../manifest"
+import { signingKeyFor } from "../signing-key"
 
 /** How a network pays: the account deploy (the account has no balance yet), then every later tx (undefined: its own Fee Juice). */
 export interface L2Fees {

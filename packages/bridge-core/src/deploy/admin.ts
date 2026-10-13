@@ -5,18 +5,19 @@ import type { Fr } from "@aztec-labs/aztec.js/fields"
 import type { AztecNode } from "@aztec-labs/aztec.js/node"
 import type { Wallet } from "@aztec-labs/aztec.js/wallet"
 import type { EmbeddedWallet } from "@aztec-labs/wallets/embedded"
-import {
-	type BridgeManifest,
-	L2_DONE,
-	merchantStatus,
-	sponsoredPayment,
-	syncMerchantList,
-	tokenArtifact,
-	tokenBridgeArtifact,
-} from "@inference-money/bridge-core"
+import { tokenArtifact, tokenBridgeArtifact } from "../artifacts"
+import { L2_DONE, sponsoredPayment } from "../claim"
+import type { BridgeManifest } from "../manifest"
+import { type MerchantNode, merchantStatus, syncMerchantList } from "../merchants"
 import { ensureAccount } from "./deploy-l2"
-import type { Session } from "./session"
 import { entryDelay, readRoles } from "./token-reads"
+
+/** What an admin call needs: a wallet holding the admin account, the deployment it acts on, and a node to read. */
+export interface AdminSession {
+	wallet: Wallet
+	m: BridgeManifest
+	node: MerchantNode
+}
 
 /** The account entrypoint takes five calls and the sponsor's payment is one of them. */
 export const CALLS_PER_TX = 4
@@ -84,11 +85,11 @@ export async function acceptAdmin(
 	return admin
 }
 
-export async function setPaused(s: Session, admin: AztecAddress, paused: boolean): Promise<void> {
+export async function setPaused(s: AdminSession, admin: AztecAddress, paused: boolean): Promise<void> {
 	await bridgeOf(s.wallet, s.m).methods.set_paused!(paused).send({ from: admin, fee: sponsored(s.m), wait: L2_DONE })
 }
 
-export async function addMerchants(s: Session, admin: AztecAddress, accounts: AztecAddress[]): Promise<number> {
+export async function addMerchants(s: AdminSession, admin: AztecAddress, accounts: AztecAddress[]): Promise<number> {
 	const token = tokenOf(s.wallet, s.m)
 	return sendChunked(
 		s.wallet,
@@ -99,7 +100,7 @@ export async function addMerchants(s: Session, admin: AztecAddress, accounts: Az
 }
 
 /** Schedules a switch-off (`off`) or a switch back on, effective after the merchant's delay. */
-export async function scheduleMerchant(s: Session, admin: AztecAddress, account: AztecAddress, off: boolean): Promise<void> {
+export async function scheduleMerchant(s: AdminSession, admin: AztecAddress, account: AztecAddress, off: boolean): Promise<void> {
 	await tokenOf(s.wallet, s.m).methods.schedule_merchant_off!(account, off).send({ from: admin, fee: sponsored(s.m), wait: L2_DONE })
 }
 
@@ -109,7 +110,7 @@ export async function scheduleMerchant(s: Session, admin: AztecAddress, account:
  * txs). An increase applies at once; a decrease waits old − new. `synced` counts the merchants the node listed: one it
  * left out, by lag or otherwise, keeps its old delay until a rerun reaches it.
  */
-export async function setMerchantDelay(s: Session, admin: AztecAddress, delay: bigint): Promise<{ txs: number; synced: number }> {
+export async function setMerchantDelay(s: AdminSession, admin: AztecAddress, delay: bigint): Promise<{ txs: number; synced: number }> {
 	const token = tokenOf(s.wallet, s.m)
 	const list = await syncMerchantList(s.node, at(s.m.l2.token.address))
 	const syncs = [...list.entries.keys()].map((account) => token.methods.sync_merchant_delay!(at(account)))
@@ -118,17 +119,17 @@ export async function setMerchantDelay(s: Session, admin: AztecAddress, delay: b
 }
 
 /** Schedules the cancel-only guardian (zero removes it), effective after the guardian slot's delay. */
-export async function scheduleGuardian(s: Session, admin: AztecAddress, guardian: AztecAddress): Promise<void> {
+export async function scheduleGuardian(s: AdminSession, admin: AztecAddress, guardian: AztecAddress): Promise<void> {
 	await tokenOf(s.wallet, s.m).methods.schedule_merchant_guardian!(guardian).send({ from: admin, fee: sponsored(s.m), wait: L2_DONE })
 }
 
 /** Cancels a merchant's pending change; the token refuses one with nothing pending. */
-export async function cancelMerchantChange(s: Session, admin: AztecAddress, account: AztecAddress): Promise<void> {
+export async function cancelMerchantChange(s: AdminSession, admin: AztecAddress, account: AztecAddress): Promise<void> {
 	await tokenOf(s.wallet, s.m).methods.cancel_merchant_change!(account).send({ from: admin, fee: sponsored(s.m), wait: L2_DONE })
 }
 
 /** One line per added merchant, from `MerchantAdded` events and each switch-off entry at the latest block. */
-export async function describeMerchants(s: Pick<Session, "node" | "m">): Promise<string[]> {
+export async function describeMerchants(s: Pick<AdminSession, "node" | "m">): Promise<string[]> {
 	const token = at(s.m.l2.token.address)
 	const list = await syncMerchantList(s.node, token)
 	return Promise.all(

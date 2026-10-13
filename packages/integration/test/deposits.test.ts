@@ -18,7 +18,7 @@ import {
 	submitDeposit,
 	TOKEN_PORTAL_ABI,
 	waitClaimFinalized,
-} from "@inference-money/bridge-core"
+} from "@galactica-net/inference-money-core"
 import {
 	erc20Abi,
 	type Hex,

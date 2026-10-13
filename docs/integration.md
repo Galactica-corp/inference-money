@@ -1,6 +1,6 @@
 # Integrating the compliant USDC
 
-For wallets and x402 facilitators that hold, move or pay with the bridged USDC on Aztec. The token is aztec-standards' `Token` (v6.0.0-rc.1) plus a merchant list, so upstream calls keep working; what changes is who may do what. Every rule below is enforced on chain; `@inference-money/bridge-core` checks the same rules before anything is signed or proven, so a refused action costs no fee.
+For wallets and x402 facilitators that hold, move or pay with the bridged USDC on Aztec. The token is aztec-standards' `Token` (v6.0.0-rc.1) plus a merchant list, so upstream calls keep working; what changes is who may do what. Every rule below is enforced on chain; `@galactica-net/inference-money-core` checks the same rules before anything is signed or proven, so a refused action costs no fee.
 
 ## Who may do what
 
@@ -54,6 +54,33 @@ The merchant admin's own refusals (`Only the merchant admin`, `Merchant already 
 bridge-core raises typed errors before any signature or proof: `PublicDepositToUserError` (`assertPublicRecipient`), `NotFundingAddressError` (`claimBinding`, and inside `claim`), `BindConsentRequiredError` (inside `claim` and `waitClaimable`) and `ExitDestinationError` (inside `exitToL1`). `KeyHolderRequiredError` comes after the wallet signs a private deposit and before anything is sent: the signature is not the account's own key's in the form the router accepts (65 bytes, `v` 27 or 28, low `s`), which is what a contract wallet produces. A Permit2 approval made earlier stays.
 
 On Ethereum the router and the portal revert with typed errors, all in bridge-core's ABIs: `ZeroAmount`, `AmountExceedsL2Max`, `RollupNotCanonical` (an Aztec rollup upgrade stopped deposits; withdrawals still pay), `SignerIsNotTheCaller` (router: a private deposit signed by anyone but its caller), `InvalidDepositor`, `AuthorizationExpired`, `AuthorizationUsed`, `SignerIsNotTheDepositor`, and OpenZeppelin's `ECDSAInvalidSignature`, `ECDSAInvalidSignatureLength`, `ECDSAInvalidSignatureS`. Permit2 checks a 7702 account through its delegate's ERC-1271, and the router's private leg also needs the account key's raw signature, so only a delegate that accepts that raw signature passes both. A delegate with no ERC-1271 gets Permit2's `InvalidContractSignature` (`PERMIT2_SIGNATURE_ERRORS`) or an undecodable revert of its own, on both legs; one that wants a wrapped signature (ERC-7739) fails the private leg either way. Their way in is the portal's signed path below.
+
+## Installing from npm
+
+`@galactica-net/inference-money-core` is bridge-core with the Aztec artifacts, the L1 ABIs and the testnet deployment
+in it (`docs/publishing.md`). Pin an exact version and the same `@aztec-labs/*` release it depends on.
+`TESTNET_MANIFEST` (`…/deployments`) is the manifest every flow below takes; `registerBridgeContracts(wallet, manifest)`
+registers proxy, token and bridge, each checked to derive its recorded address.
+
+## Deploying your own test instance
+
+The shared testnet deployment's merchant list belongs to its admin, whose key is never shared. An integration that needs
+merchants of its own (an x402 facilitator's `payTo`, say) deploys an instance: `deployTestBridge` (`…/deploy`) deploys
+the portal and the router on L1 and proxy, token and bridge on Aztec from the package's own artifacts and bytecode, paid
+through the canonical sponsor, and returns its manifest.
+
+- **The deployer keeps both roles.** The account `deployerSecret` rebuilds is bridge owner and merchant admin: pass the
+  returned `admin` to `addMerchants`, `scheduleMerchant`, `setMerchantDelay` and `setPaused` (each takes
+  `{ wallet, m, node }`).
+- **`usdc: "mock"`** deploys a 6-decimal token anyone can mint (`BRIDGE_EVM_ARTIFACTS.mockUsdc.abi`, `mint(to, amount)`),
+  so the L1 key needs Sepolia ETH only. An address binds the bridge to that token instead (`TESTNET.usdc`: Circle's).
+- **Tokens still come over the bridge.** The token's only minter is the proxy, so an account gets a balance by a deposit
+  and its claim (`prepareDeposit`, `submitDeposit`, `confirmDeposit`, `waitClaimable`, `claim`), about the time of an L1 to L2 message.
+- **Reuse the manifest.** The deploy proves and sends about ten transactions; store the JSON and read it back with
+  `parseManifest`. Its `sourceCommit` is the shipped testnet deployment's, whose contract code these artifacts are.
+- **Merchants bind first.** The rules are the real ones: list an account only after its own first private claim, or
+  accept that whoever deposits to it first binds it (`docs/operations.md`, Merchants).
+- **Tests only.** One key holds every role, and nothing is checked against a fresh build.
 
 ## Using bridge-core
 

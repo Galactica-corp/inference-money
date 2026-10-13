@@ -16,14 +16,21 @@ import {
 	tokenArtifact,
 	tokenBridgeArtifact,
 	tokenMinterProxyArtifact,
-} from "@inference-money/bridge-core"
-import { aztecAddressOf, castMember, MERCHANTS } from "@inference-money/demo"
+} from "@galactica-net/inference-money-core"
+import {
+	type DelayState,
+	entryDelay,
+	guardianDelay,
+	layoutSlot,
+	publicReader,
+	readGuardian,
+	readRoles,
+	standardContractAddresses,
+} from "@galactica-net/inference-money-core/deploy"
+import { aztecAddressOf, castMember, MERCHANTS } from "@galactica-net/inference-money-demo"
 import { type Abi, type Address, erc20Abi, type Hex, hashTypedData, type PublicClient, pad } from "viem"
-
 import { type BridgeEvmArtifacts, maskImmutables } from "./evm"
 import type { Check } from "./preflight"
-import { standardContractAddresses } from "./standard"
-import { type DelayState, entryDelay, guardianDelay, layoutSlot, publicReader, readGuardian, readRoles } from "./token-reads"
 
 const check = (name: string, ok: boolean, detail: string): Check => ({ name, ok, detail })
 const warn = (name: string, detail: string): Check => ({ name, ok: true, warn: true, detail })

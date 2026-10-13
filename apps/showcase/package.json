@@ -1,8 +1,19 @@
 {
-	"name": "@inference-money/showcase",
+	"name": "@galactica-net/inference-money-showcase",
 	"version": "0.0.0",
 	"private": true,
 	"description": "The showcase: the demo cast moves USDC between Ethereum and Aztec with embedded wallets, and the rules refuse what they should.",
+	"homepage": "https://privateinference.gg/",
+	"bugs": {
+		"url": "https://github.com/Galactica-corp/inference-money/issues"
+	},
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/Galactica-corp/inference-money.git",
+		"directory": "apps/showcase"
+	},
+	"license": "Apache-2.0",
+	"author": "Galactica Network",
 	"type": "module",
 	"scripts": {
 		"build": "vite build",
@@ -32,8 +43,8 @@
 		"@fontsource-variable/figtree": "5.3.0",
 		"@fontsource/ibm-plex-mono": "5.3.0",
 		"@fontsource/ibm-plex-sans": "5.3.0",
-		"@inference-money/bridge-core": "workspace:*",
-		"@inference-money/demo": "workspace:*",
+		"@galactica-net/inference-money-core": "workspace:*",
+		"@galactica-net/inference-money-demo": "workspace:*",
 		"react": "19.3.0",
 		"react-dom": "19.3.0",
 		"tailwind-merge": "3.7.0",
@@ -42,8 +53,8 @@
 		"zod": "4.6.5"
 	},
 	"devDependencies": {
-		"@inference-money/deployer": "workspace:*",
-		"@inference-money/local-network": "workspace:*",
+		"@galactica-net/inference-money-deployer": "workspace:*",
+		"@galactica-net/inference-money-local-network": "workspace:*",
 		"@playwright/test": "1.63.0",
 		"@tailwindcss/vite": "4.3.3",
 		"@testing-library/dom": "10.4.2",

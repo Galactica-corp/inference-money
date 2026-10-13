@@ -1,4 +1,4 @@
-import type { Actor } from "@inference-money/demo"
+import type { Actor } from "@galactica-net/inference-money-demo"
 import { parseUsdc } from "@/demo/amount"
 import type { Holder } from "@/tour/player"
 import type { SceneId } from "@/tour/scenes"

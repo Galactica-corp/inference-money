@@ -24,7 +24,8 @@ import {
 	payRequest,
 	syncMerchantList,
 	tokenRefusalOf,
-} from "@inference-money/bridge-core"
+} from "@galactica-net/inference-money-core"
+import { tokenOf } from "@galactica-net/inference-money-core/deploy"
 import {
 	aztecWorld,
 	castClaim,
@@ -46,9 +47,8 @@ import {
 	usdcOf,
 	type WorldItem,
 	withdrawWorld,
-} from "@inference-money/demo"
+} from "@galactica-net/inference-money-demo"
 import type { Hex } from "viem"
-import { tokenOf } from "./admin"
 import { usersTagOf } from "./demo"
 import { enlist, type Log, logWait, type Player, withHeartbeat } from "./demo-flows"
 import { type StateDir, withStateDir } from "./run-state"

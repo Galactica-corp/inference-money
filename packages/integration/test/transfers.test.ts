@@ -2,7 +2,14 @@ import { beforeAll, describe, expect, it } from "bun:test"
 import type { AztecAddress } from "@aztec-labs/aztec.js/addresses"
 import { SetPublicAuthwitContractInteraction } from "@aztec-labs/aztec.js/authorization"
 import { Fr } from "@aztec-labs/aztec.js/fields"
-import { MERCHANT_MAX_DELAY, MERCHANT_MIN_DELAY, merchantSide, Side, sideCapsule, TOKEN_REFUSALS } from "@inference-money/bridge-core"
+import {
+	MERCHANT_MAX_DELAY,
+	MERCHANT_MIN_DELAY,
+	merchantSide,
+	Side,
+	sideCapsule,
+	TOKEN_REFUSALS,
+} from "@galactica-net/inference-money-core"
 import { funded, l1Actor, l2Actor, l2Balances, sentDuring, USDC } from "./actors"
 import { committedExpiry, lifetime } from "./expiry"
 import { harness, INTEGRATION } from "./harness"
