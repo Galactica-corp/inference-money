@@ -20,6 +20,7 @@ import {
 	tokenMinterProxyArtifact,
 } from "@inference-money/bridge-core"
 import { aztecAddressOf, castMember, MERCHANTS } from "@inference-money/demo"
+import type { DemoFile } from "@inference-money/demo/files"
 import {
 	type Abi,
 	type Address,
@@ -312,13 +313,18 @@ async function verifyBacking(node: AztecNode, l1: PublicClient, m: BridgeManifes
 	return [check("L2 supply ≤ portal USDC", supply.toBigInt() <= reserve, `${supply.toBigInt()} ≤ ${reserve}`)]
 }
 
-/** The demo merchants' keys are public: listed anywhere but local and testnet, they would let anyone act as a merchant. */
+/**
+ * The demo merchants' keys are public: the unsalted ones always, a published salt's once published. Listed anywhere but
+ * local and testnet, they would let anyone act as a merchant.
+ */
 export const DEMO_NETWORKS: readonly BridgeManifest["network"][] = ["local", "testnet"]
 
-async function verifyDemoCast(node: AztecNode, m: BridgeManifest): Promise<Check[]> {
+async function verifyDemoCast(node: AztecNode, m: BridgeManifest, demo: DemoFile | undefined): Promise<Check[]> {
 	if (DEMO_NETWORKS.includes(m.network)) return [check("demo cast", true, `may be listed on ${m.network}`)]
 	const list = await syncMerchantList(node, AztecAddress.fromStringUnsafe(m.l2.token.address))
-	const cast = await Promise.all(MERCHANTS.map(async (a) => (await aztecAddressOf(castMember(m, a))).toString()))
+	const salts = demo?.version === 2 ? [null, demo.merchantsSalt] : [null]
+	const members = salts.flatMap((merchantsSalt) => MERCHANTS.map((a) => castMember(m, a, { merchantsSalt })))
+	const cast = await Promise.all(members.map(async (c) => (await aztecAddressOf(c)).toString()))
 	const listed = cast.filter((a) => list.entries.has(a))
 	return [check("no demo merchant listed", listed.length === 0, listed.join(", ") || "none")]
 }
@@ -351,6 +357,8 @@ export interface VerifyOptions {
 	guardian?: string
 	/** Accept merchant entries' changes in flight that `delayPolicyChecks` lets it. */
 	allowPending?: boolean
+	/** This deployment's published demo, whose salted merchants the demo-cast rule checks too. */
+	demo?: DemoFile
 }
 
 /**
@@ -365,7 +373,7 @@ export async function verifyDeployment(
 	l1: PublicClient,
 	node: AztecNode,
 	handover: Handover = "complete",
-	{ guardian = ZERO, allowPending = false }: VerifyOptions = {},
+	{ guardian = ZERO, allowPending = false, demo }: VerifyOptions = {},
 ): Promise<Check[]> {
 	const identity = await attempt("network identity", async () => {
 		const { depositsOpen } = await assertNetworkIdentity(node, l1, m)
@@ -382,7 +390,7 @@ export async function verifyDeployment(
 		...(await attempt("admin roles", () => verifyRoles(node, m, handover, guardian))),
 		...(await attempt("merchant delays", () => verifyDelays(node, m, allowPending))),
 		...(await attempt("backing", () => verifyBacking(node, l1, m))),
-		...(await attempt("demo cast", () => verifyDemoCast(node, m))),
+		...(await attempt("demo cast", () => verifyDemoCast(node, m, demo))),
 		...(await attempt("environment", () => verifyEnvironment(node, m))),
 	]
 }

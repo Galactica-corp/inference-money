@@ -332,6 +332,20 @@ unconstrained fn a_capsule_naming_a_switched_off_merchant_fails_the_proof() {
     );
 }
 
+// Proving either account would fail here (alice is unlisted, m1 switched off), so a passing merge read no entry, and
+// a marked merchant's merge keeps the standard expiry whatever its capsule names.
+#[test]
+unconstrained fn a_self_send_reads_no_merchant_entry_whatever_its_capsule_names() {
+    let w = utils::setup_merchant_world(false);
+    utils::anchor_at(w.env, switch_off(w, w.m1));
+    store_side_capsule(w, FIRST as Field);
+    let token = Token::at(w.token);
+    for holder in [w.alice, w.m1] {
+        w.env.call_private(holder, token.transfer_private_to_private(holder, holder, AMOUNT, 0));
+        utils::check_private_balance(w.env, w.token, holder, mint_amount);
+    }
+}
+
 #[test(should_fail_with = "Payment refused: users may only pay into requests opened for a merchant")]
 unconstrained fn a_capsule_claiming_a_missing_stamp_fails_the_payment() {
     let w = utils::setup_merchant_world(false);

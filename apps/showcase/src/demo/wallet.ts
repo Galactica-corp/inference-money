@@ -56,6 +56,8 @@ export interface DemoWallet {
 
 export interface DemoWalletOptions {
 	usersTag: string
+	/** Null only for a version-1 demo. */
+	merchantsSalt: string | null
 	/** Real proofs, or the fake ones a local network accepts. */
 	proves: boolean
 	payments: PaymentStore
@@ -169,7 +171,7 @@ export async function openDemoWallet(node: AztecNode, m: BridgeManifest, opts: D
 	await registerBridgeContracts(wallet, m)
 	const cast = {} as Record<Actor, Player>
 	for (const actor of ACTORS) {
-		const member = castMember(m, actor, opts.usersTag)
+		const member = castMember(m, actor, opts)
 		// Repeats safely on reload: an account the store already holds is not registered again.
 		const account = await wallet.createSchnorrAccount(member.secret, Fr.ZERO, member.signingKey, actor)
 		cast[actor] = { ...member, address: account.address }

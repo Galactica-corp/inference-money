@@ -1,6 +1,11 @@
 import { describe, expect, it } from "bun:test"
 import { type ClaimTicket, type DepositDraft, encodeTicket } from "@inference-money/bridge-core"
-import { BIND_SEEDS, type PlanStore, runSetup, type Seed, type SetupOps, type SetupPlan } from "./demo"
+import { castMember } from "@inference-money/demo"
+import { MANIFEST } from "../../bridge-core/src/test/fixtures"
+import { BIND_SEEDS, keptSalt, type PlanStore, runSetup, type Seed, type SetupKeys, type SetupOps, type SetupPlan } from "./demo"
+
+const SALT = `0x${"1f".repeat(32)}`
+const SALTED = /^0x[0-9a-f]{64}$/
 
 const memoryStore = () => {
 	let plan: SetupPlan | undefined
@@ -29,10 +34,12 @@ const isBind = (seed: Seed) => (BIND_SEEDS as readonly Seed[]).includes(seed)
 /** Each step in `events`, in order; a merchant's binding claim binds it, and the merchants are listed once `listed`. */
 function fakeOps(over: Partial<SetupOps> & { finality?: SetupOps["final"]["finality"] } = {}) {
 	const events: string[] = []
-	const calls = { claims: [] as Seed[], reclaims: [] as Seed[] }
+	const calls = { claims: [] as Seed[], reclaims: [] as Seed[], prepared: [] as SetupKeys[] }
 	const bound = new Set<Seed>()
 	const ops: SetupOps = {
-		prepare: async () => {},
+		prepare: async (keys) => {
+			calls.prepared.push(keys)
+		},
 		bound: async (seed) => bound.has(seed),
 		list: async () => {
 			events.push("list")
@@ -62,7 +69,7 @@ function fakeOps(over: Partial<SetupOps> & { finality?: SetupOps["final"]["final
 }
 
 describe("demo setup", () => {
-	it("publishes the users' tag and archives the secrets only once every claim is finalized, re-claiming a pruned one first", async () => {
+	it("publishes the users' tag and the merchants' salt and archives the secrets only once every claim is finalized, re-claiming a pruned one first", async () => {
 		const { store, current, kept } = memoryStore()
 		const floatFinal = Promise.withResolvers<"finalized">()
 		const floatAnswers: Promise<"finalized" | "dropped">[] = [Promise.resolve("dropped"), floatFinal.promise]
@@ -73,26 +80,28 @@ describe("demo setup", () => {
 			return floatAnswers.shift() as Promise<"finalized" | "dropped">
 		}
 		const { ops, calls } = fakeOps({ finality })
-		const published: string[] = []
-		const run = runSetup(store, ops, (tag) => published.push(tag))
+		const published: SetupKeys[] = []
+		const run = runSetup(store, ops, (keys) => published.push(keys))
 
 		while (asked < 2) await Bun.sleep(1)
 		expect(published).toEqual([])
 		expect(calls.reclaims).toEqual(["galactica"])
 		expect(current()?.tag).toMatch(/^[0-9a-f]{32}$/)
+		expect(current()?.merchantsSalt).toMatch(SALTED)
 
 		floatFinal.resolve("finalized")
 		await run
 		expect(calls.claims).toEqual(["galacticaBind", "supplierBind", "alice", "bob", "galactica"])
-		expect(published).toHaveLength(1)
+		expect(published).toEqual(calls.prepared)
+		expect(published[0]?.merchantsSalt).toMatch(SALTED)
 		expect(current(), "nothing left for a resume").toBeUndefined()
-		expect(Object.keys(kept.archived.get(published[0] as string)?.tickets ?? {})).toHaveLength(5)
+		expect(Object.keys(kept.archived.get(published[0]?.usersTag as string)?.tickets ?? {})).toHaveLength(5)
 	})
 
 	it("keeps a stored draft the reader calls never sent before depositing that seed anew", async () => {
 		const { store, kept } = memoryStore()
 		const tag = "a".repeat(32)
-		store.write({ tag, drafts: { galacticaBind: encodeTicket("draft", draftOf("galacticaBind")) }, tickets: {} })
+		store.write({ tag, merchantsSalt: SALT, drafts: { galacticaBind: encodeTicket("draft", draftOf("galacticaBind")) }, tickets: {} })
 		const { ops } = fakeOps({
 			deposit: async (seed, _tag, prior) => {
 				prior?.abandon()
@@ -118,8 +127,8 @@ describe("demo setup", () => {
 
 		const resume = fakeOps()
 		for (const seed of BIND_SEEDS) resume.bound.add(seed)
-		const published: string[] = []
-		await runSetup(store, resume.ops, (tag) => published.push(tag))
+		const published: SetupKeys[] = []
+		await runSetup(store, resume.ops, (keys) => published.push(keys))
 		expect(
 			resume.events.filter((e) => e.startsWith("deposit")),
 			"no merchant deposits twice",
@@ -151,7 +160,7 @@ describe("demo setup", () => {
 		expect(resumed.events).toEqual([])
 	})
 
-	it("resumes an interrupted setup with its own tag, recovering a deposit sent before the crash instead of repeating it", async () => {
+	it("resumes an interrupted setup with its own tag and salt, recovering a deposit sent before the crash instead of repeating it", async () => {
 		const { store, current } = memoryStore()
 		const crash = fakeOps({
 			deposit: async (seed, _tag, _prior, persist) => {
@@ -161,7 +170,7 @@ describe("demo setup", () => {
 			},
 		})
 		await expect(runSetup(store, crash.ops, () => {})).rejects.toThrow("in flight")
-		const tag = current()?.tag
+		const drawn = { usersTag: current()?.tag, merchantsSalt: current()?.merchantsSalt }
 		expect(Object.keys(current()?.tickets ?? {})).toEqual(["galacticaBind", "supplierBind", "alice"])
 		expect(Object.keys(current()?.drafts ?? {})).toEqual(["bob"])
 
@@ -173,9 +182,26 @@ describe("demo setup", () => {
 			},
 		})
 		for (const seed of BIND_SEEDS) resume.bound.add(seed)
-		const published: string[] = []
-		await runSetup(store, resume.ops, (t) => published.push(t))
+		const published: SetupKeys[] = []
+		await runSetup(store, resume.ops, (keys) => published.push(keys), `0x${"2e".repeat(32)}`)
 		expect(priors).toEqual(["bob", undefined])
-		expect(published).toEqual([tag as string])
+		expect(resume.calls.prepared, "a stored plan's salt wins over a handed-over one").toEqual([drawn as SetupKeys])
+		expect(published).toEqual([drawn as SetupKeys])
+	})
+
+	it("rotates to a new users' tag that keeps a published salt, so the merchants stay the demo's, and refuses a version-1 demo", async () => {
+		const before = { usersTag: "b".repeat(32), merchantsSalt: SALT }
+		const { store } = memoryStore()
+		const { ops, calls } = fakeOps()
+		const published: SetupKeys[] = []
+		await runSetup(store, ops, (keys) => published.push(keys), keptSalt({ version: 2, bridge: MANIFEST.l2.bridge.address, ...before }))
+		const after = published[0] as SetupKeys
+		expect(calls.prepared).toEqual([after])
+		expect(after.usersTag).not.toBe(before.usersTag)
+		expect(castMember(MANIFEST, "galactica", after)).toEqual(castMember(MANIFEST, "galactica", before))
+		expect(castMember(MANIFEST, "supplier", after)).toEqual(castMember(MANIFEST, "supplier", before))
+		expect(castMember(MANIFEST, "alice", after)).not.toEqual(castMember(MANIFEST, "alice", before))
+		expect(() => keptSalt({ version: 1, bridge: MANIFEST.l2.bridge.address, usersTag: before.usersTag })).toThrow("redeploy")
+		expect(keptSalt(undefined), "a first setup draws its own").toBeUndefined()
 	})
 })

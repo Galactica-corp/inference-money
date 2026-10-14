@@ -102,10 +102,14 @@ describe.skipIf(!INTEGRATION)("operator CLI", () => {
 	})
 	afterAll(() => rmSync(dir, { recursive: true, force: true }))
 
-	it("[A28] demo setup publishes the users' tag; the acceptance run settles twice and records a tour verify accepts", async () => {
+	it("[A28] demo setup publishes the users' tag and the merchants' salt; the acceptance run settles twice and records a tour verify accepts", async () => {
 		const { manifest: m, manifestPath } = harness()
 		await ok("demo", "setup", manifestPath)
-		expect(readDemoFile({ path: manifestPath, m })?.usersTag).toMatch(/^[0-9a-f]{32}$/)
+		expect(readDemoFile({ path: manifestPath, m })).toMatchObject({
+			version: 2,
+			usersTag: expect.stringMatching(/^[0-9a-f]{32}$/),
+			merchantsSalt: expect.stringMatching(/^0x[0-9a-f]{64}$/),
+		})
 
 		const tour = join(dir, "tour.json")
 		await ok("smoke", manifestPath, "--record", tour)
@@ -139,7 +143,13 @@ describe.skipIf(!INTEGRATION)("operator CLI", () => {
 			const signer = l1Signer(l1.rpcUrl, l1.chain.id, localL1Account())
 			const copy = await deployEvm(signer, "TokenPortal", { ...built().portal, bytecode: `${built().portal.bytecode}00` })
 			const router = await deployRouter(signer, built(), m.l1.permit2, copy.address, m.l1.usdc)
-			const binding = { registry: m.l1.registry, usdc: m.l1.usdc, l2Bridge: m.l2.bridge.address, router: router.address }
+			const binding = {
+				registry: m.l1.registry,
+				usdc: m.l1.usdc,
+				l2Bridge: m.l2.bridge.address,
+				router: router.address,
+				rollupVersion: BigInt(m.l2.rollupVersion),
+			}
 			await initializePortal(signer, built(), copy.address, binding)
 			const reserve = (await l1.publicClient.getStorageAt({ address: m.l1.usdc, slot: usdcSlot(m.l1.portal) })) ?? pad("0x0")
 			await l1.test.setStorageAt({ address: m.l1.usdc, index: usdcSlot(copy.address), value: reserve })

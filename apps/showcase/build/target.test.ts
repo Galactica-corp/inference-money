@@ -8,7 +8,9 @@ import { cspFor, headersFile, resolveTarget } from "./target"
 
 const root = mkdtempSync(join(tmpdir(), "showcase-target-"))
 afterAll(() => rmSync(root, { recursive: true, force: true }))
-const demo = (bridge: string) => JSON.stringify({ version: 1, bridge, usersTag: "ab".repeat(16) })
+const SALT = `0x${"ef".repeat(32)}`
+const demo = (bridge: string) => JSON.stringify({ version: 2, bridge, usersTag: "ab".repeat(16), merchantsSalt: SALT })
+const demoV1 = (bridge: string) => JSON.stringify({ version: 1, bridge, usersTag: "ab".repeat(16) })
 
 const testnet = join(root, "testnet.json")
 writeFileSync(testnet, JSON.stringify({ ...fixture, network: "testnet" }))
@@ -17,7 +19,7 @@ writeFileSync(join(root, "testnet-tour.json"), JSON.stringify({ recorded: "testn
 const local = join(root, "local", "run-1", "manifest.json")
 mkdirSync(join(root, "local", "run-1"), { recursive: true })
 writeFileSync(local, JSON.stringify({ ...fixture, network: "local" }))
-writeFileSync(join(root, "local", "run-1", "demo.json"), demo(fixture.l2.bridge.address))
+writeFileSync(join(root, "local", "run-1", "demo.json"), demoV1(fixture.l2.bridge.address))
 mkdirSync(join(root, "apps", "showcase", "e2e", "fixtures"), { recursive: true })
 writeFileSync(join(root, "apps", "showcase", "e2e", "fixtures", "tour.json"), JSON.stringify({ recorded: "fixture" }))
 /** A local manifest's L1 RPC comes from its run's network; attached endpoints stand in for one. */
@@ -53,9 +55,11 @@ describe("resolveTarget", () => {
 		expect(() => resolveTarget({ BRIDGE_MANIFEST: testnet }, root)).toThrow(/no published demo/)
 		writeFileSync(join(root, "testnet-demo.json"), demo(fixture.l2.bridge.address))
 
-		expect(resolveTarget({ BRIDGE_MANIFEST: local, ...ANVIL }, root)).toMatchObject({ proofs: "fake", l1RpcUrl: ANVIL.NET_L1_RPC })
+		const v1 = { proofs: "fake", l1RpcUrl: ANVIL.NET_L1_RPC, merchantsSalt: null }
+		expect(resolveTarget({ BRIDGE_MANIFEST: local, ...ANVIL }, root), "a version-1 demo has no salt").toMatchObject(v1)
 		expect(resolveTarget({ BRIDGE_MANIFEST: local, SHOWCASE_PROOFS: "real", ...ANVIL }, root).proofs).toBe("real")
-		expect(resolveTarget({ BRIDGE_MANIFEST: testnet }, root)).toMatchObject({ proofs: "real", usersTag: "ab".repeat(16) })
+		const v2 = { proofs: "real", usersTag: "ab".repeat(16), merchantsSalt: SALT }
+		expect(resolveTarget({ BRIDGE_MANIFEST: testnet }, root)).toMatchObject(v2)
 	})
 
 	it("embeds the deployment's recorded tour, and the fixture tour on a local network", () => {

@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs"
 import { createAztecNodeClient } from "@aztec-labs/aztec.js/node"
 import { parseTour, tourMismatches } from "@inference-money/demo"
+import { readDemoFile } from "@inference-money/demo/files"
 import { createPublicClient, http, type PublicClient } from "viem"
 import type { Check } from "./preflight"
 import { endpointsFor, type ManifestRef } from "./session"
@@ -38,7 +39,11 @@ export async function verifyManifest(ref: ManifestRef, flags: VerifyFlags): Prom
 	flags.log(`verifying ${ref.path} through node ${new URL(nodeUrl).origin}`)
 	const l1 = createPublicClient({ transport: http(l1RpcUrl) }) as PublicClient
 	const { guardian, allowPending } = flags
-	const checks = await verifyDeployment(ref.m, buildFresh(), l1, createAztecNodeClient(nodeUrl), "complete", { guardian, allowPending })
+	const checks = await verifyDeployment(ref.m, buildFresh(), l1, createAztecNodeClient(nodeUrl), "complete", {
+		guardian,
+		allowPending,
+		demo: readDemoFile(ref),
+	})
 	if (flags.tour) checks.push(...tourChecks(flags.tour, ref))
 	try {
 		assertAllPass(checks, flags.log)

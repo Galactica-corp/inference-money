@@ -292,13 +292,13 @@ pub contract Token {
         amount: u128,
         _nonce: Field,
     ) {
-        let side = self.internal._prove_merchant_side(to, from, false);
         // A send to oneself moves value between no two accounts, and is how a user merges notes a payment cannot all
-        // spend in one tx.
-        assert(
-            (side != NEITHER) | (from == to),
-            "Transfer refused: neither sender nor recipient is a merchant",
-        );
+        // spend in one tx. It proves no side whatever the hint says: reading a merchant entry would cap the merge's
+        // expiry like a merchant-rule tx's.
+        if from != to {
+            let side = self.internal._prove_merchant_side(to, from, false);
+            assert(side != NEITHER, "Transfer refused: neither sender nor recipient is a merchant");
+        }
 
         self.internal._call_auth_private(from, amount);
 

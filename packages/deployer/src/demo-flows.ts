@@ -1,7 +1,8 @@
 import type { AztecAddress } from "@aztec-labs/aztec.js/addresses"
+import { Fr } from "@aztec-labs/aztec.js/fields"
 import { createAztecNodeClient } from "@aztec-labs/aztec.js/node"
 import { registerSponsor, sponsoredPayment } from "@inference-money/bridge-core"
-import { type Actor, type CastMember, castMember } from "@inference-money/demo"
+import { type Actor, type CastKeys, type CastMember, castMember, demoDigest } from "@inference-money/demo"
 import { ensureAccount } from "./deploy-l2"
 import { startBlockHeartbeat } from "./local-actors"
 import { accountFor, type Session } from "./session"
@@ -34,19 +35,29 @@ export interface Player extends CastMember {
 	address: AztecAddress
 }
 
-/** Users' secrets derive from the users' tag, so enlisting one needs it. */
-export async function enlist<A extends Actor>(s: Session, actors: readonly A[], tag?: string): Promise<Record<A, Player>> {
+/** The cast's Aztec secrets derive from the published demo's keys, so enlisting needs them. */
+export async function enlist<A extends Actor>(s: Session, actors: readonly A[], keys: CastKeys): Promise<Record<A, Player>> {
 	const players = {} as Record<A, Player>
 	for (const actor of actors) {
-		const member = castMember(s.m, actor, tag)
+		const member = castMember(s.m, actor, keys)
 		players[actor] = { ...member, address: await accountFor(s.wallet, member.secret) }
 	}
 	return players
 }
 
+const sponsoredDeploy = (s: Session) => ({ accountDeploy: async () => sponsoredPayment(s.m) })
+
 export async function deployPlayers(s: Session, players: readonly Player[], log: Log): Promise<void> {
-	const fees = { accountDeploy: async () => sponsoredPayment(s.m) }
-	for (const p of players) await ensureAccount(s.wallet, p.secret, fees, log, p.actor)
+	for (const p of players) await ensureAccount(s.wallet, p.secret, sponsoredDeploy(s), log, p.actor)
+}
+
+/**
+ * The account that sends `demo fund`'s Fee Juice claim, deployed unless someone already has: derived from the
+ * deployment alone, so it needs no published demo, and it is no cast member and never holds USDC.
+ */
+export function sponsorClaimer(s: Session, log: Log): Promise<AztecAddress> {
+	const secret = new Fr(demoDigest(`${s.m.l2.bridge.address}/sponsor-claimer/aztec`) % Fr.MODULUS)
+	return ensureAccount(s.wallet, secret, sponsoredDeploy(s), log, "sponsor claimer")
 }
 
 /** A claim's wait, logged as the operator CLI reports progress. */

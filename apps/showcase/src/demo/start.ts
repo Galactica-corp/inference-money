@@ -1,7 +1,7 @@
 import { createAztecNodeClient } from "@aztec-labs/aztec.js/node"
 import { assertNetworkIdentity } from "@inference-money/bridge-core"
 import { createPublicClient, http } from "viem"
-import { L1_CHAIN, L1_RPC_URL, MANIFEST, PROVES, USERS_TAG } from "@/config/network"
+import { L1_CHAIN, L1_RPC_URL, MANIFEST, MERCHANTS_SALT, PROVES, USERS_TAG } from "@/config/network"
 import { browserPaymentStore, localKeyValue } from "./store"
 import { type DemoWallet, openDemoWallet } from "./wallet"
 
@@ -19,6 +19,7 @@ export async function startDemo(): Promise<DemoWallet> {
 	const presto = PROVES ? (await import("@/presto")).pagePresto(__SHOWCASE_PRESTO__) : undefined
 	return openDemoWallet(node, MANIFEST, {
 		usersTag: USERS_TAG,
+		merchantsSalt: MERCHANTS_SALT,
 		proves: PROVES,
 		payments: browserPaymentStore(deploymentStore()),
 		presto,

@@ -202,12 +202,21 @@ abstract contract TokenPortalHandler is Properties {
         _noopEnd(consumed);
     }
 
-    /// A public deposit naming zero, the portal or the router as its refund address: no return could ever leave them.
+    /// A public deposit naming zero, the portal, the router, USDC, the Inbox, the Outbox or the registry as its refund
+    /// address: no return could ever leave them.
     function tokenPortal_depositToAztecPublic_badRefund(uint8 _which, uint256 _amount, uint256 _accountSeed) public {
         _amount = clampBetween(_amount, 1, MAX_REALISTIC_AMOUNT);
         _ensureFunds(actor, _amount);
-        _which = uint8(_which % 3);
-        address refund = _which == 0 ? address(0) : _which == 1 ? address(portal) : address(router);
+        address[7] memory sinks = [
+            address(0),
+            address(portal),
+            address(router),
+            address(usdc),
+            address(portal.inbox()),
+            address(portal.outbox()),
+            address(portal.registry())
+        ];
+        address refund = sinks[_which % 7];
         bytes32 to = toL2Account(_accountSeed);
         uint256 consumed = _noopBegin();
         vm.prank(actor);
@@ -434,7 +443,7 @@ abstract contract TokenPortalHandler is Properties {
     {
         uint256 consumed = _noopBegin();
         vm.prank(actor);
-        try portal.initialize(_registry, _underlying, _l2Bridge, _router) {
+        try portal.initialize(_registry, _underlying, _l2Bridge, _router, FAKE_ROLLUP_VERSION) {
             ghosts.reinitialized++;
         } catch {}
         _noopEnd(consumed);
@@ -443,7 +452,7 @@ abstract contract TokenPortalHandler is Properties {
     /// The initializer itself (this contract) calling `initialize` a second time.
     function _tokenPortal_initializeAsInitializer(bytes32 _l2Bridge) internal {
         uint256 consumed = _noopBegin();
-        try portal.initialize(address(registry), address(usdc), _l2Bridge, address(router)) {
+        try portal.initialize(address(registry), address(usdc), _l2Bridge, address(router), FAKE_ROLLUP_VERSION) {
             ghosts.reinitialized++;
         } catch {}
         _noopEnd(consumed);
@@ -455,10 +464,10 @@ abstract contract TokenPortalHandler is Properties {
         TokenPortal fresh = new TokenPortal();
         address stranger = toActor(_stranger);
         vm.prank(stranger);
-        try fresh.initialize(address(registry), address(usdc), L2_BRIDGE, address(router)) {
+        try fresh.initialize(address(registry), address(usdc), L2_BRIDGE, address(router), FAKE_ROLLUP_VERSION) {
             ghosts.misboundRouter++;
         } catch {}
-        try fresh.initialize(address(registry), address(usdc), L2_BRIDGE, address(router)) {
+        try fresh.initialize(address(registry), address(usdc), L2_BRIDGE, address(router), FAKE_ROLLUP_VERSION) {
             ghosts.misboundRouter++;
         } catch {}
         try new Permit2DepositRouter(ISignatureTransfer(address(0xC0DE1E55)), ITokenPortal(address(fresh)), usdc) {

@@ -17,6 +17,7 @@ Gotchas that cost a past run and would bite other work, one line each with its a
 
 - halmos 0.3.3 leaves `ecrecover` uninterpreted: it proves an honest low-s `vm.sign` accepted, never a foreign signer refused. Prove signer rules in forge, with a mutant canary. [phase-0](archive/pashov-audit-fizz/lessons/phase-0.md)
 - Sign before `vm.prank` or `vm.expectRevert`: a call argument that reads a contract (a digest) consumes them. [phase-3](archive/pashov-audit-fizz/lessons/phase-3.md)
+- `verify` checks the portal against a fresh build of the working tree: freeze `contracts/evm/src` while a local run is live. [phase-5](archive/pre-redeploy/lessons/phase-5.md)
 - Medusa 1.5.1 reads `slither.useSlither`, not `enabled`, and exits 7 on any failed property: judge a campaign by its exit code and registered-property count. [phase-1](archive/pashov-audit-fizz/lessons/phase-1.md)
 
 ## Bun / TypeScript / tests
@@ -43,7 +44,7 @@ Gotchas that cost a past run and would bite other work, one line each with its a
 
 ## Testnet ops
 
-- Sepolia's canonical Aztec rollup can switch unannounced (2026-09-28), and `TokenPortal.initialize` binds the canonical one: `probe:testnet` before any spend. [phase-7](archive/usdc-bridge/lessons/phase-7.md)
+- Sepolia's canonical Aztec rollup can switch unannounced (2026-09-28): `probe:testnet` before any spend. [phase-7](archive/usdc-bridge/lessons/phase-7.md)
 - `env-exec` refuses a dirty keyed tree: commit each run's manifest and `keyed-worktree.sh sync` before the next request; run one at a time (a live wallet store fails the other's exit scan). `secrets:scan` fails on a cache symlink resolving outside its roots (a Python venv). `demo fund` checks no balance first; each testnet `demo setup` pass waits about an hour on finality. [phase-18](archive/pashov-audit-fizz/lessons/phase-18.md)
 
 ## Harness / host

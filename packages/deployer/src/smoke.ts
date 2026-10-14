@@ -27,6 +27,7 @@ import {
 } from "@inference-money/bridge-core"
 import {
 	aztecWorld,
+	type CastKeys,
 	castClaim,
 	castDeposit,
 	type DemoL1,
@@ -49,7 +50,7 @@ import {
 } from "@inference-money/demo"
 import type { Hex } from "viem"
 import { tokenOf } from "./admin"
-import { usersTagOf } from "./demo"
+import { castKeysFor } from "./demo"
 import { enlist, type Log, logWait, type Player, withHeartbeat } from "./demo-flows"
 import { keepAbandonedDraft, type StateDir, withStateDir } from "./run-state"
 import { type ManifestRef, type Session, withSession } from "./session"
@@ -329,12 +330,12 @@ function writeTour(path: string, r: Run): void {
 	r.log(`tour written to ${path}`)
 }
 
-async function startRun(s: Session, dir: StateDir, tag: string, log: Log): Promise<Run> {
+async function startRun(s: Session, dir: StateDir, keys: CastKeys, log: Log): Promise<Run> {
 	const rpc = s.endpoints.l1RpcUrl
 	const aDemo = demoL1(rpc, s.m, "alice")
 	const { depositsOpen } = await assertNetworkIdentity(s.node, aDemo.publicClient, s.m)
 	if (!depositsOpen) log(`warn: ${ROLLUP_MOVED}`)
-	const cast = await enlist(s, ["alice", "bob", "galactica"] as const, tag)
+	const cast = await enlist(s, ["alice", "bob", "galactica"] as const, keys)
 	const stored = dir.read<SmokeState>(STATE)
 	const state = stored ?? { baseline: asStrings(await balances({ s, cast, aDemo })), done: [], tour: {} }
 	if (stored) log(`resuming the run at ${nextStep(stored) ?? "its checks"}`)
@@ -350,7 +351,7 @@ async function startRun(s: Session, dir: StateDir, tag: string, log: Log): Promi
  * asserts deltas from its own start, so a repeat run on the same cast passes too. `record` writes the tour.
  */
 export function smoke(ref: ManifestRef, opts: { record?: string; log: Log }): Promise<void> {
-	const tag = usersTagOf(ref)
+	const keys = castKeysFor(ref)
 	return withStateDir("smoke", ref.m.l2.bridge.address, async (dir) => {
 		let live: Run | undefined
 		const onSend = (tx: SentTx) => {
@@ -361,7 +362,7 @@ export function smoke(ref: ManifestRef, opts: { record?: string; log: Log }): Pr
 		}
 		await withSession(ref, { payments: dir.paymentStore(), onSend }, (s) =>
 			withHeartbeat(s, async () => {
-				const run = await startRun(s, dir, tag, opts.log)
+				const run = await startRun(s, dir, keys, opts.log)
 				live = run
 				await runSteps(run)
 				live = undefined

@@ -1,4 +1,3 @@
-import { writeFileSync } from "node:fs"
 import { AztecAddress } from "@aztec-labs/aztec.js/addresses"
 import {
 	type ClaimTicket,
@@ -15,16 +14,16 @@ import {
 	waitClaimFinalized,
 } from "@inference-money/bridge-core"
 import {
-	aztecAddressOf,
+	type CastKeys,
 	castClaim,
 	castDeposit,
-	castMember,
 	DEMO_SEED,
 	type DepositPlan,
 	demoL1,
 	l1CtxOf,
 	MERCHANTS,
 	type Merchant,
+	newMerchantsSalt,
 	newUsersTag,
 	type PriorDraft,
 	resetAmount,
@@ -33,12 +32,12 @@ import {
 	USERS,
 	usdcOf,
 } from "@inference-money/demo"
-import { type DemoFile, demoFilePath, readDemoFile } from "@inference-money/demo/files"
+import { castKeysOf, type DemoFile, demoFilePath, readDemoFile, writeDemoFile } from "@inference-money/demo/files"
 import { isAddressEqual } from "viem"
 import { privateKeyToAccount } from "viem/accounts"
 import { addMerchants } from "./admin"
 import { keepUntilFinal, type ReclaimSteps } from "./claim-finality"
-import { deployPlayers, enlist, type Log, logWait, type Player, withHeartbeat } from "./demo-flows"
+import { deployPlayers, enlist, type Log, logWait, type Player, sponsorClaimer, withHeartbeat } from "./demo-flows"
 import { anvilFaucet, fundDemoL1, signerFaucet } from "./demo-l1"
 import { topUpSponsor } from "./fee-juice"
 import { l1Signer } from "./l1"
@@ -51,10 +50,18 @@ import { assertAllPass } from "./verify"
 
 export { demoFilePath, readDemoFile }
 
-export function usersTagOf(ref: ManifestRef): string {
+export function castKeysFor(ref: ManifestRef): CastKeys {
 	const f = readDemoFile(ref)
 	if (!f) throw new Error(`This deployment's demo is not set up: run \`bridge demo setup ${ref.path}\` first.`)
-	return f.usersTag
+	return castKeysOf(f)
+}
+
+/** The salt `--rotate` keeps, so the listed merchants keep their accounts; a version-1 demo has none to keep. */
+export function keptSalt(published: DemoFile | undefined): string | undefined {
+	if (published?.version === 1) {
+		throw new Error("This deployment's demo predates the merchants' salt, so --rotate cannot keep its merchants: redeploy.")
+	}
+	return published?.merchantsSalt
 }
 
 /**
@@ -67,9 +74,10 @@ export type BindSeed = (typeof BIND_SEEDS)[number]
 export type Seed = BindSeed | (typeof USER_SEEDS)[number]
 const BIND_MERCHANT: Record<BindSeed, Merchant> = { galacticaBind: "galactica", supplierBind: "supplier" }
 
-/** Private until published: the drawn tag and each seed's draft or ticket, so an interrupted setup resumes. */
+/** Private until published: the drawn tag and salt and each seed's draft or ticket, so an interrupted setup resumes. */
 export interface SetupPlan {
 	tag: string
+	merchantsSalt: string
 	drafts: Partial<Record<Seed, string>>
 	tickets: Partial<Record<Seed, string>>
 }
@@ -84,9 +92,15 @@ export interface PlanStore {
 	archive(tag: string): void
 }
 
+/** What `demo setup` publishes: a version-2 demo's keys. */
+export interface SetupKeys {
+	usersTag: string
+	merchantsSalt: string
+}
+
 export interface SetupOps {
 	/** Funds what the network lacks, then deploys the cast's accounts. */
-	prepare(tag: string): Promise<void>
+	prepare(keys: SetupKeys): Promise<void>
 	/** Whether `seed`'s merchant is bound to its own treasury; throws if it is bound anywhere else. */
 	bound(seed: BindSeed): Promise<boolean>
 	/** Lists the demo merchants, or throws the instruction to list them. */
@@ -119,16 +133,16 @@ async function seedAll(plan: SetupPlan, seeds: readonly Seed[], store: PlanStore
 }
 
 /**
- * Binds each merchant to its treasury, lists the merchants once those bindings are final and read back (a listed
- * merchant's first private claim would bind it to whoever deposited), then binds both users and seeds the float. It
- * publishes the users' tag only once every claim is finalized, since anyone holding the tag could take a pruned
- * binding, and then archives the plan, secrets included: "finalized" is the node's word, and a claim it wrongly
- * vouched for needs its secret again.
+ * Lists the merchants only once their treasury bindings are final and read back (a listed merchant's first private
+ * claim would bind it to whoever deposited), and publishes the tag and salt only once every claim is final, since
+ * anyone holding them could take a pruned binding. The archived plan keeps its secrets: "finalized" is the node's
+ * word, and a claim it wrongly vouched for needs its secret again. `kept` hands a new plan a published salt.
  */
-export async function runSetup(store: PlanStore, ops: SetupOps, publish: (tag: string) => void): Promise<void> {
-	const plan = store.read() ?? { tag: newUsersTag(), drafts: {}, tickets: {} }
+export async function runSetup(store: PlanStore, ops: SetupOps, publish: (keys: SetupKeys) => void, kept?: string): Promise<void> {
+	const plan = store.read() ?? { tag: newUsersTag(), merchantsSalt: kept ?? newMerchantsSalt(), drafts: {}, tickets: {} }
 	store.write(plan)
-	await ops.prepare(plan.tag)
+	const keys = { usersTag: plan.tag, merchantsSalt: plan.merchantsSalt }
+	await ops.prepare(keys)
 	const binds: BindSeed[] = []
 	for (const seed of BIND_SEEDS) {
 		const bound = await ops.bound(seed)
@@ -140,7 +154,7 @@ export async function runSetup(store: PlanStore, ops: SetupOps, publish: (tag: s
 	}
 	await ops.list()
 	await seedAll(plan, USER_SEEDS, store, ops)
-	publish(plan.tag)
+	publish(keys)
 	store.archive(plan.tag)
 }
 
@@ -152,14 +166,10 @@ const SEED_PLANS: Record<Seed, (p: Record<string, Player>) => DepositPlan> = {
 	galactica: (p) => ({ from: "alice", to: p.galactica!.address, kind: "public", amount: DEMO_SEED.galactica }),
 }
 
-export const merchantAddresses = (ref: ManifestRef): Promise<AztecAddress[]> =>
-	Promise.all(MERCHANTS.map((actor) => aztecAddressOf(castMember(ref.m, actor))))
-
 /** Local: the local admin lists any demo merchant not listed yet. Testnet: the admin must have listed both. */
-async function ensureMerchantsListed(s: Session, log: Log): Promise<void> {
-	const addresses = await merchantAddresses(s.ref)
+async function ensureMerchantsListed(s: Session, players: Record<string, Player>, log: Log): Promise<void> {
 	const list = await syncMerchantList(s.node, AztecAddress.fromStringUnsafe(s.m.l2.token.address))
-	const missing = addresses.filter((a) => !merchantStatus(list, a).merchant)
+	const missing = MERCHANTS.map((actor) => players[actor]!.address).filter((a) => !merchantStatus(list, a).merchant)
 	if (missing.length === 0) return
 	if (s.m.network !== "local") {
 		throw new Error(`List the demo merchants first: bun run bridge merchants add ${s.ref.path} ${missing.join(" ")}`)
@@ -176,24 +186,24 @@ function liveSetupOps(s: Session, log: Log): SetupOps {
 		await castClaim(s, t, logWait(log), BIND)
 	}
 	return {
-		prepare: async (tag) => {
+		prepare: async (keys) => {
 			const rpc = s.endpoints.l1RpcUrl
 			if (s.m.network === "local") await fundDemoL1(rpc, s.m, anvilFaucet(rpc, s.m), log)
-			players = await enlist(s, [...USERS, ...MERCHANTS], tag)
+			players = await enlist(s, [...USERS, ...MERCHANTS], keys)
 			await deployPlayers(s, Object.values(players), log)
 		},
 		bound: async (seed) => {
 			const merchant = BIND_MERCHANT[seed]
-			const treasury = castMember(s.m, merchant).ethereum
-			const bound = await fundingAddress(s.wallet, s.m, players[merchant]!.address)
+			const { address, ethereum: treasury } = players[merchant]!
+			const bound = await fundingAddress(s.wallet, s.m, address)
 			if (bound === undefined) return false
 			if (isAddressEqual(bound, treasury)) return true
-			// The cast's keys are public, so anyone can claim a deposit into a demo merchant first.
+			// The cast's keys are public once published, so anyone can claim a deposit into a demo merchant first.
 			throw new Error(
 				`${merchant} is bound to ${bound}, not its treasury ${treasury}, so it is not listed: redeploy, or list another merchant account.`,
 			)
 		},
-		list: () => ensureMerchantsListed(s, log),
+		list: () => ensureMerchantsListed(s, players, log),
 		deposit: (seed, _tag, prior, persist) => {
 			const plan = SEED_PLANS[seed](players)
 			return castDeposit(s, demoL1(s.endpoints.l1RpcUrl, s.m, plan.from), plan, prior, persist)
@@ -221,31 +231,32 @@ function stateStore(dir: StateDir): PlanStore {
 }
 
 /**
- * `demo setup`: draws the users' tag (or resumes an unpublished one), binds both users and seeds the float, and
- * publishes the tag once both bindings are final. A published demo is left alone unless `rotate` draws a new tag.
+ * `demo setup`: draws the users' tag and the merchants' salt (or resumes an unpublished pair), binds the cast and seeds
+ * the float, and publishes both once every binding is final. A published demo is left alone unless `rotate` draws a new
+ * tag; it keeps the salt, so the listed merchants stay the demo's.
  */
 export function demoSetup(ref: ManifestRef, opts: { rotate: boolean; log: Log }): Promise<void> {
 	return withStateDir("demo", ref.m.l2.bridge.address, async (dir) => {
 		const store = stateStore(dir)
-		if (!store.read() && readDemoFile(ref) && !opts.rotate) {
+		const published = readDemoFile(ref)
+		if (!store.read() && published && !opts.rotate) {
 			opts.log("this deployment's demo is set up; --rotate draws a new users' tag")
 			return
 		}
-		const publish = (usersTag: string) => {
-			const file: DemoFile = { version: 1, bridge: ref.m.l2.bridge.address, usersTag }
-			writeFileSync(demoFilePath(ref), `${JSON.stringify(file, null, "\t")}\n`)
-			opts.log(`published the users' tag to ${demoFilePath(ref)}`)
+		const kept = keptSalt(published)
+		const publish = (keys: SetupKeys) => {
+			opts.log(`published the users' tag and the merchants' salt to ${writeDemoFile(ref, keys)}`)
 		}
-		await withSession(ref, {}, (s) => withHeartbeat(s, () => runSetup(store, liveSetupOps(s, opts.log), publish)))
+		await withSession(ref, {}, (s) => withHeartbeat(s, () => runSetup(store, liveSetupOps(s, opts.log), publish, kept)))
 	})
 }
 
-/** `demo status`: the cast's addresses, A_demo's and B_demo's L1 holdings, and every L2 balance the tag lets it read. */
+/** `demo status`: the cast's addresses, A_demo's and B_demo's L1 holdings, and every L2 balance the demo lets it read. */
 export function demoStatus(ref: ManifestRef, log: Log): Promise<void> {
-	const tag = readDemoFile(ref)?.usersTag
+	const published = readDemoFile(ref)
 	return withSession(ref, {}, async (s) => {
 		const list = await syncMerchantList(s.node, AztecAddress.fromStringUnsafe(s.m.l2.token.address))
-		const players: Player[] = Object.values(await enlist(s, tag ? [...USERS, ...MERCHANTS] : MERCHANTS, tag))
+		const players: Player[] = published ? Object.values(await enlist(s, [...USERS, ...MERCHANTS], castKeysOf(published))) : []
 		for (const p of players) {
 			const [priv, pub] = await Promise.all([
 				l2UsdcBalance(s.wallet, s.m, p.address, "private"),
@@ -254,7 +265,7 @@ export function demoStatus(ref: ManifestRef, log: Log): Promise<void> {
 			const role = merchantStatus(list, p.address).merchant ? "merchant" : "user"
 			log(`${p.actor.padEnd(9)} ${p.address} ${role}: ${priv} private, ${pub} public`)
 		}
-		if (!tag) log("alice, bob: not set up yet (bridge demo setup)")
+		if (!published) log(`${[...USERS, ...MERCHANTS].join(", ")}: not set up yet (bridge demo setup)`)
 		for (const user of USERS) {
 			const signer = demoL1(s.endpoints.l1RpcUrl, s.m, user)
 			const address = signer.account.address
@@ -266,9 +277,9 @@ export function demoStatus(ref: ManifestRef, log: Log): Promise<void> {
 
 /** `demo reset`: galactica refunds alice back up to her seed, as far as its private balance goes. */
 export function demoReset(ref: ManifestRef, log: Log): Promise<void> {
-	const tag = usersTagOf(ref)
+	const keys = castKeysFor(ref)
 	return withSession(ref, {}, async (s) => {
-		const p = await enlist(s, ["alice", "galactica"] as const, tag)
+		const p = await enlist(s, ["alice", "galactica"] as const, keys)
 		const [alice, galactica] = await Promise.all([
 			l2UsdcBalance(s.wallet, s.m, p.alice.address, "private"),
 			l2UsdcBalance(s.wallet, s.m, p.galactica.address, "private"),
@@ -284,7 +295,7 @@ export function demoReset(ref: ManifestRef, log: Log): Promise<void> {
 
 /**
  * `demo fund`: tops the cast's Ethereum accounts up; testnet funds come from the keyed L1 account, which also bridges
- * a Fee Juice mint to the sponsor, claimed by galactica (deployed through the sponsor first if needed).
+ * a Fee Juice mint to the sponsor, claimed by the sponsor claimer (deployed through the sponsor first if needed).
  */
 export function demoFund(ref: ManifestRef, log: Log): Promise<void> {
 	return withSession(ref, {}, async (s) => {
@@ -298,12 +309,10 @@ export function demoFund(ref: ManifestRef, log: Log): Promise<void> {
 		assertAllPass(await probeNetwork(TESTNET, rpc), log)
 		const key = l1PrivateKeyFrom()
 		await fundDemoL1(rpc, s.m, signerFaucet(l1Signer(rpc, s.m.l1.chainId, privateKeyToAccount(key)), s.m), log)
-		const { galactica } = await enlist(s, ["galactica"] as const)
-		await deployPlayers(s, [galactica], log)
 		await topUpSponsor({
 			node: s.node,
 			wallet: s.wallet,
-			from: galactica.address,
+			from: await sponsorClaimer(s, log),
 			sponsor: (await sponsorInstance()).address,
 			fee: sponsoredFee(s.m),
 			bridge: { pins: TESTNET, l1RpcUrl: rpc, l1PrivateKey: key },

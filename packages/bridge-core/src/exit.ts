@@ -44,7 +44,8 @@ export type ExitNode = Pick<AztecNode, "getTxEffect" | "getL2ToL1Messages" | "ge
 
 /**
  * Refused before any burn. The portal's payout check measures its own balance drop and a self-transfer drops nothing,
- * so an exit to the portal is unwithdrawable; the router has no way to release tokens sent to it.
+ * so an exit to the portal is unwithdrawable; the router, Permit2, the Inbox, the Outbox, the registry and USDC itself
+ * have no way to release USDC sent to them. The L2 bridge refuses only zero and the portal, so a raw call can still name the rest.
  */
 export function assertExitIntent(e: ExitIntent, m: BridgeManifest): void {
 	if (e.amount <= 0n) throw new Error("The amount must be positive.")
@@ -53,6 +54,11 @@ export function assertExitIntent(e: ExitIntent, m: BridgeManifest): void {
 		["the zero address", zeroAddress],
 		["the bridge portal", m.l1.portal],
 		["the deposit router", m.l1.router],
+		["Permit2", m.l1.permit2],
+		["the Aztec Inbox", m.l1.inbox],
+		["the Aztec Outbox", m.l1.outbox],
+		["the Aztec registry", m.l1.registry],
+		["the USDC contract", m.l1.usdc],
 	] as const) {
 		if (isAddressEqual(e.recipientL1, blocked)) throw new Error(`An Ethereum recipient of ${label} could never be paid out.`)
 	}

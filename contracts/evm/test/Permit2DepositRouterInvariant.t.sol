@@ -10,7 +10,7 @@ import {Permit2DepositRouter} from "../src/Permit2DepositRouter.sol";
 import {TokenPortal} from "../src/TokenPortal.sol";
 import {ISignatureTransfer} from "../src/interfaces/ISignatureTransfer.sol";
 import {ITokenPortal} from "../src/interfaces/ITokenPortal.sol";
-import {CapturingInbox, CapturingOutbox, FakeRegistry, FakeRollup} from "./mocks/AztecFakes.sol";
+import {CapturingInbox, CapturingOutbox, FAKE_ROLLUP_VERSION, FakeRegistry, FakeRollup} from "./mocks/AztecFakes.sol";
 import {MockPermit2} from "./mocks/MockPermit2.sol";
 import {MockUsdc} from "./mocks/MockUsdc.sol";
 
@@ -70,7 +70,8 @@ contract RouterHandler is StdUtils {
             address(new FakeRegistry(address(new FakeRollup(address(inbox), address(new CapturingOutbox()))))),
             address(usdc),
             bytes32(uint256(0x4B)),
-            address(router)
+            address(router),
+            FAKE_ROLLUP_VERSION
         );
         for (uint256 i = 0; i < actors.length; i++) {
             keys[actors[i]] = 0xA1 + i;

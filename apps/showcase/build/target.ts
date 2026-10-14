@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs"
 import { basename, dirname, resolve } from "node:path"
 import { type BridgeManifest, parseManifest } from "@inference-money/bridge-core/manifest"
-import { readDemoFile } from "@inference-money/demo/files"
+import { castKeysOf, readDemoFile } from "@inference-money/demo/files"
 import { TESTNET } from "@inference-money/deployer/networks"
 import { resolveEndpoints } from "@inference-money/local-network/handle"
 
@@ -19,6 +19,8 @@ export interface BuildTarget {
 	readonly manifest: BridgeManifest
 	/** The published tag the demo's user accounts derive from. */
 	readonly usersTag: string
+	/** The published salt the demo's merchant accounts derive from; null only for a version-1 demo. */
+	readonly merchantsSalt: string | null
 	/** A public endpoint the page reads and sends L1 through, never a keyed run's SEPOLIA_RPC_URL. */
 	readonly l1RpcUrl: string
 	readonly proofs: Proofs
@@ -142,7 +144,7 @@ export function resolveTarget(env: Env, repoRoot: string): BuildTarget {
 	if (proofs === "real") assertPrestoProves(manifest, repoRoot)
 	return {
 		manifest,
-		usersTag: demo.usersTag,
+		...castKeysOf(demo),
 		l1RpcUrl: l1RpcFor(path, manifest, env),
 		proofs,
 		presto: prestoFor(env, manifest),

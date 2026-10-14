@@ -61,7 +61,7 @@ contract SepoliaForkTest is Test {
         // The deploy order: the router names the portal before the portal's initialize checks that binding.
         portal = new TokenPortal();
         router = new Permit2DepositRouter(ISignatureTransfer(PERMIT2), ITokenPortal(address(portal)), IERC20(USDC));
-        portal.initialize(REGISTRY, USDC, L2_BRIDGE, address(router));
+        portal.initialize(REGISTRY, USDC, L2_BRIDGE, address(router), ROLLUP_VERSION);
         deal(USDC, user, 100e6);
         vm.prank(user);
         IERC20(USDC).approve(PERMIT2, type(uint256).max);
@@ -208,7 +208,7 @@ contract SepoliaForkTest is Test {
         TokenPortal portal2 = new TokenPortal();
         RouterWithoutSignerCheck mutant =
             new RouterWithoutSignerCheck(ISignatureTransfer(PERMIT2), ITokenPortal(address(portal2)), IERC20(USDC));
-        portal2.initialize(REGISTRY, USDC, L2_BRIDGE, address(mutant));
+        portal2.initialize(REGISTRY, USDC, L2_BRIDGE, address(mutant), ROLLUP_VERSION);
         bytes memory foreignForMutant = _signWith(0xB0B, mutant, bytes32(0), true, 4, deadline);
         vm.prank(user);
         mutant.deposit(AMOUNT, bytes32(0), SECRET_HASH, true, 4, deadline, foreignForMutant);

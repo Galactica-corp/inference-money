@@ -1051,7 +1051,7 @@
 
 - [x] **SP-47** — If it's a merchant, it withdraws publicly or privately to any L1 address except zero and the
   portal, whatever its binding. (Category: STATE_TRANSITION; Guarantee: SHOULD-HOLD — A24: "a merchant exits publicly or
-  privately to any address but the portal"; Priority: MEDIUM; Scope: after exit_to_l1_* by a merchant; Sources: SPEC-24,
+  privately to any address but zero and the portal"; Priority: MEDIUM; Scope: after exit_to_l1_* by a merchant; Sources: SPEC-24,
   ST-38)
   Coverage: COVERED by token_bridge/src/test/exits.nr: a_merchant_exits_publicly_anywhere,
   a_merchant_exits_privately_anywhere (bound, exits elsewhere), exit_to_l1_{public,private}_portal_recipient_rejected,

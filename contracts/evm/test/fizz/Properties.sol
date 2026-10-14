@@ -3,6 +3,7 @@ pragma solidity >=0.6.2 <0.9.0;
 
 import {Epoch} from "@aztec/core/libraries/TimeLib.sol";
 import {TokenPortal} from "../../src/TokenPortal.sol";
+import {FAKE_ROLLUP_VERSION} from "../mocks/AztecFakes.sol";
 import {ModalUsdc} from "./mocks/ModalUsdc.sol";
 import {vm} from "./utils/Hevm.sol";
 import {Snapshots} from "./Snapshots.sol";
@@ -576,16 +577,20 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
 
     /// @notice SP-14: a fresh portal's first valid initialize succeeds and every later one reverts, bindings intact
     function property_freshPortalInitOnce(TokenPortal fresh, address validRouter, address stranger) internal {
-        try fresh.initialize(address(registry), address(usdc), L2_BRIDGE, validRouter) {}
+        try fresh.initialize(address(registry), address(usdc), L2_BRIDGE, validRouter, FAKE_ROLLUP_VERSION) {}
         catch {
             t(false, "SP-14: the initializer's first valid initialize reverted");
         }
         bytes32 bound = _bindingsHash(fresh);
-        try fresh.initialize(address(registry), address(usdc), bytes32(uint256(0xBAD)), validRouter) {
+        try fresh.initialize(
+            address(registry), address(usdc), bytes32(uint256(0xBAD)), validRouter, FAKE_ROLLUP_VERSION
+        ) {
             t(false, "SP-14: the initializer re-initialized");
         } catch {}
         vm.prank(stranger);
-        try fresh.initialize(address(registry), address(usdc), bytes32(uint256(0xBAD)), validRouter) {
+        try fresh.initialize(
+            address(registry), address(usdc), bytes32(uint256(0xBAD)), validRouter, FAKE_ROLLUP_VERSION
+        ) {
             t(false, "SP-14: a stranger re-initialized");
         } catch {}
         _eqB(_bindingsHash(fresh), bound, "SP-14: a refused initialize moved a binding");
@@ -599,11 +604,11 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
         address stranger
     ) internal {
         vm.prank(stranger);
-        try fresh.initialize(address(registry), address(usdc), L2_BRIDGE, validRouter) {
+        try fresh.initialize(address(registry), address(usdc), L2_BRIDGE, validRouter, FAKE_ROLLUP_VERSION) {
             t(false, "SP-15: a stranger initialized a fresh portal");
         } catch {}
         _eqA(address(fresh.registry()), address(0), "SP-15: a refused stranger initialize consumed the slot");
-        try fresh.initialize(address(registry), address(usdc), L2_BRIDGE, foreignTokenRouter) {
+        try fresh.initialize(address(registry), address(usdc), L2_BRIDGE, foreignTokenRouter, FAKE_ROLLUP_VERSION) {
             t(false, "SP-15: a router naming another token was bound");
         } catch {}
         _eqA(address(fresh.registry()), address(0), "SP-15: a refused router consumed the slot");

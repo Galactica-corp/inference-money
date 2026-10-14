@@ -5,6 +5,7 @@ import {IERC20} from "@oz/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@oz/token/ERC20/utils/SafeERC20.sol";
 import {TokenPortal} from "../../src/TokenPortal.sol";
 import {ITokenPortal} from "../../src/interfaces/ITokenPortal.sol";
+import {FAKE_ROLLUP_VERSION} from "./AztecFakes.sol";
 
 /// A non-hashing stand-in for `TokenPortal`: it pulls the deposit and records it. The symbolic suites need it
 /// because halmos 0.3.3 cannot model the sha256 precompile the real portal hashes with. `shortBy` makes it pull
@@ -73,5 +74,5 @@ function initializedPortal(address registry, address token, bytes32 l2Bridge)
 {
     portal = new TokenPortal();
     router = new StubRouter(address(portal), token);
-    portal.initialize(registry, token, l2Bridge, address(router));
+    portal.initialize(registry, token, l2Bridge, address(router), FAKE_ROLLUP_VERSION);
 }

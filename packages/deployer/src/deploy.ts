@@ -56,7 +56,9 @@ export async function deployBridge(c: DeployContext): Promise<BridgeManifest> {
 	const router = await deployRouter(c.l1, c.evm, c.permit2, portal.address, c.usdc)
 	c.log(`router ${router.address}`)
 	const l2 = await deployBridgeL2(c.wallet, deployer, c.fees, portal.address, c.log)
-	const binding = { registry, usdc: c.usdc, l2Bridge: l2.bridge.address, router: router.address }
+	// The node's rollup is where the L2 side now lives; on testnet `probeNetwork` has already pinned it.
+	const rollupVersion = BigInt(info.rollupVersion)
+	const binding = { registry, usdc: c.usdc, l2Bridge: l2.bridge.address, router: router.address, rollupVersion }
 	await initializePortal(c.l1, c.evm, portal.address, binding)
 	c.log("portal initialized")
 	const merchantDelay = c.merchantDelay ?? MERCHANT_MAX_DELAY
