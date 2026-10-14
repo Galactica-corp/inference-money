@@ -62,7 +62,7 @@ const EXACT_VERSION = /^\d+\.\d+\.\d+(-[0-9A-Za-z.]+)?$/
  * The toolchain's node and SDK versions, and the `@aztec-labs/stdlib` Presto's SDK pins; throws unless each is an exact
  * version, so a comparison of them fails closed.
  */
-export function prestoPins(repoRoot: string): { aztecNode: string; aztecJs: string; prestoStdlib: string } {
+function prestoPins(repoRoot: string): { aztecNode: string; aztecJs: string; prestoStdlib: string } {
 	const { aztecNode, aztecJs } = JSON.parse(readFileSync(resolve(repoRoot, "toolchain.json"), "utf8"))
 	const prestoStdlib = JSON.parse(readFileSync(resolve(repoRoot, PRESTO_PACKAGE), "utf8")).dependencies?.["@aztec-labs/stdlib"]
 	if (![aztecNode, aztecJs, prestoStdlib].every((v) => typeof v === "string" && EXACT_VERSION.test(v))) {

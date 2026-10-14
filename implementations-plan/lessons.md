@@ -22,7 +22,7 @@ Gotchas that cost a past run and would bite other work, one line each with its a
 
 ## Bun / TypeScript / tests
 
-- bun reads `bunfig.toml` from the cwd only (a nested standalone project misses the root's age gate and linker, `bun run --cwd` its preload) and applies the age gate only at resolution: lock a young version under a temporary `minimumReleaseAgeExcludes` entry, never commit one. An optional package skipped before it joined stays skipped until its parent leaves `bun.lock` (`aztec-wsdb binary not found`). [phase-3](archive/usdc-bridge/lessons/phase-3.md), [phase-10](archive/usdc-bridge/lessons/phase-10.md), [phase-11](archive/usdc-bridge/lessons/phase-11.md), [phase-1](archive/presto-showcase/lessons/phase-1.md)
+- bun reads `bunfig.toml` from the cwd only (a nested standalone project misses the root's age gate and linker, `bun run --cwd` its preload) and age-gates only at resolution, which a changed lock reruns for every young version it holds: lock under a temporary `minimumReleaseAgeExcludes` naming each, never commit one. An optional package skipped before it joined stays skipped until its parent leaves `bun.lock` (`aztec-wsdb binary not found`). [phase-3](archive/usdc-bridge/lessons/phase-3.md), [phase-10](archive/usdc-bridge/lessons/phase-10.md), [phase-11](archive/usdc-bridge/lessons/phase-11.md), [phase-1](archive/presto-showcase/lessons/phase-1.md), [phase-1](archive/presto-restore/lessons/phase-1.md)
 - `Bun.spawn` (1.4.0–1.4.2) ignores `process.env` deletions: spawn a child that must not inherit a secret through `node:child_process` or `Bun.$`. [phase-8](archive/galactica-compliant-usdc/lessons/phase-8.md)
 - A closure's inner functions count toward its function's 80-line budget; use a class with private methods. [phase-9](archive/usdc-bridge/lessons/phase-9.md)
 - Assert the failure reason: a spec passing on "not deployed", self-test fixtures sharing one dir and `fail_on_revert = false` invariants all passed vacuously. [phase-3](archive/usdc-bridge/lessons/phase-3.md), [phase-6](archive/usdc-bridge/lessons/phase-6.md)
@@ -36,6 +36,7 @@ Gotchas that cost a past run and would bite other work, one line each with its a
 ## Browser e2e
 
 - A local network can finish a flow between Playwright polls: assert durable state, not a transient step. [phase-10](archive/usdc-bridge/lessons/phase-10.md)
+- Locally, presto-server checks bb through GitHub's anonymous API (60/hour, shared by the host); once spent, the SDK proves in the browser and `presto.spec.ts` fails: read `api.github.com/rate_limit` first. [phase-4](archive/presto-restore/lessons/phase-4.md)
 
 ## CI
 

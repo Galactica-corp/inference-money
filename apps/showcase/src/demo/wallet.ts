@@ -2,7 +2,6 @@ import type { AztecAddress } from "@aztec-labs/aztec.js/addresses"
 import { Fr } from "@aztec-labs/aztec.js/fields"
 import type { AztecNode } from "@aztec-labs/aztec.js/node"
 import { openBrowserStore, PXE_DATA_SCHEMA_VERSION } from "@aztec-labs/pxe/client/lazy"
-import type { PrivateKernelProver } from "@aztec-labs/stdlib/interfaces/client"
 import type { Tx } from "@aztec-labs/stdlib/tx"
 import { EmbeddedWallet } from "@aztec-labs/wallets/embedded"
 import {
@@ -163,9 +162,7 @@ export async function openDemoWallet(node: AztecNode, m: BridgeManifest, opts: D
 	const gate = new PaymentGate(sends.node, opts.payments)
 	const proofs = opts.presto?.proofs
 	const Staged = stagedWallet(stages, proofs?.around ?? ((prove) => prove()))
-	// Presto's SDK still types its kernel inputs with its own pinned stdlib; drop the cast once it pins `aztecJs`.
-	const prover = proofs?.prover as unknown as PrivateKernelProver | undefined
-	const pxe = { proverEnabled: opts.proves, store, proverOrOptions: prover, simulator: proofs?.simulator }
+	const pxe = { proverEnabled: opts.proves, store, proverOrOptions: proofs?.prover, simulator: proofs?.simulator }
 	const wallet = await gate.bindWallet((gated) => sends.bindWallet(() => Staged.create(gated, { pxe })))
 	await registerSponsor(wallet, m)
 	await registerBridgeContracts(wallet, m)
