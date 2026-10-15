@@ -18,7 +18,9 @@ Gotchas that cost a past run and would bite other work, one line each with its a
 - halmos 0.3.3 leaves `ecrecover` uninterpreted: it proves an honest low-s `vm.sign` accepted, never a foreign signer refused. Prove signer rules in forge, with a mutant canary. [phase-0](archive/pashov-audit-fizz/lessons/phase-0.md)
 - Sign before `vm.prank` or `vm.expectRevert`: a call argument that reads a contract (a digest) consumes them. [phase-3](archive/pashov-audit-fizz/lessons/phase-3.md)
 - `verify` checks the portal against a fresh build of the working tree: freeze `contracts/evm/src` while a local run is live. [phase-5](archive/pre-redeploy/lessons/phase-5.md)
-- Medusa 1.5.1 reads `slither.useSlither`, not `enabled`, and exits 7 on any failed property: judge a campaign by its exit code and registered-property count. [phase-1](archive/pashov-audit-fizz/lessons/phase-1.md)
+- Medusa 1.5.1 reads `slither.useSlither`, not `enabled`; exits 7 on any failed property (judge a campaign by its exit code and registered-property count); mis-executes `etch`ed code (deploy it with `CREATE`); shrinks past `--timeout` (a failing 120 s run: 733 s). [phase-1](archive/pashov-audit-fizz/lessons/phase-1.md), [phase-1](archive/l1-assurance/lessons/phase-1.md)
+- Slither 0.11.6 exits 0 on a body it cannot lift, then drops SSA for the whole contract, blinding its dependency detectors (#99): gate its stderr. [phase-3](archive/l1-assurance/lessons/phase-3.md)
+- Fork a load-balanced RPC a few blocks back: at `latest`, a lagging backend answers `block not found`. [phase-4](archive/l1-assurance/lessons/phase-4.md)
 
 ## Bun / TypeScript / tests
 

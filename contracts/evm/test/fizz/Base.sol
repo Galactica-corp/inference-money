@@ -22,7 +22,8 @@ import {ISignatureTransfer} from "../../src/interfaces/ISignatureTransfer.sol";
 import {ITokenPortal} from "../../src/interfaces/ITokenPortal.sol";
 
 import {CapturingInbox, FAKE_ROLLUP_VERSION, FakeRegistry, FakeRollup} from "../mocks/AztecFakes.sol";
-import {MockPermit2} from "../mocks/MockPermit2.sol";
+import {IPermit2Errors, Permit2Digest} from "../mocks/Permit2Digest.sol";
+import {Permit2Runtime} from "../mocks/Permit2Runtime.sol";
 import {ModalUsdc} from "./mocks/ModalUsdc.sol";
 import {RealOutboxStack} from "./mocks/RealOutboxStack.sol";
 
@@ -76,6 +77,7 @@ abstract contract Base is StringUtils, Clamp, Deployer, Math {
         uint256 staleDepositAccepted; // a deposit succeeded while the registry's canonical rollup was not the portal's
         uint256 authorizationMisused; // a spent, or another submitter's, portal authorization deposited (or misfired)
         uint256 foreignSignatureAccepted; // a private deposit carrying another key's signature passed (or misfired)
+        uint256 authorizationRollbackBroken; // a refused deposit spent its Permit2 nonce or portal authorization
         uint256 selfPayoutAccepted; // a proven exit to the portal itself paid out
         uint256 misboundRouter; // a fresh portal/router accepted a stranger's init, a foreign router or a code-less dependency
         // Flow splits and liveness counters
@@ -133,6 +135,17 @@ abstract contract Base is StringUtils, Clamp, Deployer, Math {
     mapping(address actor => uint256) internal actorKey;
     /// Spent into each authorization's deadline, so two identical deposits never share a digest.
     uint256 internal authorizationNonce;
+    /// Where each signer's search for an unspent Permit2 nonce resumes.
+    mapping(address signer => uint256) internal permitNonce;
+    /// The nonce of each signer's last successful router deposit, for the replay probe.
+    mapping(address signer => uint256) internal lastRouterNonce;
+
+    /// The deposit witness written out from the router's documented intent, never read from its constants: a drift
+    /// in the router's own encoding then fails the real Permit2's signature check instead of moving both sides.
+    bytes32 internal constant SPEC_WITNESS_TYPEHASH =
+        keccak256("DepositWitness(bytes32 aztecRecipient,bytes32 secretHash,bool isPrivate)");
+    string internal constant SPEC_WITNESS_TYPE_STRING =
+        "DepositWitness witness)DepositWitness(bytes32 aztecRecipient,bytes32 secretHash,bool isPrivate)TokenPermissions(address token,uint256 amount)";
 
     /// The last portal authorization that deposited, kept for the replay and foreign-submitter probes.
     struct Authorization {
@@ -162,7 +175,7 @@ abstract contract Base is StringUtils, Clamp, Deployer, Math {
     // ―――――――――――――――――――――――― Contracts ―――――――――――――――――――――――――
 
     ModalUsdc internal usdc;
-    MockPermit2 internal permit2;
+    ISignatureTransfer internal permit2;
     CapturingInbox internal inbox;
     Outbox internal outbox;
     FakeRollup internal rollup;
@@ -172,13 +185,24 @@ abstract contract Base is StringUtils, Clamp, Deployer, Math {
 
     // ―――――――――――――――――――――――――― Setup ―――――――――――――――――――――――――――
 
+    /// Deploys `runtime` byte for byte behind a 12-byte init stub. Medusa 1.5.1 faults inside code placed with
+    /// `etch` (a stack underflow in Permit2's dispatch) where the same bytes run cleanly once deployed.
+    function _deployRuntime(bytes memory runtime) internal returns (address deployed) {
+        bytes memory init = abi.encodePacked(hex"61", uint16(runtime.length), hex"80600c6000396000f3", runtime);
+        assembly ("memory-safe") {
+            deployed := create(0, add(init, 0x20), mload(init))
+        }
+        require(deployed != address(0), "runtime deploy failed");
+    }
+
     /// Mirrors the project's deploy order (test/mocks/RouterFixture.sol): portal (this contract is its initializer),
     /// router naming portal + token, then the portal's one `initialize` binding registry, token, L2 bridge and router.
-    /// The Aztec side is the capturing Inbox and the REAL Outbox, as in PortalWithdrawRealOutbox.t.sol; Permit2 is the
-    /// project's recording mock (signature validity is Permit2's domain, pinned by the Sepolia fork suite).
+    /// The Aztec side is the capturing Inbox and the REAL Outbox, as in PortalWithdrawRealOutbox.t.sol; Permit2 is its
+    /// real runtime, the code the local deploy installs, deployed at a fresh address.
     function setup() internal {
         usdc = new ModalUsdc();
-        permit2 = new MockPermit2();
+        permit2 = ISignatureTransfer(_deployRuntime(Permit2Runtime.CODE));
+        require(keccak256(address(permit2).code) == Permit2Runtime.KECCAK, "Permit2 runtime differs from its pin");
         inbox = new CapturingInbox();
         RealOutboxStack stack = new RealOutboxStack(address(inbox));
         outbox = stack.outbox();
@@ -253,12 +277,45 @@ abstract contract Base is StringUtils, Clamp, Deployer, Math {
     {
         // A year out, so a probe replaying it later meets the replay rule, not the expiry one.
         deadline = block.timestamp + 365 days + authorizationNonce++;
-        bytes32 digest = portal.fundingAuthorizationDigest(depositor, submitter, amount, secretHash, deadline);
-        (uint8 v, bytes32 r, bytes32 s) = vm.sign(actorKey[depositor], digest);
-        signature = abi.encodePacked(r, s, v);
+        signature = _authorizeUntil(depositor, submitter, amount, secretHash, deadline);
     }
 
-    /// `signer`'s signature over the router's Permit2 digest. Computed before any prank its digest read would consume.
+    /// `depositor`'s authorization for `submitter`'s private deposit, valid through `deadline`. Computed before any
+    /// prank its digest read would consume.
+    function _authorizeUntil(address depositor, address submitter, uint256 amount, bytes32 secretHash, uint256 deadline)
+        internal
+        returns (bytes memory)
+    {
+        bytes32 digest = portal.fundingAuthorizationDigest(depositor, submitter, amount, secretHash, deadline);
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(actorKey[depositor], digest);
+        return abi.encodePacked(r, s, v);
+    }
+
+    /// The digest Permit2 verifies for this router deposit, from Permit2's spec and the witness written out above.
+    function _specPermitDigest(
+        uint256 amount,
+        bytes32 recipient,
+        bytes32 secretHash,
+        bool isPrivate,
+        uint256 nonce,
+        uint256 deadline
+    ) internal view returns (bytes32) {
+        return Permit2Digest.digest(
+            Permit2Digest.Params({
+                chainId: block.chainid,
+                permit2: address(permit2),
+                token: address(usdc),
+                amount: amount,
+                spender: address(router),
+                nonce: nonce,
+                deadline: deadline,
+                witness: keccak256(abi.encode(SPEC_WITNESS_TYPEHASH, recipient, secretHash, isPrivate)),
+                witnessTypeString: SPEC_WITNESS_TYPE_STRING
+            })
+        );
+    }
+
+    /// `signer`'s signature over the spec digest, so only a router that hands Permit2 the signed intent gets a pull.
     function _permitSignature(
         address signer,
         uint256 amount,
@@ -268,9 +325,21 @@ abstract contract Base is StringUtils, Clamp, Deployer, Math {
         uint256 nonce,
         uint256 deadline
     ) internal returns (bytes memory) {
-        bytes32 digest = router.permitDigest(amount, recipient, secretHash, isPrivate, nonce, deadline);
+        bytes32 digest = _specPermitDigest(amount, recipient, secretHash, isPrivate, nonce, deadline);
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(actorKey[signer], digest);
         return abi.encodePacked(r, s, v);
+    }
+
+    /// Whether Permit2 has spent `owner`'s unordered `nonce`. Reads Permit2, so never between a prank and its call.
+    function _nonceUsed(address owner, uint256 nonce) internal view returns (bool) {
+        return (permit2.nonceBitmap(owner, nonce >> 8) >> (nonce & 0xff)) & 1 == 1;
+    }
+
+    /// The next nonce `signer` has not spent, skipping any a fuzzed deposit already took.
+    function _freshNonce(address signer) internal returns (uint256 nonce) {
+        nonce = permitNonce[signer];
+        while (_nonceUsed(signer, nonce)) nonce++;
+        permitNonce[signer] = nonce + 1;
     }
 
     /// A boundary probe's revert is a refusal only with its rule's own selector; any other revert could hide the rule.
@@ -303,7 +372,12 @@ abstract contract Base is StringUtils, Clamp, Deployer, Math {
 
     /// Normal token mode, nothing armed, and neither the current actor nor the portal blacklisted.
     function _cleanEnv() internal view returns (bool) {
-        return usdc.mode() == ModalUsdc.Mode.Normal && usdc.hookPayload().length == 0 && !usdc.blacklisted(actor)
+        return _cleanEnvIn(ModalUsdc.Mode.Normal);
+    }
+
+    /// `_cleanEnv` with the token in `mode`.
+    function _cleanEnvIn(ModalUsdc.Mode mode) internal view returns (bool) {
+        return usdc.mode() == mode && usdc.hookPayload().length == 0 && !usdc.blacklisted(actor)
             && !usdc.blacklisted(address(portal));
     }
 

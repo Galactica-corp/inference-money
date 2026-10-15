@@ -14,16 +14,8 @@ import {TokenPortal} from "../src/TokenPortal.sol";
 import {ISignatureTransfer} from "../src/interfaces/ISignatureTransfer.sol";
 import {ITokenPortal} from "../src/interfaces/ITokenPortal.sol";
 import {RouterWithoutSignerCheck} from "./mocks/Mutants.sol";
-import {Permit2Digest} from "./mocks/Permit2Digest.sol";
+import {IPermit2Errors, Permit2Digest} from "./mocks/Permit2Digest.sol";
 import {Honest1271Delegate, Inert, PermissiveWallet, RevertingDelegate, WrongMagicDelegate} from "./mocks/Wallets.sol";
-
-/// Permit2's own errors (Uniswap/permit2 SignatureTransfer + SignatureVerification).
-interface IPermit2Errors {
-    error InvalidContractSignature();
-    error InvalidNonce();
-    error InvalidSigner();
-    error SignatureExpired(uint256 signatureDeadline);
-}
 
 /// Forks Sepolia and drives the REAL Permit2, Circle USDC, Aztec testnet registry and Inbox through a freshly
 /// deployed portal + router. Skips only when SEPOLIA_RPC_URL is unset; `bun run test:evm:fork` refuses to run
@@ -55,6 +47,9 @@ contract SepoliaForkTest is Test {
             return;
         }
         vm.createSelectFork(rpc);
+        // A load-balanced public endpoint can serve reads from a backend a block or two behind its head, so the fork
+        // pins a block well past that lag.
+        vm.rollFork(block.number - 8);
         user = vm.addr(userPk);
         require(user.code.length == 0, "signer must be a plain EOA on this fork");
 
