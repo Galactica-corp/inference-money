@@ -19,7 +19,7 @@ writeFileSync(join(root, "testnet-tour.json"), JSON.stringify({ recorded: "testn
 const local = join(root, "local", "run-1", "manifest.json")
 mkdirSync(join(root, "local", "run-1"), { recursive: true })
 writeFileSync(local, JSON.stringify({ ...fixture, network: "local" }))
-writeFileSync(join(root, "local", "run-1", "demo.json"), demoV1(fixture.l2.bridge.address))
+writeFileSync(join(root, "local", "run-1", "demo.json"), demo(fixture.l2.bridge.address))
 mkdirSync(join(root, "apps", "showcase", "e2e", "fixtures"), { recursive: true })
 writeFileSync(join(root, "apps", "showcase", "e2e", "fixtures", "tour.json"), JSON.stringify({ recorded: "fixture" }))
 /** A local manifest's L1 RPC comes from its run's network; attached endpoints stand in for one. */
@@ -55,9 +55,12 @@ describe("resolveTarget", () => {
 		expect(() => resolveTarget({ BRIDGE_MANIFEST: testnet }, root)).toThrow(/no published demo/)
 		writeFileSync(join(root, "testnet-demo.json"), demo(fixture.l2.bridge.address))
 
-		const v1 = { proofs: "fake", l1RpcUrl: ANVIL.NET_L1_RPC, merchantsSalt: null }
-		expect(resolveTarget({ BRIDGE_MANIFEST: local, ...ANVIL }, root), "a version-1 demo has no salt").toMatchObject(v1)
+		const fake = { proofs: "fake", l1RpcUrl: ANVIL.NET_L1_RPC, merchantsSalt: SALT }
+		expect(resolveTarget({ BRIDGE_MANIFEST: local, ...ANVIL }, root)).toMatchObject(fake)
 		expect(resolveTarget({ BRIDGE_MANIFEST: local, SHOWCASE_PROOFS: "real", ...ANVIL }, root).proofs).toBe("real")
+		writeFileSync(join(root, "local", "run-1", "demo.json"), demoV1(fixture.l2.bridge.address))
+		expect(() => resolveTarget({ BRIDGE_MANIFEST: local, ...ANVIL }, root), "a version-1 demo has no salt").toThrow(/bridge demo setup/)
+		writeFileSync(join(root, "local", "run-1", "demo.json"), demo(fixture.l2.bridge.address))
 		const v2 = { proofs: "real", usersTag: "ab".repeat(16), merchantsSalt: SALT }
 		expect(resolveTarget({ BRIDGE_MANIFEST: testnet }, root)).toMatchObject(v2)
 	})

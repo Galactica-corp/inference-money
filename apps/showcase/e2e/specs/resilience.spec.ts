@@ -13,7 +13,11 @@ const ALICE_SEED = 10n * USDC
 const CENT = USDC / 100n
 const NOWHERE = "0x000000000000000000000000000000000000dEaD"
 
-test("a send another visitor beat to the same funds retries once on the nullifier conflict, and settles", async ({ page, me, another }) => {
+test("a send another visitor beat to the same funds is left unconfirmed on the nullifier conflict, never sent twice", async ({
+	page,
+	me,
+	another,
+}) => {
 	const other = await another()
 	await Promise.all([openLive(page), openLive(other.page)])
 	const alice = await shownBalance(page, "alice")
@@ -29,10 +33,11 @@ test("a send another visitor beat to the same funds retries once on the nullifie
 	const theirs = await tryIt(other.page)
 	expect(theirs.kind, theirs.detail).toBe("settled")
 	door.release()
+	// The node's refusal is its word alone: the copy counts as gone only once a finalized block passes its expiry.
 	const run = await mine
-	expect(run.kind, run.detail).toBe("settled")
-	expect(me.rpc.countSince(mark, L2_SEND), "the refused send, then one retry").toBe(2)
-	await expectBalance(page, "alice", alice - 2n * CENT)
+	expect([run.kind, run.detail]).toEqual(["failed", expect.stringMatching(/may still take the first try/)])
+	expect(me.rpc.countSince(mark, L2_SEND), "the refused send, and no second").toBe(1)
+	await expectBalance(page, "alice", alice - CENT)
 })
 
 test("[A13] a reload while a payout is on its way resumes it, and it pays out once", async ({ page, me, run, manifest }) => {

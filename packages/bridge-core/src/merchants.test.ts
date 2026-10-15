@@ -1,10 +1,12 @@
 import { describe, expect, it } from "bun:test"
 import { AztecAddress } from "@aztec-labs/aztec.js/addresses"
+import { SimulationError } from "@aztec-labs/stdlib/errors"
 import { tokenBridgeArtifact } from "./artifacts"
 import {
 	contractEvent,
 	MERCHANT_MAX_DELAY as DAY,
 	MERCHANT_MIN_DELAY as HOUR,
+	ListRefusal,
 	type MerchantEntry,
 	type MerchantList,
 	merchantHorizon,
@@ -14,7 +16,9 @@ import {
 	Side,
 	sideCapsule,
 	tokenEvent,
+	withFreshList,
 } from "./merchants"
+import { TOKEN_REFUSALS } from "./rules"
 import { MERCHANT_SIDE_SLOT, requestStampAt, STANDARD_TX_LIFETIME, stampBucket } from "./stamp"
 
 const NOW = 1_000_000n
@@ -130,11 +134,51 @@ describe("the side a call proves", () => {
 		expect(paymentSide(offAt(NOW + HOUR), undefined, m1)).toBe(Side.Second)
 	})
 
+	it("reads a merchant payer's status at the stamp's block, as its horizon: a switch-off between the two leaves the user side", () => {
+		const later = NOW + 2n * HOUR
+		const stampedLater = requestStampAt(stampBucket(later) - 3n, later)
+		expect(paymentSide(list([[m1, switchingOff]]), stampedLater, m1)).toBe(Side.First)
+	})
+
 	it("is carried in the token's capsule slot", () => {
 		const capsule = sideCapsule(m1, Side.Second)
 		expect(capsule.contractAddress.equals(m1)).toBe(true)
 		expect(capsule.storageSlot.equals(MERCHANT_SIDE_SLOT)).toBe(true)
 		expect(capsule.data.map((f) => f.toBigInt())).toEqual([1n])
+	})
+})
+
+describe("the fresh-list retry", () => {
+	const rule = TOKEN_REFUSALS.transfer
+	/** Runs an attempt that fails with `errors` in turn, then succeeds; returns how many attempts and resyncs ran. */
+	async function run(...errors: Error[]) {
+		const counts = { attempts: 0, resyncs: 0 }
+		const resync = async () => {
+			counts.resyncs++
+			return list([])
+		}
+		const outcome = await withFreshList(list([]), resync, async () => {
+			const e = errors[counts.attempts++]
+			if (e) throw e
+			return "sent"
+		}).catch((e: Error) => e)
+		return { outcome, ...counts }
+	}
+
+	it("runs again only on a stale-list rule refused before the send, and only once", async () => {
+		const simulated = new SimulationError(rule, [])
+		for (const [why, error, retried] of [
+			["a node's reply, which may follow the send", new Error(`Invalid tx: ${rule}`), false],
+			["a simulation refusal on another rule", new SimulationError(TOKEN_REFUSALS.zeroPayment, []), false],
+			["the wallet's simulation", simulated, true],
+			["a wrapper of it", new Error(rule, { cause: simulated }), true],
+			["the client's own list", new ListRefusal(rule), true],
+		] as const) {
+			const r = await run(error)
+			expect([r.outcome, r.attempts, r.resyncs], why).toEqual(retried ? ["sent", 2, 1] : [error, 1, 0])
+		}
+		const again = new ListRefusal(rule)
+		expect(await run(new ListRefusal(rule), again)).toEqual({ outcome: again, attempts: 2, resyncs: 1 })
 	})
 })
 

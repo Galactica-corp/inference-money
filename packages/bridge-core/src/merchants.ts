@@ -20,6 +20,7 @@ import {
 	EventSelector,
 } from "@aztec-labs/stdlib/abi"
 import { DelayedPublicMutableValues, type ScheduledDelayChange } from "@aztec-labs/stdlib/delayed-public-mutable"
+import { SimulationError } from "@aztec-labs/stdlib/errors"
 import { deriveStorageSlotInMap } from "@aztec-labs/stdlib/hash"
 import { Capsule } from "@aztec-labs/stdlib/tx"
 import { tokenArtifact } from "./artifacts"
@@ -182,7 +183,7 @@ export function merchantSide(list: MerchantList, first: AztecAddress, second: Az
  */
 export function paymentSide(list: MerchantList, stamp: RequestStamp | undefined, from: AztecAddress): Side {
 	if (stamp?.state === "fresh") return Side.First
-	const payer = merchantStatus(list, from).merchant
+	const payer = merchantStatus(list, from, stamp?.at).merchant
 	if (payer && (!stamp || merchantHorizon(list, from, stamp.at) >= stamp.at + STANDARD_TX_LIFETIME)) return Side.Second
 	return stamp ? Side.First : Side.Neither
 }
@@ -193,7 +194,29 @@ export const sideCapsule = (token: AztecAddress, side: Side): Capsule => new Cap
 // The refusals a stale list can cause: it named a side that is no longer a merchant, or missed one that now is.
 const STALE_LIST_RULES: ReadonlySet<TokenRule> = new Set(["transfer", "request", "payment", "notRegistered", "switchedOff"])
 
-/** Runs `attempt` on `list`; when it fails on a merchant rule and `resync` is given, retries once on a fresh list. */
+/** A token rule's refusal, in its exact text, that the client drew from its merchant list before proving anything. */
+export class ListRefusal extends Error {
+	constructor(message: string) {
+		super(message)
+		this.name = "ListRefusal"
+	}
+}
+
+// A node's reply arrives as a plain Error, even after it has taken the tx; a SimulationError comes only from proving
+// or simulating before the send.
+function refusedBeforeSend(e: unknown): boolean {
+	let current: unknown = e
+	for (let depth = 0; depth < 6 && current instanceof Error; depth++) {
+		if (current instanceof ListRefusal || current instanceof SimulationError) return true
+		current = current.cause
+	}
+	return false
+}
+
+/**
+ * Runs `attempt` on `list`; when it fails on a merchant rule before anything was sent and `resync` is given, retries
+ * once on a fresh list.
+ */
 export async function withFreshList<T>(
 	list: MerchantList,
 	resync: (() => Promise<MerchantList>) | undefined,
@@ -203,7 +226,7 @@ export async function withFreshList<T>(
 		return await attempt(list)
 	} catch (e) {
 		const rule = tokenRefusalOf(e)
-		if (!resync || !rule || !STALE_LIST_RULES.has(rule)) throw e
+		if (!resync || !rule || !STALE_LIST_RULES.has(rule) || !refusedBeforeSend(e)) throw e
 		return attempt(await resync())
 	}
 }

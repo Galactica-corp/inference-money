@@ -4,11 +4,11 @@ import { SetPublicAuthwitContractInteraction } from "@aztec-labs/aztec.js/author
 import { Fr } from "@aztec-labs/aztec.js/fields"
 import { TxStatus } from "@aztec-labs/aztec.js/tx"
 import type { EmbeddedWallet } from "@aztec-labs/wallets/embedded"
-import { type BridgeManifest, signingKeyFor, sponsoredPayment } from "@inference-money/bridge-core"
+import { type BridgeManifest, randomSecret, signingKeyFor, sponsoredPayment } from "@inference-money/bridge-core"
 import { withBlockHeartbeat } from "@inference-money/local-network"
 
 /** A fresh Schnorr account in `wallet`, deployed through the sponsor; `secret` alone rebuilds it in any wallet. */
-export async function newSponsoredAccount(wallet: EmbeddedWallet, m: BridgeManifest, secret = Fr.random()): Promise<AztecAddress> {
+export async function newSponsoredAccount(wallet: EmbeddedWallet, m: BridgeManifest, secret = randomSecret()): Promise<AztecAddress> {
 	const manager = await wallet.createSchnorrAccount(secret, Fr.ZERO, signingKeyFor(secret))
 	const deploy = await manager.getDeployMethod()
 	await deploy.send({ from: NO_FROM, fee: { paymentMethod: sponsoredPayment(m) } })
@@ -23,7 +23,7 @@ export async function newSponsoredAccount(wallet: EmbeddedWallet, m: BridgeManif
 export async function startBlockHeartbeat(wallet: EmbeddedWallet, m: BridgeManifest): Promise<() => Promise<void>> {
 	const beater = await newSponsoredAccount(wallet, m)
 	const send = { from: beater, fee: { paymentMethod: sponsoredPayment(m) }, wait: { waitForStatus: TxStatus.PROPOSED } }
-	const forceBlock = async () => (await SetPublicAuthwitContractInteraction.create(wallet, beater, Fr.random(), false)).send(send)
+	const forceBlock = async () => (await SetPublicAuthwitContractInteraction.create(wallet, beater, randomSecret(), false)).send(send)
 	const stop = Promise.withResolvers<void>()
 	const beating = withBlockHeartbeat(forceBlock, () => stop.promise)
 	return async () => {

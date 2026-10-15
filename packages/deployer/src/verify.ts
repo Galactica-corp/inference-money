@@ -314,16 +314,16 @@ async function verifyBacking(node: AztecNode, l1: PublicClient, m: BridgeManifes
 }
 
 /**
- * The demo merchants' keys are public: the unsalted ones always, a published salt's once published. Listed anywhere but
- * local and testnet, they would let anyone act as a merchant.
+ * The demo merchants' keys are public once their salt is published. Listed anywhere but local and testnet, they would
+ * let anyone act as a merchant.
  */
 export const DEMO_NETWORKS: readonly BridgeManifest["network"][] = ["local", "testnet"]
 
 async function verifyDemoCast(node: AztecNode, m: BridgeManifest, demo: DemoFile | undefined): Promise<Check[]> {
 	if (DEMO_NETWORKS.includes(m.network)) return [check("demo cast", true, `may be listed on ${m.network}`)]
+	if (!demo) return [check("no demo merchant listed", true, "no demo published")]
 	const list = await syncMerchantList(node, AztecAddress.fromStringUnsafe(m.l2.token.address))
-	const salts = demo?.version === 2 ? [null, demo.merchantsSalt] : [null]
-	const members = salts.flatMap((merchantsSalt) => MERCHANTS.map((a) => castMember(m, a, { merchantsSalt })))
+	const members = MERCHANTS.map((a) => castMember(m, a, { merchantsSalt: demo.merchantsSalt }))
 	const cast = await Promise.all(members.map(async (c) => (await aztecAddressOf(c)).toString()))
 	const listed = cast.filter((a) => list.entries.has(a))
 	return [check("no demo merchant listed", listed.length === 0, listed.join(", ") || "none")]

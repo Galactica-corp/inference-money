@@ -30,7 +30,6 @@ describe("demo cast", () => {
 		const galactica = (keys: CastKeys) => aztecSecret(BRIDGE, "galactica", keys)
 		expect(galactica(KEYS).equals(galactica({ ...KEYS, merchantsSalt: newMerchantsSalt() }))).toBe(false)
 		expect(galactica(KEYS).equals(galactica({ merchantsSalt: KEYS.merchantsSalt }))).toBe(true)
-		expect(galactica(KEYS).equals(galactica({ merchantsSalt: null }))).toBe(false)
 		expect(() => galactica({ merchantsSalt: KEYS.merchantsSalt.toUpperCase() })).toThrow("merchants' salt")
 		expect(() => galactica({ merchantsSalt: "" })).toThrow("merchants' salt")
 	})

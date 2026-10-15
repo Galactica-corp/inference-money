@@ -18,9 +18,11 @@ import {
 	isClaimConsumed,
 	L2_PROPOSED,
 	type ListOptions,
+	ListRefusal,
 	openRequest,
 	payReplacingStale,
 	payRequest,
+	randomSecret,
 	reconcileDeposit,
 	syncMerchantList,
 	TOKEN_REFUSALS,
@@ -297,13 +299,19 @@ async function claimDeposit(ctx: LiveCtx, d: ValidDraft, report: Report): Promis
 	const consent = await bindConsent(ctx, user, found.ticket)
 	if (!consent) return { kind: "failed", detail: "Nothing claimed: the binding was declined." }
 	const since = ctx.demo.sent.length
+	let entry = found.p
+	const keep = (t: ClaimTicket) => {
+		entry = { ...entry, claim: encodeTicket("claim", t) }
+		ctx.tickets.putDeposit(entry)
+	}
 	const result = await castClaim(
 		session(ctx),
 		found.ticket,
 		() => report("simulate", "Waiting for the deposit's message to reach Aztec."),
 		consent,
+		{ l1: readerOf(ctx, found.p), keep },
 	)
-	ctx.tickets.putDeposit({ ...found.p, claimed: true })
+	ctx.tickets.putDeposit({ ...entry, claimed: true })
 	if (result === "already") return { kind: "settled", detail: ALREADY_CONSUMED, rows: [] }
 	const amount = usdc2(found.ticket.draft.intent.amount)
 	return { kind: "settled", detail: `${HOLDER_NAME[user]} claimed ${amount} USDC.`, rows: await aztecRows(ctx, since, ["claim"]) }
@@ -329,7 +337,7 @@ async function request(ctx: LiveCtx, d: ValidDraft): Promise<Outcome> {
  * request, so paying a user pays into one made without the merchant list, which the rules refuse.
  */
 async function openFor(ctx: LiveCtx, d: ValidDraft, key: string, opts: ListOptions): Promise<Fr> {
-	if (!isMerchant(d.to)) return Fr.random()
+	if (!isMerchant(d.to)) return randomSecret()
 	const merchant = address(ctx, d.to)
 	const intent = { from: merchant, to: merchant, completer: address(ctx, d.actor) }
 	const { commitment } = await openRequest(ctx.demo.wallet, ctx.demo.node, token(ctx), intent, opts)
@@ -348,7 +356,7 @@ async function pay(ctx: LiveCtx, d: ValidDraft): Promise<Outcome> {
 			await payRequest(ctx.demo.gate, ctx.demo.wallet, token(ctx), payment, await listOptions(ctx))
 		} catch (e) {
 			// Refused before any send: a request opened at a proposed block that a prune removed holds no stamp any more.
-			if (message(e) === TOKEN_REFUSALS.payment) ctx.requests.delete(key)
+			if (e instanceof ListRefusal && e.message === TOKEN_REFUSALS.payment) ctx.requests.delete(key)
 			throw e
 		}
 	}
@@ -402,33 +410,31 @@ const MAY_STILL_LAND =
 	"The network may still take the first try, so this page won't send it again. Check the balances in a few minutes, and try again if nothing moved."
 
 /**
- * A sent tx's fate, waited for while the node holds it. A copy the node refused outright never entered its pool, and
- * its nullifier is already in the chain's state, which no pending copy gets past: gone. Any other drop proves nothing
- * (a lost response, another node behind the same URL), and a prune can undo a revert, so those wait for finality.
+ * A sent tx's fate, waited for while the node holds it. A drop or a refusal is one node's word (a lost response,
+ * another node behind the same URL), and a prune can undo a revert, so either waits for finality.
  */
 async function fateOf(ctx: LiveCtx, tx: SentTx): Promise<"landed" | "gone" | "unsettled"> {
 	const hash = TxHash.fromString(tx.hash)
-	if ((await ctx.demo.node.getTxReceipt(hash)).status === TxStatus.DROPPED) {
-		return tx.refused ? "gone" : finalFate(ctx.demo.node, tx.hash, tx.expiresAt)
-	}
+	if ((await ctx.demo.node.getTxReceipt(hash)).status === TxStatus.DROPPED) return finalFate(ctx.demo.node, tx.hash, tx.expiresAt)
 	const receipt = await waitForTx(ctx.demo.node, hash, { ...L2_PROPOSED, dontThrowOnRevert: true })
 	return receipt.hasExecutionSucceeded() ? "landed" : finalFate(ctx.demo.node, tx.hash, tx.expiresAt)
 }
 
 /**
  * On a duplicate nullifier, a one-send action whose tx left for the node is decided by that tx's fate, and sent again
- * only once it provably cannot land. Anything else runs once more, after the wallet's sync: a conflict found before
- * anything was sent, or a payment, whose refused send may be the request it opened (the payment gate refuses paying a
- * request twice).
+ * only once it provably cannot land. A payment that sent its request's opening or itself is left unconfirmed: what
+ * left may still land, and a second run would open another request. A conflict found before anything was sent runs
+ * once more, after the wallet's sync; a deposit, which sends nothing on Aztec, never does.
  */
 export async function withConflictRetry(ctx: LiveCtx, attempt: () => Promise<Outcome>, kinds: readonly TxKind[]): Promise<Outcome> {
 	const since = ctx.demo.sent.length
 	try {
 		return await attempt()
 	} catch (e) {
-		if (!DUPLICATE_NULLIFIER.test(message(e))) throw e
+		if (!DUPLICATE_NULLIFIER.test(message(e)) || kinds.length === 0) throw e
 		const last = ctx.demo.sent.length > since ? ctx.demo.sent.at(-1) : undefined
-		const fate = kinds.length === 1 && last ? await fateOf(ctx, last) : "gone"
+		if (!last) return attempt()
+		const fate = kinds.length === 1 ? await fateOf(ctx, last) : "unsettled"
 		if (fate === "landed") {
 			return { kind: "settled", detail: "It went through: the network had it already.", rows: await aztecRows(ctx, since, kinds) }
 		}

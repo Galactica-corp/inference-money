@@ -9,6 +9,7 @@ import type { EmbeddedWallet } from "@aztec-labs/wallets/embedded"
 import {
 	instanceRecord,
 	type L2InstanceRecord,
+	randomSecret,
 	signingKeyFor,
 	tokenArtifact,
 	tokenBridgeArtifact,
@@ -65,7 +66,7 @@ export async function deployBridgeL2(
 ): Promise<L2Deployment> {
 	const send = { from: deployer, fee: fees.tx ? { paymentMethod: fees.tx } : undefined }
 	const deployOne = async (label: string, artifact: ContractArtifact, initializer: string, args: unknown[]) => {
-		const method = Contract.deploy(wallet, artifact, args, initializer, { deployer, salt: Fr.random() })
+		const method = Contract.deploy(wallet, artifact, args, initializer, { deployer, salt: randomSecret() })
 		const instance = await method.getInstance()
 		log(`${label} ${instance.address}: deploying`)
 		await method.send(send)

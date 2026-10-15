@@ -13,9 +13,9 @@ import { MerkleTreeId } from "@aztec-labs/stdlib/trees"
 import { sponsoredFpcArtifact, tokenBridgeArtifact } from "./artifacts"
 import { BindConsentRequiredError, claimBinding } from "./binding"
 import { deriveClaimSecret } from "./claim-secret"
-import type { ClaimTicket } from "./deposit"
+import { type ClaimTicket, reconcileDeposit } from "./deposit"
 import type { BridgeManifest } from "./manifest"
-import type { StageSink } from "./types"
+import type { L1Ctx, StageSink } from "./types"
 
 /**
  * "consumed-unknown": the message is already consumed, by an earlier claim or by a return; the nullifier alone cannot
@@ -154,6 +154,14 @@ async function probeConsumable(t: ClaimTicket, node: ClaimableNode, simulate: ()
 	}
 }
 
+/** {@link waitConsumable} gave up: the ticket's message never reached the tree the wallet's PXE anchors to. */
+export class MessageNotConsumableError extends Error {
+	constructor() {
+		super("The deposit has not reached your wallet yet. It is kept; try again in a few minutes.")
+		this.name = "MessageNotConsumableError"
+	}
+}
+
 /**
  * Resolves once `simulate` (a claim or a return of `t`, which consume the same message) succeeds: the message must be
  * in the L1-to-L2 tree the wallet's PXE anchors to, which only a successful simulation proves. A consumed message
@@ -173,7 +181,34 @@ export async function waitConsumable(
 		on?.(state)
 		await sleep(opts.pollMs ?? 5_000)
 	}
-	throw new Error("The deposit has not reached your wallet yet. It is kept; try again in a few minutes.")
+	throw new MessageNotConsumableError()
+}
+
+/**
+ * Runs `use` on `t`. When it fails on a missing Inbox message ({@link MessageNotConsumableError}, or a simulation that
+ * finds none), rebuilds the ticket from the deposit as `l1` shows it now; if that names another leaf or key, a reorg
+ * re-mined the deposit behind other messages, so the rebuilt ticket goes to `keep`, then to `use` once more. Any other
+ * outcome throws the first failure.
+ */
+export async function withRebuiltTicket<T>(
+	t: ClaimTicket,
+	l1: L1Ctx,
+	m: BridgeManifest,
+	keep: (t: ClaimTicket) => void,
+	use: (t: ClaimTicket) => Promise<T>,
+): Promise<T> {
+	let rebuilt: ClaimTicket | undefined
+	try {
+		return await use(t)
+	} catch (e) {
+		if (!(e instanceof MessageNotConsumableError) && !NOT_YET_CLAIMABLE.test(message(e))) throw e
+		const found = await reconcileDeposit(t.draft, l1, m)
+		const moved = typeof found !== "string" && (found.leafIndex !== t.leafIndex || found.messageHash !== t.messageHash)
+		if (!moved) throw e
+		rebuilt = found
+	}
+	keep(rebuilt)
+	return use(rebuilt)
 }
 
 /**

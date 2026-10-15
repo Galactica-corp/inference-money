@@ -1,21 +1,22 @@
 import { describe, expect, it } from "bun:test"
-import { join } from "node:path"
 
-/** What a fresh process with SEED set draws: `Fr.random()` (the hazard) and `randomSecret()`. */
-function drawSeeded(): { sdk: string; ours: string } {
-	const script = `import { Fr } from "@aztec-labs/aztec.js/fields"
-import { randomSecret } from ${JSON.stringify(join(import.meta.dir, "random.ts"))}
-console.log(JSON.stringify({ sdk: Fr.random().toString(), ours: randomSecret().toString() }))`
-	const r = Bun.spawnSync([process.execPath, "-e", script], { cwd: import.meta.dir, env: { PATH: process.env.PATH ?? "", SEED: "7" } })
-	if (r.exitCode !== 0) throw new Error(String(r.stderr))
-	return JSON.parse(String(r.stdout).trim().split("\n").at(-1) as string)
+/** Imports `specifiers` in a fresh `bun`, with SEED set or not. */
+function load(specifiers: string[], seed?: string) {
+	const script = specifiers.map((s) => `await import(${JSON.stringify(s)})`).join("\n")
+	const env: Record<string, string> = { PATH: process.env.PATH ?? "", ...(seed && { SEED: seed }) }
+	return Bun.spawnSync([process.execPath, "-e", script], { cwd: import.meta.dir, env })
 }
 
-describe("randomSecret", () => {
-	it("stays unpredictable under SEED, where the SDK's own draw repeats", () => {
-		const [a, b] = [drawSeeded(), drawSeeded()]
-		expect(a.sdk).toBe(b.sdk)
-		expect(a.ours).not.toBe(b.ours)
-		expect(a.ours).toMatch(/^0x[0-9a-f]{64}$/)
-	})
+const LEAVES = ["@inference-money/bridge-core/manifest", "@inference-money/bridge-core/rules", "@inference-money/bridge-core/types"]
+
+describe("bridge-core under SEED", () => {
+	it("refuses to load its main entry, naming SEED; its leaf subpaths load, and so does the entry without SEED", () => {
+		const seeded = load(["@inference-money/bridge-core"], "1")
+		expect(seeded.exitCode).not.toBe(0)
+		expect(String(seeded.stderr)).toContain("SEED is set")
+		const leaves = load(LEAVES, "1")
+		expect(leaves.exitCode, String(leaves.stderr)).toBe(0)
+		const plain = load(["@inference-money/bridge-core"])
+		expect(plain.exitCode, String(plain.stderr)).toBe(0)
+	}, 30_000)
 })

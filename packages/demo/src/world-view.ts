@@ -101,11 +101,14 @@ export const withdrawWorld = (recipient: string, amount: bigint): WorldItem[] =>
 		["amount", amount.toString()],
 	])
 
-/** What each kind of Aztec tx carries that nobody but its parties can read. */
+/**
+ * What each kind of Aztec tx keeps from everyone but its parties, neither readable nor inferable: a payment's public
+ * amount usually names its merchant, whose x402 prices are public.
+ */
 export const HIDDEN: Record<"claim" | "request" | "pay" | "transfer" | "exit", readonly string[]> = {
 	claim: ["recipient"],
 	request: ["recipient", "payer"],
-	pay: ["payer", "recipient"],
+	pay: ["payer"],
 	transfer: ["sender", "recipient", "amount"],
 	exit: ["sender"],
 }

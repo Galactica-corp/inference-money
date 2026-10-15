@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { TxStatus } from "@aztec-labs/aztec.js/tx"
-import { memoryPaymentStore, PaymentGate } from "@inference-money/bridge-core"
+import { type ClaimTicket, encodeTicket, memoryPaymentStore, PaymentGate } from "@inference-money/bridge-core"
 import type { SentTx } from "@inference-money/demo"
 import { describe, expect, it, vi } from "vitest"
 import { MANIFEST, TOUR, WALLETS } from "@/config/network"
@@ -15,10 +15,10 @@ import type { Outcome } from "./outcome"
 /** Requests the page opened, in order, each held open until `hold` settles. */
 const requests = vi.hoisted(() => ({ order: [] as string[], hold: undefined as Promise<void> | undefined }))
 /**
- * The commitments payments went into, and how the next are refused before sending: by `PaymentRefusedError` reasons
- * in order, then, with `refuse`, as one into a request whose stamp a prune removed.
+ * The commitments payments went into, and how the next are refused: by `PaymentRefusedError` reasons in order, then,
+ * with `refuse`, on the payment rule, by the client's list before sending ("list") or in a node's reply ("text").
  */
-const payments = vi.hoisted(() => ({ refuse: false, refusals: [] as string[], into: [] as unknown[] }))
+const payments = vi.hoisted(() => ({ refuse: undefined as "list" | "text" | undefined, refusals: [] as string[], into: [] as unknown[] }))
 
 /** Where a claim this page made stands on L2, and how many claims it sent. */
 const claims = vi.hoisted(() => ({
@@ -27,6 +27,8 @@ const claims = vi.hoisted(() => ({
 	result: "claimed" as "claimed" | "already",
 	binding: "matches" as "binds" | "matches",
 	consent: undefined as unknown,
+	/** A ticket the next claim rebuilds, as a reorg that moved the deposit's Inbox message would make it. */
+	rebuilt: undefined as unknown,
 }))
 
 const portal = vi.hoisted(() => ({ open: true, deposits: 0 }))
@@ -68,7 +70,8 @@ vi.mock("@inference-money/bridge-core", async (original) => {
 			payments.into.push(p.commitment)
 			const reason = payments.refusals.shift()
 			if (reason) throw new real.PaymentRefusedError(reason as never)
-			if (payments.refuse) throw new Error(real.TOKEN_REFUSALS.payment)
+			if (payments.refuse === "list") throw new real.ListRefusal(real.TOKEN_REFUSALS.payment)
+			if (payments.refuse === "text") throw new Error(real.TOKEN_REFUSALS.payment)
 		},
 		// Each tip holds the blocks of the tips after it: a proposed claim shows only at "proposed", a pruned one nowhere.
 		isClaimConsumed: async (_t: unknown, _node: unknown, _m: unknown, at = "checkpointed") => {
@@ -79,9 +82,10 @@ vi.mock("@inference-money/bridge-core", async (original) => {
 })
 vi.mock("@inference-money/demo", async (original) => ({
 	...(await original<typeof import("@inference-money/demo")>()),
-	castClaim: async (_s: unknown, _t: unknown, _on: unknown, consent: unknown) => {
+	castClaim: async (_s: unknown, _t: unknown, _on: unknown, consent: unknown, rebuild?: { keep(t: unknown): void }) => {
 		claims.sent++
 		claims.consent = consent
+		if (claims.rebuilt) rebuild?.keep(claims.rebuilt)
 		return claims.result
 	},
 	castDeposit: async () => {
@@ -115,7 +119,15 @@ function ctxWithReceipt(status: TxStatus, succeeded: boolean, finalizedAt = 0n):
 		getBlockData: async () => ({ header: { globalVariables: { timestamp: finalizedAt } } }),
 	}
 	const demo = { sent, node, exclusive: oneAtATime() } as unknown as DemoWallet
-	return { demo, m: MANIFEST, l1RpcUrl: "", tickets: undefined as never, tour: TOUR, explorer: undefined, requests: new Map() }
+	return {
+		demo,
+		m: MANIFEST,
+		l1RpcUrl: "http://127.0.0.1:9",
+		tickets: undefined as never,
+		tour: TOUR,
+		explorer: undefined,
+		requests: new Map(),
+	}
 }
 
 const send = (ctx: LiveCtx, expiresAt = 0n, refused?: true) =>
@@ -139,12 +151,13 @@ describe("withConflictRetry", () => {
 	})
 
 	it("sends a one-send action again only once its first try provably cannot land", async () => {
-		// The node doesn't hold the first try, which expires at 10: proven gone by its outright refusal, or by a finalized
-		// block past its expiry; a drop alone (a lost response) proves nothing.
+		// The node doesn't hold the first try, which expires at 10: proven gone only by a finalized block past its expiry.
+		// A drop (a lost response) or the node's outright refusal is its word alone.
 		for (const [refused, finalizedAt, retried] of [
 			[undefined, 10n, false],
 			[undefined, 11n, true],
-			[true, 0n, true],
+			[true, 10n, false],
+			[true, 11n, true],
 		] as const) {
 			const ctx = ctxWith(false, finalizedAt)
 			let attempts = 0
@@ -176,7 +189,7 @@ describe("withConflictRetry", () => {
 		}
 	})
 
-	it("runs once more on a conflict found before sending, and never settles a payment on one of its sends", async () => {
+	it("leaves a payment that sent anything unconfirmed, runs once more on a conflict found before sending, never re-runs a deposit", async () => {
 		for (const landed of [false, true]) {
 			const ctx = ctxWith(landed)
 			let attempts = 0
@@ -185,7 +198,22 @@ describe("withConflictRetry", () => {
 				send(ctx)
 				throw new Error("Duplicate nullifier in tx")
 			}, ["request", "pay"])
-			expect([attempts, outcome]).toEqual([2, DONE])
+			expect([attempts, outcome]).toEqual([1, { kind: "failed", detail: expect.stringMatching(/may still take the first try/) }])
+		}
+		for (const [kinds, outcome, runs] of [
+			[["request", "pay"], DONE, 2],
+			[[], "Existing nullifier", 1],
+		] as const) {
+			let attempts = 0
+			const result = await withConflictRetry(
+				ctxWith(false),
+				async () => {
+					if (attempts++ > 0) return DONE
+					throw new Error("Existing nullifier")
+				},
+				kinds,
+			).catch((e: Error) => e.message)
+			expect([result, attempts], `kinds [${kinds}]`).toEqual([outcome, runs])
 		}
 		const ctx = ctxWith(false)
 		const twice = withConflictRetry(ctx, async () => Promise.reject(new Error("Existing nullifier")), ["transfer"])
@@ -361,6 +389,25 @@ describe("claim", () => {
 		}
 	})
 
+	it("stores a ticket its claim rebuilt in place of the old one, and marks that one claimed", async () => {
+		const store = new Map<string, PendingDeposit>([["d1", { id: "d1", user: "bob", since: 0, claim: "ticket" }]])
+		const tickets = {
+			deposits: () => [...store.values()],
+			putDeposit: (d: PendingDeposit) => store.set(d.id, d),
+			dropDeposit: (id: string) => store.delete(id),
+		} as unknown as Tickets
+		const rebuilt = { messageHash: "0x02", leafIndex: 2n, depositor: "0xd", draft: { marker: "moved" } } as unknown as ClaimTicket
+		Object.assign(claims, { state: "pruned", rebuilt })
+		try {
+			expect(
+				(await runDraft({ ...ctxWith(false), tickets }, { actor: "bob", action: "claim", to: "bob" }, WALLETS, () => {})).kind,
+			).toBe("settled")
+			expect(store.get("d1")).toEqual({ id: "d1", user: "bob", since: 0, claim: encodeTicket("claim", rebuilt), claimed: true })
+		} finally {
+			claims.rebuilt = undefined
+		}
+	})
+
 	it("never lets a deposit still confirming, or one it cannot read back right now, hold up the claims after it", async () => {
 		const store = new Map<string, PendingDeposit>([
 			["b0", { id: "b0", user: "bob", since: -1, draft: "confirming" }],
@@ -397,17 +444,19 @@ describe("runDraft", () => {
 		expect(requests.order).toEqual(["open", "opened", "open", "opened"])
 	})
 
-	it("forgets a request whose stamp a refused payment proves gone, so the next payment opens a fresh one", async () => {
+	it("forgets a request only when its own list refused paying it before any send, so the next payment opens a fresh one", async () => {
 		const base = ctxWith(false)
 		const cast = { galactica: { address: "0xg" }, alice: { address: "0xa" } }
 		const ctx: LiveCtx = { ...base, demo: { ...base.demo, cast } as unknown as DemoWallet }
 		ctx.requests.set("galactica>alice", 1 as never)
 		const pay = { actor: "alice", action: "pay", to: "galactica", amount: 10_000n } as const
-		payments.refuse = true
 		try {
+			payments.refuse = "text"
+			expect([(await runDraft(ctx, pay, WALLETS, () => {})).kind, ctx.requests.size], "a reply's text").toEqual(["refused", 1])
+			payments.refuse = "list"
 			expect([(await runDraft(ctx, pay, WALLETS, () => {})).kind, ctx.requests.size]).toEqual(["refused", 0])
 		} finally {
-			payments.refuse = false
+			payments.refuse = undefined
 		}
 		const opened = requests.order.length
 		expect((await runDraft(ctx, pay, WALLETS, () => {})).kind).toBe("settled")
