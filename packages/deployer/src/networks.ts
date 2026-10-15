@@ -24,8 +24,8 @@ export interface NetworkPins {
 
 export const TESTNET: NetworkPins = {
 	name: "testnet",
-	nodeUrl: "https://lb.drpc.live/aztec-testnet/Ak_eT5HA2kbyqamqGTF702daoH37vEsR8YYxjmVXwXgc",
-	defaultL1RpcUrl: "https://ethereum-sepolia-rpc.publicnode.com",
+	nodeUrl: "https://lb.drpc.live/aztec-testnet/Ak0qdxVWbkqUmLb-dN5IplyTiGDyyJwR8Yfybj3Fs6u0",
+	defaultL1RpcUrl: "https://lb.drpc.live/sepolia/Ak0qdxVWbkqUmLb-dN5IplyTiGDyyJwR8Yfybj3Fs6u0",
 	nodeVersion: "6.0.0-rc.3",
 	l1ChainId: 11155111,
 	rollupVersion: 3409706519,

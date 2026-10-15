@@ -118,7 +118,7 @@ describe("served headers", () => {
 		expect(cspFor(faked)).toContain("frame-ancestors 'none'")
 		const shipped = resolveTarget({ BRIDGE_MANIFEST: testnet }, root)
 		expect(cspFor(shipped)).toContain(
-			`connect-src 'self' data: blob: ${node} https://ethereum-sepolia-rpc.publicnode.com https://crs.aztec-cdn.foundation https://crs.aztec-labs.com https://127.0.0.1:59834 http://127.0.0.1:59833;`,
+			`connect-src 'self' data: blob: ${node} https://lb.drpc.live https://crs.aztec-cdn.foundation https://crs.aztec-labs.com https://127.0.0.1:59834 http://127.0.0.1:59833;`,
 		)
 		expect(headersFile(shipped)).toMatch(
 			/^\/\*\n {2}Cross-Origin-Opener-Policy: same-origin\n {2}Cross-Origin-Embedder-Policy: require-corp\n/,

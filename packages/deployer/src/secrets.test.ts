@@ -55,11 +55,22 @@ describe("keyed-run secrets", () => {
 		expect(needles).toContain("abc123defghi456jkl")
 		expect(needles.some((n) => n.includes("/usr/bin") || n === "short")).toBe(false)
 		expect(secretNeedles({ PATH: "/bin", HOME: "/home/x" })).toEqual([])
-		const sepoliaPort = TESTNET.defaultL1RpcUrl.replace(/^https:\/\/([^/]+)/, "https://$1:443/")
+		const sepoliaPort = TESTNET.defaultL1RpcUrl.replace(/^https:\/\/([^/]+)/, "https://$1:443")
 		expect(secretNeedles({ SEPOLIA_RPC_URL: sepoliaPort, AZTEC_RPC_URL: TESTNET.nodeUrl })).toEqual([])
 		expect(secretNeedles({ SEPOLIA_RPC_URL: `${TESTNET.defaultL1RpcUrl}/v2/key12345` }).length).toBeGreaterThan(0)
 		expect(containsSecret(`log: ${KEY.slice(2).toUpperCase()}`, needles)).toBe(true)
 		expect(containsSecret(`tx 0x${"ab".repeat(31)}ff`, needles)).toBe(false)
+	})
+
+	it("drops public endpoint parts from the needles and keeps every other URL credential", () => {
+		const url = "https://rpc.example/aztec-testnet/Ak_x9Yz7Qw3Er5Ty?key=abcdefghijklmnop"
+		const needles = secretNeedles({ SEPOLIA_RPC_URL: url })
+		expect(needles).not.toContain("aztec-testnet")
+		expect(needles).toContain("/aztec-testnet/ak_x9yz7qw3er5ty?key=abcdefghijklmnop")
+		expect(needles).toContain("ak_x9yz7qw3er5ty")
+		expect(needles).toContain("abcdefghijklmnop")
+		expect(containsSecret(`defaultL1RpcUrl: "${TESTNET.defaultL1RpcUrl}"`, needles)).toBe(false)
+		expect(containsSecret(`rpc ${url}\n`, needles)).toBe(true)
 	})
 
 	it("scrubs credential-bearing variables from a child env, keeping the rest", () => {

@@ -59,10 +59,14 @@ export function scrubbedEnv(env: NodeJS.ProcessEnv = process.env): NodeJS.Proces
 	return Object.fromEntries(Object.entries(env).filter(([k]) => !SECRET_NAME.test(k)))
 }
 
+/** A URL part inside a committed public endpoint (`aztec-testnet`) is public text: it matches the source pinning it. */
+const inPublicEndpoint = (part: string): boolean =>
+	[TESTNET.defaultL1RpcUrl, TESTNET.nodeUrl].some((e) => e.toLowerCase().includes(part.toLowerCase()))
+
 /**
  * An RPC URL as libraries may print it: as given, normalized, and without its userinfo (viem strips it). Plus its
  * credential parts: the userinfo, the path + query (where providers put API keys, however short), and any segment or
- * query value long enough to be a key by itself.
+ * query value long enough to be a key by itself, unless it is part of a committed public endpoint.
  */
 function urlForms(url: string): string[] {
 	let u: URL
@@ -74,7 +78,7 @@ function urlForms(url: string): string[] {
 	const bare = `${u.protocol}//${u.host}${u.pathname}${u.search}`
 	const tail = `${u.pathname}${u.search}`
 	const userinfo = [u.username, u.password, `${u.username}:${u.password}`].filter((p) => p.length >= 3)
-	const parts = [...u.pathname.split("/"), ...u.searchParams.values()].filter((p) => p.length >= 8)
+	const parts = [...u.pathname.split("/"), ...u.searchParams.values()].filter((p) => p.length >= 8 && !inPublicEndpoint(p))
 	return [url, u.href, bare, bare.replace(/\/$/, ""), ...(tail.length > 1 ? [tail] : []), ...userinfo, ...parts]
 }
 

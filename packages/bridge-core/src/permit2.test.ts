@@ -115,9 +115,34 @@ describe("ensurePermit2Allowance", () => {
 		expect(statuses).toEqual(["approving", "waiting", "approved"])
 	})
 
-	it("fails closed on a reverted approval and on an allowance still short after a successful one", async () => {
-		const deps = { allowance: async () => 0n, approveMax: async () => HASH, needed: 1n }
+	it("reads a short allowance back again after the receipt before it counts", async () => {
+		const reads = [0n, 0n, 0n, 50n]
+		const waits: number[] = []
+		const r = await ensurePermit2Allowance({
+			allowance: async () => reads.shift() ?? 0n,
+			approveMax: async () => HASH,
+			waitReceipt: async () => ({ status: "success" }),
+			needed: 50n,
+			readBack: { waitMs: async (ms) => void waits.push(ms) },
+		})
+		expect(r).toEqual({ approved: true, txHash: HASH })
+		expect(waits).toEqual([2_000, 2_000])
+	})
+
+	it("fails closed on a reverted approval and on an allowance still short after every read-back", async () => {
+		let reads = 0
+		const deps = {
+			allowance: async () => {
+				reads++
+				return 0n
+			},
+			approveMax: async () => HASH,
+			needed: 1n,
+			readBack: { waitMs: async () => {} },
+		}
 		await expect(ensurePermit2Allowance({ ...deps, waitReceipt: async () => ({ status: "reverted" }) })).rejects.toThrow(/reverted/)
+		reads = 0
 		await expect(ensurePermit2Allowance({ ...deps, waitReceipt: async () => ({ status: "success" }) })).rejects.toThrow(/still short/)
+		expect(reads).toBe(1 + 15)
 	})
 })
