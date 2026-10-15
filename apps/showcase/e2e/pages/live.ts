@@ -5,7 +5,7 @@ import { TESTIDS } from "../../src/lib/testids"
 /** One USDC in base units. */
 export const USDC = 1_000_000n
 /** The first open syncs every demo account into a fresh store; a long-lived testnet deployment takes longer. */
-const WALLET_READY_MS = 10 * 60_000
+export const WALLET_READY_MS = 10 * 60_000
 /** A claim waits for its message, a payout for its epoch's proof. */
 const RUN_MS = 10 * 60_000
 
@@ -37,9 +37,10 @@ const balance = (page: Page, holder: string) => page.locator(`[data-testid="${TE
 
 /**
  * Counts the runs that ended on `window.__runsEnded`: Try it is disabled exactly while a run is in flight, a reset's
- * included, and a refusal can end before a poll would see it disabled.
+ * included, and a refusal can end before a poll would see it disabled. With deposits closed it is disabled for a deposit
+ * draft too, so count only once a non-deposit draft is picked, and pick no deposit after.
  */
-async function countRuns(page: Page): Promise<void> {
+export async function countRuns(page: Page): Promise<void> {
 	await page.evaluate((id) => {
 		const button = document.querySelector<HTMLButtonElement>(`[data-testid="${id}"]`)
 		if (!button) throw new Error("live mode shows no Try it button")

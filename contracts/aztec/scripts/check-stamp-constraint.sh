@@ -7,9 +7,10 @@
 # none of `stamp_nullifier`, `deadline` or `bucket` is rebound nor `commitment` shadowed, the function is constrained,
 # and the one private paying function proves its side through it, at its own function scope. Without the expiry cap, a payment proven against an old anchor lands after the
 # stamp expired; without `for_settled`, against a stamp that is still pending.
-# It also pins the side order of the two calls that publish one account: each proves a side once, at its own scope,
+# It also pins the side order of the three calls that publish one account: each proves a side once, at its own scope,
 # passing that account first, kept, so the hint proves it rather than the hidden one (TXE cannot see which entry a call
-# read).
+# read). Of these, `transfer_private_to_public_with_commitment` owns its refund commitment by `from` and never stamps
+# it: a stamp is the only owner check a payment makes.
 # `--self-test` mutates the real source one rule at a time and requires each mutant to fail for its own reason.
 set -euo pipefail
 export LC_ALL=C
@@ -82,7 +83,7 @@ check_stamp_branch() {
 }
 
 check_file() {
-  local flat pay proof="let side${S}=${S}self\\.internal\\._prove_payment_side${S}\\(${S}from${S},${S}commitment${S}\\)${S};"
+  local flat pay refund proof="let side${S}=${S}self\\.internal\\._prove_payment_side${S}\\(${S}from${S},${S}commitment${S}\\)${S};"
   [ -f "$1" ] || violation "no such file: $1" || return 1
   flat=$(strip_comments <"$1" | tr '\n' ' ' | tr -s ' ')
   if printf '%s' "$flat" | grep -qE "unconstrained${S}fn${S}_prove_payment_side"; then
@@ -95,7 +96,14 @@ check_file() {
   [ "$(depth_at "$pay" "$proof")" -eq 1 ] ||
     violation "transfer_private_to_commitment proves its payment inside a nested block" || return 1
   keeps_published "$flat" transfer_private_to_public to from recipient || return 1
-  keeps_published "$flat" transfer_public_to_private from to sender
+  keeps_published "$flat" transfer_private_to_public_with_commitment to from recipient || return 1
+  keeps_published "$flat" transfer_public_to_private from to sender || return 1
+  refund=$(fn_body "$flat" transfer_private_to_public_with_commitment)
+  need transfer_private_to_public_with_commitment "$refund" "_initialize_transfer_commitment${S}\\(${S}from${S}," \
+    "does not own its refund commitment by from" || return 1
+  if printf '%s' "$refund" | grep -qE "_push_request_stamp${S}\\("; then
+    violation "transfer_private_to_public_with_commitment stamps its refund commitment"
+  fi
 }
 
 # keeps_published <flat> <fn> <published> <hidden> <role>: the function's one side proof passes its published account
@@ -177,6 +185,17 @@ self_test() {
   mutant nested_published "transfer_public_to_private proves its side inside a nested block" \
     "$(lit "let side = self.internal._prove_merchant_side(from, to, true);")" \
     "let side = if from == to { NEITHER } else { self.internal._prove_merchant_side(from, to, true) };"
+  # Anchored: the file's first `(to, from, true)` is transfer_private_to_public's.
+  local refund_fn='(fn transfer_private_to_public_with_commitment\(.*?)'
+  # shellcheck disable=SC2016
+  mutant hidden_refund_sender "transfer_private_to_public_with_commitment does not keep its published recipient first" \
+    "$refund_fn$(lit "_prove_merchant_side(to, from, true)")" '$1_prove_merchant_side(from, to, true)'
+  # shellcheck disable=SC2016
+  mutant stamped_refund "transfer_private_to_public_with_commitment stamps its refund commitment" \
+    "$refund_fn($(lit "let commitment = self.internal._initialize_transfer_commitment(from, completer);"))" \
+    '$1$2 self.internal._push_request_stamp(commitment.to_field(), side);'
+  mutant refund_to_recipient "transfer_private_to_public_with_commitment does not own its refund commitment by from" \
+    "$(lit "_initialize_transfer_commitment(from, completer)")" "_initialize_transfer_commitment(to, completer)"
 
   [ "$fails" = 0 ] || exit 1
   echo "✅ check-stamp-constraint self-test passed (real source upheld; $count single-rule mutants rejected for their own reasons)"
@@ -188,4 +207,5 @@ if [ "${1:-}" = "--self-test" ]; then
 fi
 check_file "$token_main" || exit 1
 echo "✅ stamp constraint holds: a stamped payment proves its stamp settled and caps its expiry at the stamp's deadline," \
-  "unconditionally within its branch; the published side of a public transfer is the one proven"
+  "unconditionally within its branch; the published side of a public transfer is the one proven; a refund" \
+  "commitment is its payer's and never stamped"

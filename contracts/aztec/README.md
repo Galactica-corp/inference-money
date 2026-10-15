@@ -1,6 +1,6 @@
 # contracts/aztec
 
-Aztec.nr side of the USDC bridge, pinned to aztec-nr **v6.0.0-rc.1** (the `noir` entry in `toolchain.json`).
+Aztec.nr side of the USDC bridge, pinned to aztec-nr **v6.0.0-rc.3** (the `noir` entry in `toolchain.json`).
 
 | Crate | Type | Role |
 |---|---|---|
@@ -17,7 +17,7 @@ to deploy.
 
 ## Commands
 
-nargo comes from `aztec-up install 6.0.0-rc.1`, or `NARGO=<path>` to the noir-lang release (the scripts check it is `toolchain.json`'s `nargo`). The aztec CLI, bb and
+nargo comes from `aztec-up install 6.0.0-rc.3`, or `NARGO=<path>` to the noir-lang release (the scripts check it is `toolchain.json`'s `nargo`). The aztec CLI, bb and
 the TXE server come from `toolchain/`, a committed lockfile installed with `--frozen-lockfile` on first use.
 
 ```sh
@@ -26,7 +26,7 @@ bash scripts/compile.sh              # rebuild the contract artifacts (nargo + A
 bash scripts/compile.sh --check      # fail unless the committed artifacts are exactly what the source builds
 bun run test:noir                    # TXE suites for token, token_bridge and keystone, each gated by its txe-manifest.txt
 bash scripts/check-sole-consumer.sh  # static guard: four consume sites and the bridge's rules (add --self-test to prove it bites)
-bash scripts/check-stamp-constraint.sh # static guard: a stamped payment proves its stamp settled and caps at its deadline (--self-test)
+bash scripts/check-stamp-constraint.sh # static guard: a stamped payment proves its stamp settled and caps at its deadline; a refund commitment is never stamped (--self-test)
 ```
 
 Never run a bare `nargo compile`: it overwrites a committed artifact with an untranspiled one that aztec.js rejects.

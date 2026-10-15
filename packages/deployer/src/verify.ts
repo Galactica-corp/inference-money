@@ -10,6 +10,8 @@ import {
 	fundingAuthorizationTypedData,
 	instanceFromRecord,
 	isBridgePaused,
+	MERCHANT_MIN_DELAY,
+	type MerchantEntry,
 	sponsorInstance,
 	syncMerchantList,
 	TOKEN_PORTAL_ABI,
@@ -18,17 +20,31 @@ import {
 	tokenMinterProxyArtifact,
 } from "@galactica-net/inference-money-core"
 import {
+	type DelayReads,
 	type DelayState,
-	entryDelay,
-	guardianDelay,
 	layoutSlot,
 	publicReader,
+	readDelays,
 	readGuardian,
 	readRoles,
 	standardContractAddresses,
 } from "@galactica-net/inference-money-core/deploy"
 import { aztecAddressOf, castMember, MERCHANTS } from "@galactica-net/inference-money-demo"
-import { type Abi, type Address, erc20Abi, type Hex, hashTypedData, type PublicClient, pad } from "viem"
+import type { DemoFile } from "@galactica-net/inference-money-demo/files"
+import {
+	type Abi,
+	type Address,
+	encodeDeployData,
+	erc20Abi,
+	type Hex,
+	hashTypedData,
+	type PublicClient,
+	pad,
+	type Transaction,
+	TransactionNotFoundError,
+	type TransactionReceipt,
+	TransactionReceiptNotFoundError,
+} from "viem"
 import { type BridgeEvmArtifacts, maskImmutables } from "./evm"
 import type { Check } from "./preflight"
 
@@ -46,6 +62,9 @@ async function attempt(name: string, fn: () => Promise<Check[]>): Promise<Check[
 	}
 }
 
+export const ROLLUP_MOVED =
+	"the registry's canonical rollup moved: deposits revert (RollupNotCanonical); exits pay once the bound rollup proves them"
+
 async function codeMatches(
 	l1: PublicClient,
 	name: string,
@@ -55,6 +74,53 @@ async function codeMatches(
 	const code = (await l1.getCode({ address })) ?? "0x"
 	const ok = maskImmutables(code, a.immutableRanges) === maskImmutables(a.deployedBytecode, a.immutableRanges)
 	return check(`${name} runtime bytecode == fresh forge build (immutables masked)`, ok, `${(code.length - 2) / 2} bytes`)
+}
+
+/** What a creation record must show: a plain create by the deployer, of the fresh build's init code, at this address. */
+export interface CreationWant {
+	deployer: Address
+	input: Hex
+	address: Address
+	/** The block it must be mined in, where the manifest records one. */
+	block?: bigint
+}
+
+/** Runtime code cannot show what a constructor did elsewhere (an ERC20 approval, say); its creation tx can. */
+export function creationCheck(
+	label: string,
+	tx: Pick<Transaction, "hash" | "to" | "from" | "input">,
+	receipt: Pick<TransactionReceipt, "status" | "contractAddress" | "blockNumber">,
+	want: CreationWant,
+): Check {
+	const wrong = [
+		tx.to !== null && `a call to ${tx.to}, not a creation`,
+		!same(tx.from, want.deployer) && `sent by ${tx.from}`,
+		!same(tx.input, want.input) && "init code differs from the fresh build",
+		receipt.status !== "success" && "reverted",
+		!same(receipt.contractAddress, want.address) && `created ${receipt.contractAddress}`,
+		want.block !== undefined && receipt.blockNumber !== want.block && `mined in ${receipt.blockNumber}, not ${want.block}`,
+	].filter((w) => typeof w === "string")
+	return check(label, wrong.length === 0, wrong.join("; ") || tx.hash)
+}
+
+export async function createdAsBuilt(
+	l1: Pick<PublicClient, "getTransaction" | "getTransactionReceipt">,
+	name: string,
+	hash: Hex | undefined,
+	want: CreationWant,
+): Promise<Check> {
+	const label = `${name} creation tx == fresh forge build, sent by the L1 deployer`
+	if (!hash) return warn(label, "the manifest records none: the constructor that ran is unverified")
+	try {
+		const [tx, receipt] = await Promise.all([l1.getTransaction({ hash }), l1.getTransactionReceipt({ hash })])
+		if (!same(tx.hash, hash) || !same(receipt.transactionHash, hash)) {
+			return check(label, false, `the L1 endpoint answered tx ${tx.hash} and receipt ${receipt.transactionHash} for ${hash}`)
+		}
+		return creationCheck(label, tx, receipt, want)
+	} catch (e) {
+		if (!(e instanceof TransactionNotFoundError || e instanceof TransactionReceiptNotFoundError)) throw e
+		return check(label, false, `this L1 endpoint has no tx ${hash}: use one that serves old txs (--l1-rpc)`)
+	}
 }
 
 async function verifyL1(l1: PublicClient, evm: BridgeEvmArtifacts, m: BridgeManifest): Promise<Check[]> {
@@ -83,6 +149,17 @@ async function verifyL1(l1: PublicClient, evm: BridgeEvmArtifacts, m: BridgeMani
 		pin("router.TOKEN", token, m.l1.usdc),
 		check("Permit2 has code", !!permit2Code && permit2Code.length > 2, `${((permit2Code?.length ?? 2) - 2) / 2} bytes`),
 		await fundingAuthorizationMatches(l1, m),
+		await createdAsBuilt(l1, "portal", m.l1.portalTx, {
+			deployer: m.l1.deployer,
+			input: encodeDeployData({ abi: portal.abi, bytecode: portal.bytecode }),
+			address: m.l1.portal,
+		}),
+		await createdAsBuilt(l1, "router", m.l1.routerTx, {
+			deployer: m.l1.deployer,
+			input: encodeDeployData({ abi: router.abi, bytecode: router.bytecode, args: [m.l1.permit2, m.l1.portal, m.l1.usdc] }),
+			address: m.l1.router,
+			block: BigInt(m.l1.deployBlock),
+		}),
 	]
 }
 
@@ -185,25 +262,53 @@ async function verifyRoles(node: AztecNode, m: BridgeManifest, handover: Handove
 	]
 }
 
-const delayCheck = (name: string, d: DelayState, setting: bigint, now: bigint): Check[] => {
-	const result = pin(`${name} delay == setting`, d.scheduled, setting)
-	if (d.changeAt <= now || d.current === d.scheduled) return [result]
-	return [result, warn(`${name} delay change pending`, `${d.current}s until ${d.changeAt}, then ${d.scheduled}s`)]
+const when = (t: bigint) => new Date(Number(t) * 1000).toISOString()
+const delayChange = (d: DelayState) => `${d.current}s until ${when(d.changeAt)}, then ${d.scheduled}s`
+
+/** A change still in flight: a warning when waived, else a failure that says whether `--allow-pending` would accept it. */
+function pendingCheck(name: string, detail: string, waivable: boolean, allowPending: boolean): Check {
+	if (waivable && allowPending) return warn(name, detail)
+	return check(name, false, waivable ? `${detail} (--allow-pending accepts it while it settles)` : detail)
 }
 
-/** The guardian slot's and every added merchant's delay against the setting; a decrease still in flight only warns. */
-async function verifyDelays(node: AztecNode, m: BridgeManifest): Promise<Check[]> {
-	const token = AztecAddress.fromStringUnsafe(m.l2.token.address)
-	const list = await syncMerchantList(node, token)
-	const setting = (await publicReader(node, m.l2.token.address)(layoutSlot(tokenArtifact, "merchant_delay"))).toBigInt()
-	const guardian = await guardianDelay(node, token, list.block, list.at)
-	const entries = await Promise.all(
-		[...list.entries.keys()].map(async (a) => {
-			const d = await entryDelay(node, token, AztecAddress.fromStringUnsafe(a), list.block, list.at)
-			return delayCheck(`merchant ${a}`, d, setting, list.at)
-		}),
-	)
-	return [...delayCheck("guardian slot", guardian, setting, list.at), ...entries.flat()]
+function entryChecks(account: string, e: MerchantEntry, r: DelayReads, pinned: bigint | undefined, allowPending: boolean): Check[] {
+	const at = r.list.at
+	const scheduled = e.scheduledDelay ?? MERCHANT_MIN_DELAY
+	const d = { current: (at < e.delayChangeAt ? e.delay : e.scheduledDelay) ?? MERCHANT_MIN_DELAY, scheduled, changeAt: e.delayChangeAt }
+	const name = `merchant ${account}`
+	const out = [pin(`${name} delay == setting`, d.scheduled, r.setting)]
+	if (d.changeAt > at && d.current !== d.scheduled) {
+		out.push(pendingCheck(`${name} delay change pending`, delayChange(d), d.scheduled === pinned, allowPending))
+	}
+	// A change scheduled to the current value (a cancel, a switch back on) caps no read, so only a switch is pending.
+	if (e.changeAt > at && e.off !== e.scheduledOff) {
+		const switches = `switches ${e.scheduledOff ? "off" : "on"} at ${when(e.changeAt)}`
+		out.push(pendingCheck(`${name} switch pending`, switches, true, allowPending))
+	}
+	return out
+}
+
+/**
+ * The setting against the manifest's `merchantDelay`, and the guardian slot and every listed entry scheduled to the
+ * setting. An entry's change in flight fails; `allowPending` accepts a switch, and a delay change only to the manifest's
+ * delay. The guardian slot's delay change never fails: only public functions read that slot, so it caps no tx.
+ */
+export function delayPolicyChecks(r: DelayReads, merchantDelay: number | undefined, allowPending = false): Check[] {
+	const pinned = merchantDelay === undefined ? undefined : BigInt(merchantDelay)
+	const g = r.guardian
+	return [
+		pinned === undefined
+			? warn("merchant delay setting", `${r.setting}s, unpinned: the manifest records no merchantDelay`)
+			: pin("merchant delay setting == manifest", r.setting, pinned),
+		pin("guardian slot delay == setting", g.scheduled, r.setting),
+		...(g.changeAt > r.list.at && g.current !== g.scheduled ? [check("guardian slot delay change pending", true, delayChange(g))] : []),
+		...[...r.list.entries].flatMap(([account, e]) => entryChecks(account, e, r, pinned, allowPending)),
+	]
+}
+
+async function verifyDelays(node: AztecNode, m: BridgeManifest, allowPending: boolean): Promise<Check[]> {
+	const reads = await readDelays(node, AztecAddress.fromStringUnsafe(m.l2.token.address))
+	return delayPolicyChecks(reads, m.l2.merchantDelay, allowPending)
 }
 
 /** Necessary, not sufficient: unclaimed deposits and unpaid withdrawals are liabilities too (integration's books). */
@@ -215,24 +320,34 @@ async function verifyBacking(node: AztecNode, l1: PublicClient, m: BridgeManifes
 	return [check("L2 supply ≤ portal USDC", supply.toBigInt() <= reserve, `${supply.toBigInt()} ≤ ${reserve}`)]
 }
 
-/** The demo merchants' keys are public: listed anywhere but local and testnet, they would let anyone act as a merchant. */
+/**
+ * The demo merchants' keys are public: the unsalted ones always, a published salt's once published. Listed anywhere but
+ * local and testnet, they would let anyone act as a merchant.
+ */
 export const DEMO_NETWORKS: readonly BridgeManifest["network"][] = ["local", "testnet"]
 
-async function verifyDemoCast(node: AztecNode, m: BridgeManifest): Promise<Check[]> {
+async function verifyDemoCast(node: AztecNode, m: BridgeManifest, demo: DemoFile | undefined): Promise<Check[]> {
 	if (DEMO_NETWORKS.includes(m.network)) return [check("demo cast", true, `may be listed on ${m.network}`)]
 	const list = await syncMerchantList(node, AztecAddress.fromStringUnsafe(m.l2.token.address))
-	const cast = await Promise.all(MERCHANTS.map(async (a) => (await aztecAddressOf(castMember(m, a))).toString()))
+	const salts = demo?.version === 2 ? [null, demo.merchantsSalt] : [null]
+	const members = salts.flatMap((merchantsSalt) => MERCHANTS.map((a) => castMember(m, a, { merchantsSalt })))
+	const cast = await Promise.all(members.map(async (c) => (await aztecAddressOf(c)).toString()))
 	const listed = cast.filter((a) => list.entries.has(a))
 	return [check("no demo merchant listed", listed.length === 0, listed.join(", ") || "none")]
 }
 
-async function verifyEnvironment(node: AztecNode, m: BridgeManifest): Promise<Check[]> {
+/** The sponsor is the only fee payer that keeps an account out of its private claims, exits and payments. */
+const NO_SPONSOR = "none: private flows would have to name the account as fee payer"
+
+export async function verifyEnvironment(node: AztecNode, m: BridgeManifest): Promise<Check[]> {
 	const standard = await Promise.all(
 		(await standardContractAddresses()).map(async (s) =>
 			check(`standard ${s.name} published`, (await node.getContract(s.address)) !== undefined, s.address.toString()),
 		),
 	)
-	if (!m.l2.sponsoredFpc) return [...standard, check("SponsoredFPC", true, "none on this network")]
+	if (!m.l2.sponsoredFpc) {
+		return [...standard, check("SponsoredFPC", m.network === "local", m.network === "local" ? "none on this network" : NO_SPONSOR)]
+	}
 	const pinned = (await sponsorInstance()).address
 	const fpc = AztecAddress.fromStringUnsafe(m.l2.sponsoredFpc)
 	const [balance, published] = await Promise.all([getFeeJuiceBalance(fpc, node), node.getContract(fpc)])
@@ -244,11 +359,20 @@ async function verifyEnvironment(node: AztecNode, m: BridgeManifest): Promise<Ch
 	]
 }
 
+export interface VerifyOptions {
+	/** The merchant guardian the caller expects, in office and scheduled: none by default. */
+	guardian?: string
+	/** Accept merchant entries' changes in flight that `delayPolicyChecks` lets it. */
+	allowPending?: boolean
+	/** This deployment's published demo, whose salted merchants the demo-cast rule checks too. */
+	demo?: DemoFile
+}
+
 /**
- * Every read-back the manifest depends on, keyless: L1 bytecode against a fresh forge build, L1 and L2 wiring, the admin
- * roles in their expected handover state, the delays, backing, the demo-cast rule, class ids, network identity and the
- * sponsor. A read that throws is a failed check, never a skipped one. It trusts the endpoints `node` and `l1` read from.
- * `guardian` is the merchant guardian the caller expects, in office and scheduled: none by default.
+ * Every read-back the manifest depends on, keyless: L1 bytecode and creation txs against a fresh forge build, L1 and L2
+ * wiring, the admin roles in their expected handover state, the delay policy, backing, the demo-cast rule, class ids,
+ * network identity and the sponsor. A read that throws is a failed check, never a skipped one. It trusts the endpoints
+ * `node` and `l1` read from.
  */
 export async function verifyDeployment(
 	m: BridgeManifest,
@@ -256,11 +380,12 @@ export async function verifyDeployment(
 	l1: PublicClient,
 	node: AztecNode,
 	handover: Handover = "complete",
-	guardian: string = ZERO,
+	{ guardian = ZERO, allowPending = false, demo }: VerifyOptions = {},
 ): Promise<Check[]> {
 	const identity = await attempt("network identity", async () => {
-		await assertNetworkIdentity(node, l1, m)
-		return [check("network identity (node + registry → rollup)", true, `rollup version ${m.l2.rollupVersion}`)]
+		const { depositsOpen } = await assertNetworkIdentity(node, l1, m)
+		const ok = check("network identity (node + the portal's rollup)", true, `rollup version ${m.l2.rollupVersion}`)
+		return depositsOpen ? [ok] : [ok, warn("deposits", ROLLUP_MOVED)]
 	})
 	const deployers = new Set([m.l2.proxy.deployer, m.l2.token.deployer, m.l2.bridge.deployer])
 	return [
@@ -270,9 +395,9 @@ export async function verifyDeployment(
 		...(await attempt("L2 instances", () => verifyInstances(node, m))),
 		...(await attempt("L2 wiring", () => verifyL2Wiring(node, m))),
 		...(await attempt("admin roles", () => verifyRoles(node, m, handover, guardian))),
-		...(await attempt("merchant delays", () => verifyDelays(node, m))),
+		...(await attempt("merchant delays", () => verifyDelays(node, m, allowPending))),
 		...(await attempt("backing", () => verifyBacking(node, l1, m))),
-		...(await attempt("demo cast", () => verifyDemoCast(node, m))),
+		...(await attempt("demo cast", () => verifyDemoCast(node, m, demo))),
 		...(await attempt("environment", () => verifyEnvironment(node, m))),
 	]
 }

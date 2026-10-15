@@ -22,6 +22,10 @@ contract PortalWithoutInitializerCheck is TokenPortal {
     }
 }
 
+contract PortalWithoutVersionCheck is TokenPortal {
+    function _requireRollupVersion(uint256) internal view override {}
+}
+
 contract PortalWithoutCap is TokenPortal {
     function _requireDeposit(uint256) internal pure override {}
 }

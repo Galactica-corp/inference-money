@@ -36,7 +36,9 @@ const SIMULATED = {
  * The wallet methods the bridge's interactions reach; each call is recorded, and a hook can throw to script failures.
  * A utility read answers `utility(name)`'s fields, default one zero field (an unbound funding address).
  */
-export function fakeWallet(hooks: { send?: (tx: SentTx) => void; simulate?: (tx: SentTx) => void; utility?: (name: string) => Fr[] } = {}) {
+export function fakeWallet(
+	hooks: { send?: (tx: SentTx) => void | Promise<void>; simulate?: (tx: SentTx) => void; utility?: (name: string) => Fr[] } = {},
+) {
 	const sent: SentTx[] = []
 	const simulated: SentTx[] = []
 	const authWits: { from: string; caller: string }[] = []
@@ -50,7 +52,7 @@ export function fakeWallet(hooks: { send?: (tx: SentTx) => void; simulate?: (tx:
 		sendTx: async (p: ExecutionPayload, opts?: { wait?: unknown }) => {
 			const tx = record(p, opts?.wait)
 			sent.push(tx)
-			hooks.send?.(tx)
+			await hooks.send?.(tx)
 			return opts?.wait === NO_WAIT ? { txHash } : { receipt: { txHash } }
 		},
 		executeUtility: async (call: { name: string }) => ({

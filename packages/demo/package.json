@@ -26,9 +26,9 @@
 		"typecheck": "tsc --noEmit -p tsconfig.json"
 	},
 	"dependencies": {
-		"@aztec-labs/accounts": "6.0.0-rc.1",
-		"@aztec-labs/aztec.js": "6.0.0-rc.1",
-		"@aztec-labs/stdlib": "6.0.0-rc.1",
+		"@aztec-labs/accounts": "6.0.0-rc.3",
+		"@aztec-labs/aztec.js": "6.0.0-rc.3",
+		"@aztec-labs/stdlib": "6.0.0-rc.3",
 		"@galactica-net/inference-money-core": "workspace:*",
 		"viem": "2.56.7",
 		"zod": "4.6.5"

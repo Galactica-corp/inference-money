@@ -10,6 +10,7 @@ import {
 	type PaymentStore,
 	registerBridgeContracts,
 	registerSponsor,
+	SendJournal,
 } from "@galactica-net/inference-money-core"
 import { ACTORS, type Actor, type CastMember, castMember, recordingNode, type SentTx } from "@galactica-net/inference-money-demo"
 import { oneAtATime } from "@/lib/one-at-a-time"
@@ -34,6 +35,8 @@ export interface DemoWallet {
 	/** The node, read directly; the wallet sends through the gate's, so `payRequest` accepts it. */
 	node: AztecNode
 	gate: PaymentGate
+	/** Under the gate's node; the wallet is bound to it too, so `exitToL1` accepts it. */
+	sends: SendJournal
 	cast: Record<Actor, Player>
 	/** `performance.now()` as each tx reached the node: everything before it is the page simulating and proving. */
 	sentAt: number[]
@@ -46,15 +49,20 @@ export interface DemoWallet {
 	stages: StageFeed
 	/** Presto's side of the page's proofs, on a build that proves for real. */
 	presto?: PagePresto
+	/** Whether the portal took deposits when the page opened; a deposit reads it again before it signs. */
+	depositsOpen: boolean
 }
 
 export interface DemoWalletOptions {
 	usersTag: string
+	/** Null only for a version-1 demo. */
+	merchantsSalt: string | null
 	/** Real proofs, or the fake ones a local network accepts. */
 	proves: boolean
 	payments: PaymentStore
 	/** The prover the PXE proves through instead of its own, and the simulator they share. */
 	presto?: PagePresto
+	depositsOpen: boolean
 }
 
 type Around = <T>(prove: () => Promise<T>) => Promise<T>
@@ -150,19 +158,21 @@ export async function openDemoWallet(node: AztecNode, m: BridgeManifest, opts: D
 	}
 	const stages = stageFeed()
 	const store = await openPxeStore(node, m)
-	const gate = new PaymentGate(recordingNode(stamping(node, sentAt, stages), sent, journal), opts.payments)
+	const sends = new SendJournal(recordingNode(stamping(node, sentAt, stages), sent, journal))
+	const gate = new PaymentGate(sends.node, opts.payments)
 	const proofs = opts.presto?.proofs
 	const Staged = stagedWallet(stages, proofs?.around ?? ((prove) => prove()))
 	const pxe = { proverEnabled: opts.proves, store, proverOrOptions: proofs?.prover, simulator: proofs?.simulator }
-	const wallet = await gate.bindWallet((gated) => Staged.create(gated, { pxe }))
+	const wallet = await gate.bindWallet((gated) => sends.bindWallet(() => Staged.create(gated, { pxe })))
 	await registerSponsor(wallet, m)
 	await registerBridgeContracts(wallet, m)
 	const cast = {} as Record<Actor, Player>
 	for (const actor of ACTORS) {
-		const member = castMember(m, actor, opts.usersTag)
+		const member = castMember(m, actor, opts)
 		// Repeats safely on reload: an account the store already holds is not registered again.
 		const account = await wallet.createSchnorrAccount(member.secret, Fr.ZERO, member.signingKey, actor)
 		cast[actor] = { ...member, address: account.address }
 	}
-	return { wallet, node, gate, cast, sentAt, sent, onNextSend, exclusive: oneAtATime(), stages, presto: opts.presto }
+	const { presto, depositsOpen } = opts
+	return { wallet, node, gate, sends, cast, sentAt, sent, onNextSend, exclusive: oneAtATime(), stages, presto, depositsOpen }
 }

@@ -5,7 +5,7 @@ compiler_version = ">=1.0.0"
 authors = [""]
 
 [dependencies]
-aztec = { git = "https://github.com/aztec-labs-eng/aztec-nr", tag = "v6.0.0-rc.1", directory = "aztec" }
+aztec = { git = "https://github.com/aztec-labs-eng/aztec-nr", tag = "v6.0.0-rc.3", directory = "aztec" }
 portal_messages = { path = "../portal_messages" }
 claim_secret_lib = { path = "../claim_secret" }
 merchant_stamp = { path = "../merchant_stamp" }

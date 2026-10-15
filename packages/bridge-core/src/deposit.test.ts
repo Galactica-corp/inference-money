@@ -93,6 +93,10 @@ function chain(account: Address = ACCOUNT) {
 		logs: [] as Log[],
 		failGetLogs: false,
 		onGetLogs: undefined as (() => void) | undefined,
+		/** Permit2's nonce bitmap words by position, as the reader reports them; every read is recorded. */
+		nonceWords: new Map<bigint, bigint>(),
+		failNonceRead: false,
+		nonceReads: [] as unknown[],
 		chainId: M.l1.chainId,
 		readerChainId: M.l1.chainId,
 		sentOnChain: undefined as number | undefined,
@@ -134,6 +138,11 @@ function chain(account: Address = ACCOUNT) {
 				logs: inRange,
 				args: { depositor: q.args.depositor },
 			})
+		},
+		readContract: async (q: { args: readonly [Address, bigint] }) => {
+			s.nonceReads.push(q)
+			if (s.failNonceRead) throw new Error("missing trie node")
+			return s.nonceWords.get(q.args[1]) ?? 0n
 		},
 	} as unknown as PublicClient
 	const walletClient = {
@@ -246,6 +255,22 @@ describe("submitDeposit", () => {
 		await expect(submitDeposit(lost, l1, M, LIVE)).rejects.toThrow("disconnected")
 		expect(lost.submission).toBeDefined()
 		expect(lost.l1TxHash).toBeUndefined()
+	})
+
+	it("a refusal-shaped send error frees the draft only from a wallet that asks its user, never from a local key", async () => {
+		const key = privateKeyToAccount(keccak256(toHex("local signer")))
+		const refusal = Object.assign(new Error("User rejected the request."), { code: 4001 })
+		for (const [account, freed] of [
+			[key, false],
+			[{ address: key.address, type: "json-rpc" }, true],
+		] as const) {
+			const { s, l1 } = chain(key.address)
+			Object.assign(l1.walletClient, { account })
+			s.sendError = refusal
+			const d = await draft()
+			await expect(submitDeposit(d, l1, M, LIVE)).rejects.toThrow("rejected")
+			expect(d.submission === undefined, account.type).toBe(freed)
+		}
 	})
 
 	it("a wallet that cannot sign (unsupported method, disconnect) leaves the draft unsent and retryable", async () => {
@@ -395,6 +420,29 @@ describe("reconcileDeposit", () => {
 		s.failGetLogs = false
 		expect(await reconcileDeposit(d, l1, M)).toBe("not-deposited")
 		expect(s.sends).toBe(1)
+	})
+
+	it("an empty scan past the deadline is pending while Permit2 shows the permit's nonce spent at the finalized block", async () => {
+		const { s, l1 } = chain()
+		const d = await draft()
+		d.typedData.message.nonce = (5n << 8n) | 255n
+		s.sendError = new Error("wallet response lost")
+		await submitDeposit(d, l1, M, LIVE).catch(() => {})
+		s.finalized = { number: 140n, timestamp: d.typedData.message.deadline + 1n }
+		s.nonceWords.set(5n, 1n << 255n)
+		expect(await reconcileDeposit(d, l1, M)).toBe("pending")
+		expect(s.nonceReads).toEqual([
+			expect.objectContaining({ address: M.l1.permit2, functionName: "nonceBitmap", args: [ACCOUNT, 5n], blockNumber: 140n }),
+		])
+		for (const [word, bits] of [
+			[5n, 1n << 254n],
+			[6n, 1n << 255n],
+		] as const) {
+			s.nonceWords = new Map([[word, bits]])
+			expect(await reconcileDeposit(d, l1, M), `word ${word}`).toBe("not-deposited")
+		}
+		s.failNonceRead = true
+		expect(await reconcileDeposit(d, l1, M)).toBe("pending")
 	})
 
 	it("a tip read that lags the finalized block still scans through it before any verdict", async () => {

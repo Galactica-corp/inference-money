@@ -13,6 +13,7 @@ import {
 	PaymentGate,
 	registerBridgeContracts,
 	registerSponsor,
+	SendJournal,
 	signingKeyFor,
 } from "@galactica-net/inference-money-core"
 import {
@@ -45,6 +46,8 @@ export interface Harness {
 	sent: SentTx[]
 	/** The payment records; `wallet` sends through its node, so `payRequest` works with it. */
 	gate: PaymentGate
+	/** Under the gate's node, so `exitToL1` works with `wallet`. */
+	sends: SendJournal
 	/** The bridge's owner and the merchant admin, which a local deploy hands to the fixed local admin; in `wallet`. */
 	owner: AztecAddress
 	outbox: OutboxReader
@@ -72,12 +75,24 @@ async function release(batch: Held): Promise<void> {
 	for (const q of batch.queued.splice(0)) await q.send().then(q.done.resolve, q.done.reject)
 }
 
+let loseReply = false
+
+/** The next submission reaches the node, and then its send throws, as when the reply is lost. */
+export function loseNextReply(): void {
+	loseReply = true
+}
+
 /** Forwards each submission at once, unless {@link sendTogether} is collecting them. */
 function holdingNode(node: AztecNode): AztecNode {
 	return new Proxy(node, {
 		get(target, key, receiver) {
 			if (key !== "sendTx") return Reflect.get(target, key, receiver)
 			return async (tx: Tx) => {
+				if (loseReply) {
+					loseReply = false
+					await target.sendTx(tx)
+					throw new Error("socket hang up")
+				}
 				const batch = held
 				if (!batch) return target.sendTx(tx)
 				const done = Promise.withResolvers<void>()
@@ -159,8 +174,9 @@ async function open(log: (m: string) => void): Promise<Harness> {
 	const net = resolveEndpoints(runId)
 	const node = createAztecNodeClient(net.nodeUrl)
 	const sent: SentTx[] = []
-	const gate = new PaymentGate(recordingNode(holdingNode(node), sent), memoryPaymentStore())
-	const wallet = await gate.bindWallet((gated) => openWallet(gated, manifest))
+	const sends = new SendJournal(recordingNode(holdingNode(node), sent))
+	const gate = new PaymentGate(sends.node, memoryPaymentStore())
+	const wallet = await gate.bindWallet((gated) => sends.bindWallet(() => openWallet(gated, manifest)))
 	const owner = (await wallet.createSchnorrAccount(LOCAL_ADMIN_SECRET, Fr.ZERO, signingKeyFor(LOCAL_ADMIN_SECRET))).address
 	await startHeartbeat(node, manifest)
 	const chain = l1Chain(net.anvilUrl, L1_CHAIN_ID)
@@ -176,6 +192,7 @@ async function open(log: (m: string) => void): Promise<Harness> {
 		wallet,
 		sent,
 		gate,
+		sends,
 		owner,
 		outbox: outboxReader(publicClient, manifest.l1.outbox),
 		l1: { rpcUrl: net.anvilUrl, chain, publicClient, test },

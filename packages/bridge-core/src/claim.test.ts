@@ -7,6 +7,7 @@ import { BindConsentRequiredError, NotFundingAddressError } from "./binding"
 import {
 	type ClaimNode,
 	claim,
+	feeFor,
 	L2_PROPOSED,
 	type NullifierNode,
 	registerSponsor,
@@ -35,7 +36,7 @@ const CHECKPOINTED = async () => receiptAt(TxStatus.CHECKPOINTED) as never
 const NO_NULLIFIER: ClaimNode = { findLeavesIndexes: async (_b, _t, leaves) => leaves.map(() => undefined), getTxReceipt: CHECKPOINTED }
 
 describe("registerSponsor", () => {
-	const SPONSOR = "0x06a9fa0208c78509921b0487a6b5cd5c2e93baf17de1a18d310f65a3cc1d924b" as const
+	const SPONSOR = "0x2adfb70e860909f0db8268b3fec80bce52a94559963444f5c0341816b8412130" as const
 
 	it("registers the pinned sponsor, and refuses a manifest naming any other", async () => {
 		const registered: string[] = []
@@ -59,8 +60,10 @@ describe("claim", () => {
 		expect(pub.sent[0]).toMatchObject({ calls: ["claim_public"], feePayer: undefined })
 
 		const chosen = fakeWallet()
-		await claim(await ticket("private"), NO_NULLIFIER, chosen.wallet, M, { from: recipient, fee: "wallet-default", allowBind: true })
+		await claim(await ticket("private"), NO_NULLIFIER, chosen.wallet, M, { from: recipient, fee: "account-public", allowBind: true })
 		expect(chosen.sent[0]).toMatchObject({ calls: ["claim_private"], feePayer: undefined })
+		// @ts-expect-error the account's public payment is named for what it publishes, never "wallet-default"
+		expect(() => feeFor("private", M, "wallet-default")).toThrow(/Unknown fee choice/)
 
 		const sponsoredPublic = fakeWallet()
 		await claim(await ticket("public"), NO_NULLIFIER, sponsoredPublic.wallet, M, { from: recipient, fee: "sponsored" })

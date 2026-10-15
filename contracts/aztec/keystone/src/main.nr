@@ -193,8 +193,8 @@ fn merchant_stamp_separators_are_distinct_from_every_known_one() {
     assert(DOM_SEP__MERCHANT_STAMP_PAD != DOM_SEP__MERCHANT_REQUEST_PAID);
     // After the protocol's: aztec-nr's crate-private ones (authwit and tx nullifiers, initialization nullifier,
     // single-use claim, partial-note commitment and completion tag, constrained-message nullifier, ECDH subkey and
-    // mask), then the claim secret's and the FPC fuel's.
-    let others: [u32; 75] = [
+    // mask, note randomness), then the claim secret's and the FPC fuel's.
+    let others: [u32; 76] = [
         protocol::DOM_SEP__NOTE_HASH,
         protocol::DOM_SEP__SILOED_NOTE_HASH,
         protocol::DOM_SEP__UNIQUE_NOTE_HASH,
@@ -232,7 +232,7 @@ fn merchant_stamp_separators_are_distinct_from_every_known_one() {
         protocol::DOM_SEP__PUBLIC_KEYS_HASH,
         protocol::DOM_SEP__SINGLE_PUBLIC_KEY_HASH,
         protocol::DOM_SEP__PARTIAL_ADDRESS,
-        protocol::DOM_SEP__CONTRACT_ADDRESS_V2,
+        protocol::DOM_SEP__CONTRACT_ADDRESS_V3,
         protocol::DOM_SEP__BLOCK_HEADER_HASH,
         protocol::DOM_SEP__PROTOCOL_NULLIFIER,
         protocol::DOM_SEP__PUBLIC_TX_HASH,
@@ -268,6 +268,7 @@ fn merchant_stamp_separators_are_distinct_from_every_known_one() {
         3723577546,
         4277646631,
         190532684,
+        2943528854,
         DOM_SEP__TOKEN_BRIDGE_PRIVATE_CLAIM_SECRET,
         3952304070,
     ];

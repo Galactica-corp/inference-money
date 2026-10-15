@@ -24,7 +24,15 @@ test("[A29] serves the testnet build as built: its manifest, its tour, its heade
 }) => {
 	const response = await page.goto("/#recorded")
 	const headers = response?.headers() ?? {}
-	const built = servedHeaders({ manifest, usersTag: "", l1RpcUrl: TESTNET.defaultL1RpcUrl, proofs: "real", presto: PRESTO_DEFAULT, tour })
+	const built = servedHeaders({
+		manifest,
+		usersTag: "",
+		merchantsSalt: null,
+		l1RpcUrl: TESTNET.defaultL1RpcUrl,
+		proofs: "real",
+		presto: PRESTO_DEFAULT,
+		tour,
+	})
 	for (const [name, value] of Object.entries(built)) expect(headers[name.toLowerCase()], name).toBe(value)
 	expect(await page.evaluate(() => crossOriginIsolated), "the page is cross-origin isolated").toBe(true)
 	await expect(page.getByTestId(TESTIDS.network)).toHaveText("Aztec testnet · real proofs")

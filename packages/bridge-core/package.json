@@ -40,18 +40,18 @@
 		"typecheck": "tsc --noEmit -p tsconfig.json"
 	},
 	"dependencies": {
-		"@aztec-labs/aztec.js": "6.0.0-rc.1",
-		"@aztec-labs/constants": "6.0.0-rc.1",
-		"@aztec-labs/foundation": "6.0.0-rc.1",
-		"@aztec-labs/noir-contracts.js": "6.0.0-rc.1",
-		"@aztec-labs/standard-contracts": "6.0.0-rc.1",
-		"@aztec-labs/stdlib": "6.0.0-rc.1",
-		"@aztec-labs/wallets": "6.0.0-rc.1",
+		"@aztec-labs/aztec.js": "6.0.0-rc.3",
+		"@aztec-labs/constants": "6.0.0-rc.3",
+		"@aztec-labs/foundation": "6.0.0-rc.3",
+		"@aztec-labs/noir-contracts.js": "6.0.0-rc.3",
+		"@aztec-labs/standard-contracts": "6.0.0-rc.3",
+		"@aztec-labs/stdlib": "6.0.0-rc.3",
+		"@aztec-labs/wallets": "6.0.0-rc.3",
 		"viem": "2.56.7",
 		"zod": "4.6.5"
 	},
 	"devDependencies": {
-		"@aztec-foundation/l1-artifacts": "6.0.0-rc.1",
+		"@aztec-foundation/l1-artifacts": "6.0.0-rc.6",
 		"@types/bun": "1.4.2",
 		"tsup": "8.5.1",
 		"typescript": "6.0.3"

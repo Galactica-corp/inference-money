@@ -1,7 +1,13 @@
 import { closeSync, existsSync, fsyncSync, linkSync, mkdirSync, openSync, readFileSync, renameSync, rmSync, writeSync } from "node:fs"
 import { constants, homedir } from "node:os"
 import { join, resolve } from "node:path"
-import { memoryPaymentStore, type PaymentRecord, type PaymentStore } from "@galactica-net/inference-money-core"
+import {
+	type DepositDraft,
+	encodeTicket,
+	memoryPaymentStore,
+	type PaymentRecord,
+	type PaymentStore,
+} from "@galactica-net/inference-money-core"
 
 export const STATE_ROOT = join(homedir(), ".cache", "inference-money")
 /** The keyed-run checkout that `scripts/keyed-worktree.sh` maintains. */
@@ -110,6 +116,12 @@ export class StateDir {
 		rmSync(join(this.dir, file), { force: true })
 	}
 
+	/** Atomic and flushed; replaces `to` if it exists. */
+	rename(from: string, to: string): void {
+		renameSync(join(this.dir, from), join(this.dir, to))
+		syncDir(this.dir)
+	}
+
 	/** Removes the lock only while it is still this process's. */
 	release(): void {
 		const lock = join(this.dir, "lock")
@@ -146,4 +158,12 @@ export async function withStateDir<T>(kind: string, name: string, fn: (s: StateD
 		process.off("SIGINT", onSignal).off("SIGTERM", onSignal)
 		state.release()
 	}
+}
+
+/**
+ * Keeps a draft the L1 reader called never sent in a file no resume reads, named by its permit nonce so keeping it
+ * twice rewrites one file: the reader may have lied, and only this draft's salt claims the deposit.
+ */
+export function keepAbandonedDraft(dir: StateDir, d: DepositDraft): void {
+	dir.write(`abandoned-${d.typedData.message.nonce.toString(16)}.json`, { draft: encodeTicket("draft", d) })
 }

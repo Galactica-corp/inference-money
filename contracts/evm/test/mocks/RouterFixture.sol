@@ -8,7 +8,7 @@ import {TokenPortal} from "../../src/TokenPortal.sol";
 import {Permit2DepositRouter} from "../../src/Permit2DepositRouter.sol";
 import {ISignatureTransfer} from "../../src/interfaces/ISignatureTransfer.sol";
 import {ITokenPortal} from "../../src/interfaces/ITokenPortal.sol";
-import {CapturingInbox, CapturingOutbox, FakeRegistry, FakeRollup} from "./AztecFakes.sol";
+import {CapturingInbox, CapturingOutbox, FAKE_ROLLUP_VERSION, FakeRegistry, FakeRollup} from "./AztecFakes.sol";
 import {MockPermit2} from "./MockPermit2.sol";
 
 /// The router over a REAL `TokenPortal` whose Inbox message is captured: deposits are observed through the portal's
@@ -40,7 +40,7 @@ abstract contract RouterFixture is Test {
         registry = new FakeRegistry(address(new FakeRollup(address(inbox), address(outbox))));
         portal = new TokenPortal();
         router = new Permit2DepositRouter(ISignatureTransfer(address(permit2)), ITokenPortal(address(portal)), token_);
-        portal.initialize(address(registry), address(token_), L2_BRIDGE, address(router));
+        portal.initialize(address(registry), address(token_), L2_BRIDGE, address(router), FAKE_ROLLUP_VERSION);
         vm.prank(user);
         token_.approve(address(permit2), type(uint256).max);
     }

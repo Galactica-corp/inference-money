@@ -12,8 +12,12 @@ const pendingDepositSchema = z.strictObject({
 	draft: z.string().optional(),
 	/** `encodeTicket("claim", …)`. */
 	claim: z.string().optional(),
-	/** Claimed at a proposed block, and kept until the claim is final: a prune undoes it, and only this secret claims again. */
+	/** Claimed at a proposed block, which a prune undoes, and only this secret claims again. */
 	claimed: z.literal(true).optional(),
+	/** The node called the claim finalized. Kept all the same: that is its unproven word, and this is the only secret. */
+	final: z.literal(true).optional(),
+	/** The L1 reader called the draft never sent. Kept for the visitor to check again: only its salt could claim it. */
+	archived: z.literal(true).optional(),
 })
 
 const pendingExitSchema = z.strictObject({
@@ -33,7 +37,7 @@ const pendingExitSchema = z.strictObject({
 	ticket: z.string().optional(),
 })
 
-/** A deposit this page sent: its draft until it mines, then its claim ticket until the claim is final. */
+/** A deposit this page sent: its draft until it mines, then its claim ticket. Archived or marked final, never dropped. */
 export type PendingDeposit = z.infer<typeof pendingDepositSchema>
 /** An exit this page sent, until its withdrawal pays out on Ethereum. */
 export type PendingExit = z.infer<typeof pendingExitSchema>

@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs"
 import { basename, dirname, resolve } from "node:path"
 import { type BridgeManifest, parseManifest } from "@galactica-net/inference-money-core/manifest"
-import { readDemoFile } from "@galactica-net/inference-money-demo/files"
+import { castKeysOf, readDemoFile } from "@galactica-net/inference-money-demo/files"
 import { TESTNET } from "@galactica-net/inference-money-deployer/networks"
 import { resolveEndpoints } from "@galactica-net/inference-money-local-network/handle"
 
@@ -19,6 +19,8 @@ export interface BuildTarget {
 	readonly manifest: BridgeManifest
 	/** The published tag the demo's user accounts derive from. */
 	readonly usersTag: string
+	/** The published salt the demo's merchant accounts derive from; null only for a version-1 demo. */
+	readonly merchantsSalt: string | null
 	/** A public endpoint the page reads and sends L1 through, never a keyed run's SEPOLIA_RPC_URL. */
 	readonly l1RpcUrl: string
 	readonly proofs: Proofs
@@ -49,6 +51,36 @@ function readManifestFile(path: string): BridgeManifest {
 		throw new Error(`No bridge manifest at ${path}. Deploy first, or point BRIDGE_MANIFEST at a deployed manifest.`)
 	}
 	return parseManifest(JSON.parse(raw))
+}
+
+/** Presto's SDK: its `exports` hide its package.json from a resolver, so it is read by path. */
+const PRESTO_PACKAGE = "apps/showcase/node_modules/@alejoamiras/presto/package.json"
+
+const EXACT_VERSION = /^\d+\.\d+\.\d+(-[0-9A-Za-z.]+)?$/
+
+/**
+ * The toolchain's node and SDK versions, and the `@aztec-labs/stdlib` Presto's SDK pins; throws unless each is an exact
+ * version, so a comparison of them fails closed.
+ */
+function prestoPins(repoRoot: string): { aztecNode: string; aztecJs: string; prestoStdlib: string } {
+	const { aztecNode, aztecJs } = JSON.parse(readFileSync(resolve(repoRoot, "toolchain.json"), "utf8"))
+	const prestoStdlib = JSON.parse(readFileSync(resolve(repoRoot, PRESTO_PACKAGE), "utf8")).dependencies?.["@aztec-labs/stdlib"]
+	if (![aztecNode, aztecJs, prestoStdlib].every((v) => typeof v === "string" && EXACT_VERSION.test(v))) {
+		throw new Error(`toolchain.json needs exact aztecNode and aztecJs versions, and ${PRESTO_PACKAGE} an exact @aztec-labs/stdlib.`)
+	}
+	return { aztecNode, aztecJs, prestoStdlib }
+}
+
+/**
+ * Kernel inputs from another stdlib fail on the node, and only once a visitor proves. Only a manifest on the toolchain's
+ * node is checked: an older one builds for its recorded tour, and its live mode stops at the identity check on a newer node.
+ */
+function assertPrestoProves(m: BridgeManifest, repoRoot: string): void {
+	const { aztecNode, aztecJs, prestoStdlib } = prestoPins(repoRoot)
+	if (m.l2.nodeVersion !== aztecNode || prestoStdlib === aztecJs) return
+	throw new Error(
+		`Presto's SDK pins @aztec-labs/stdlib ${prestoStdlib}, not the toolchain's ${aztecJs}: no real-proof build until it moves.`,
+	)
 }
 
 /** Testnet always proves for real; a local build fakes proofs unless SHOWCASE_PROOFS=real (the proving harness). */
@@ -108,11 +140,13 @@ export function resolveTarget(env: Env, repoRoot: string): BuildTarget {
 	if (pinned && manifest.network !== "testnet") throw new Error(`${TESTNET_MANIFEST} is a ${manifest.network} manifest`)
 	const demo = readDemoFile({ path, m: manifest })
 	if (!demo) throw new Error(`${path} has no published demo: run \`bun run bridge demo setup ${path}\` first.`)
+	const proofs = proofsFor(env, manifest)
+	if (proofs === "real") assertPrestoProves(manifest, repoRoot)
 	return {
 		manifest,
-		usersTag: demo.usersTag,
+		...castKeysOf(demo),
 		l1RpcUrl: l1RpcFor(path, manifest, env),
-		proofs: proofsFor(env, manifest),
+		proofs,
 		presto: prestoFor(env, manifest),
 		tour: readTour(path, manifest, repoRoot),
 	}

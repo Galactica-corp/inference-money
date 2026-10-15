@@ -1,7 +1,10 @@
 export {
 	acceptAdmin,
 	bridgeOf,
+	deployEvm,
+	deployRouter,
 	guardianDelay,
+	initializePortal,
 	type L1Signer,
 	l1Chain,
 	l1Signer,

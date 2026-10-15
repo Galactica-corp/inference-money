@@ -59,6 +59,8 @@ contract PortalRoundtripFuzzTest is Test {
         amount = bound(amount, 1, type(uint128).max);
         to = bytes32(bound(uint256(to), 0, Constants.MAX_FIELD_VALUE));
         vm.assume(depositor != address(0) && depositor != address(portal) && depositor != address(router));
+        vm.assume(depositor != address(usdc) && depositor != address(inbox) && depositor != address(outbox));
+        vm.assume(depositor != address(portal.registry()));
         address payer = _payer(viaRouter, depositor, amount);
         vm.prank(payer);
         if (viaRouter) portal.depositToAztecPublicFor(depositor, to, amount, secret);

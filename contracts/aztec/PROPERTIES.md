@@ -26,12 +26,13 @@
 > the discovery lenses' raw ids: CON (conservation), ST (state transitions), RT (round trips and boundaries), ADV
 > (adversarial), SPEC (protocol spec).
 >
-> **What TXE can and cannot see (aztec-nr v6.0.0-rc.1).** `get_last_tx_effects()` returns note hashes, nullifiers and
-> private logs; there is no public-log reader, no L2→L1 message reader and no view of enqueued public calls. A
-> `should_fail` test ends at the failure, so state after a refused call is unobservable. TXE runs no kernel or PXE
-> (existence requests and expiry are not enforced, nothing is rounded) and cannot put two calls in one tx.
-> `env.private_context_at(token, |ctx| …)` followed by `ctx.finish().expiration_timestamp` does read an in-circuit expiry
-> cap. `with_public_initializer` deploys with deployer zero (universal); `txe_oracles::deploy` takes a deployer.
+> **What TXE can and cannot see (aztec-nr v6.0.0-rc.3, the same oracle surface as rc.1).** `get_last_tx_effects()`
+> returns note hashes, nullifiers and private logs; there is no public-log reader, no L2→L1 message reader and no view
+> of enqueued public calls. A `should_fail` test ends at the failure, so state after a refused call is unobservable. TXE
+> runs no kernel or PXE (existence requests and expiry are not enforced, nothing is rounded) and cannot put two calls in
+> one tx. `env.private_context_at(token, |ctx| …)` followed by `ctx.finish().expiration_timestamp` does read an
+> in-circuit expiry cap. `with_public_initializer` deploys with deployer zero (universal); `txe_oracles::deploy` takes a
+> deployer.
 
 ## Global Properties
 
@@ -230,12 +231,12 @@
   Test goes in: token/src/test/merchants.nr :: a_switch_off_scheduled_mid_decrease_lands_no_sooner_than_the_old_delay
 
 - [~] **GL-19** — A cancel never applies to an entry with nothing pending, whether nothing was ever scheduled, it was
-  just cancelled, or its change already landed, so neither the admin nor the guardian can keep an entry marked by
-  cancelling again and again. (Category: STATE_TRANSITION; Guarantee: SHOULD-HOLD — archived plan,
-  `cancel_merchant_change`: "Requires a pending change … a guardian could otherwise keep an entry marked forever";
-  Priority: MEDIUM; Scope: always-on; Sources: ST-09, ADV-31, SPEC-34)
+  just cancelled, or its change already landed, so a mistaken cancel fails rather than doing nothing. Since aztec-nr
+  v6.0.0-rc.3 a change to the current value caps no read, so a repeated cancel could no longer keep an entry marked
+  either. (Category: STATE_TRANSITION; Guarantee: SHOULD-HOLD — `cancel_merchant_change`: "Refused when nothing is
+  pending"; Priority: LOW; Scope: always-on; Sources: ST-09, ADV-31, SPEC-34)
   Coverage: PARTIAL by token/src/test/merchants.nr:cancel_refuses_an_entry_with_nothing_pending and
-  cancel_refuses_to_re_mark_a_cancelled_entry — a cancel after the change has landed is untested.
+  cancel_refuses_a_cancelled_entry — a cancel after the change has landed is untested.
   Test goes in: token/src/test/merchants.nr :: cancel_refuses_an_entry_whose_change_has_landed
 
 - [~] **GL-20** — Every delay stays within [3600, 86400] s at all times: the setting, each entry's current and scheduled
@@ -257,16 +258,18 @@
   Test goes in: token/src/test/merchants.nr :: the_guardian_slot_follows_a_lowered_delay_setting
 
 - [~] **GL-22** — Only the merchant admin changes the list: `add_merchant`, `schedule_merchant_off`,
-  `set_merchant_delay`, `sync_merchant_delay` and `schedule_merchant_guardian` refuse a user, a merchant, a stranger, a
-  proposed admin that has not accepted, and the guardian in office. `cancel_merchant_change` is for the admin or a
-  non-zero guardian already in office, and a removed guardian loses it once its removal lands. If it's the guardian, it
-  can only cancel. (Category: STATE_TRANSITION; Guarantee: SHOULD-HOLD — archived plan: "The guardian can do nothing
+  `set_merchant_delay` and `schedule_merchant_guardian` refuse a user, a merchant, a stranger, a proposed admin that has
+  not accepted, and the guardian in office. Anyone may `sync_merchant_delay` an entry to a setting at or above its delay
+  in force; only the admin starts a decrease, so a guardian's cancel holds against everyone else.
+  `cancel_merchant_change` is for the admin or a non-zero guardian already in office, and a removed guardian loses it
+  once its removal lands. Beyond what anyone may do, the guardian can only cancel. (Category: STATE_TRANSITION; Guarantee: SHOULD-HOLD — archived plan: "The guardian can do nothing
   else"; docs/operations.md: "Schedules the guardian (cancel-only)"; A20; Priority: MEDIUM; Scope: always-on; Sources:
   SPEC-30, ADV-28, ST-14, ST-08, ADV-31)
   Coverage: PARTIAL by token/src/test/merchants.nr: add_merchant_is_admin_only, switch_off_is_admin_only,
   the_delay_setting_is_admin_only, the_guardian_is_scheduled_by_the_admin_only, cancel_is_admin_or_guardian_only,
-  a_scheduled_guardian_cannot_cancel_before_taking_office — a non-admin `sync_merchant_delay`, any mutator called by the
-  guardian in office or by a pending admin, and a cancel by a removed guardian are untested
+  a_scheduled_guardian_cannot_cancel_before_taking_office, a_strangers_sync_never_lowers_the_delay_in_force,
+  a_guardians_cancel_holds_against_a_strangers_sync — any mutator called by the guardian in office or by a pending
+  admin, and a cancel by a removed guardian are untested
   (the_guardian_is_scheduled_by_the_admin_only calls as bob before any appointment, so bob is a stranger there).
   Test goes in: token/src/test/merchants.nr :: the_guardian_in_office_can_only_cancel; a_removed_guardian_cannot_cancel
 
@@ -308,7 +311,7 @@
 ### Token: the side hint
 
 - [~] **GL-27** — A lying side hint never passes a rule: whatever the capsule or probe says (FIRST, SECOND, NEITHER,
-  any other u8), every restricted call (four transfers, two openings, the private payment) either proves the side named
+  any other u8), every restricted call (four transfers, the opening, the private payment) either proves the side named
   through constrained reads or refuses. A capsule naming a user, a switched-off merchant or a missing stamp makes the
   tx unprovable; any value other than FIRST or NEITHER proves the second side. (Category: STATE_TRANSITION; Guarantee:
   SHOULD-HOLD — docs/architecture.md "How a check proves": "A wrong hint only makes the tx unprovable"; Priority: HIGH;
@@ -316,21 +319,24 @@
   Coverage: PARTIAL by token/src/test/hints.nr: a_capsule_naming_a_user_fails_the_proof,
   a_capsule_naming_a_switched_off_merchant_fails_the_proof, a_capsule_claiming_a_missing_stamp_fails_the_payment,
   an_out_of_range_side_proves_the_sender, an_out_of_range_side_proves_the_payer_not_the_stamp — only private→private
-  and the private payment run under a lying capsule; private→public, public→private, both openings, and SECOND naming a
-  user sender never do. Each entry point picks its own `first` and `second`, so one swapped argument would go unseen.
+  and the private payment run under a lying capsule; private→public, its refund-commitment twin, public→private, the
+  opening, and SECOND naming a user sender never do. Each entry point picks its own `first` and `second`, so one
+  swapped argument would go unseen.
   Test goes in: token/src/test/hints.nr :: a_capsule_naming_a_user_fails_every_restricted_entry_point
 
 - [~] **GL-28** — Without a capsule, the probe mirrors the token's state at the anchor and picks by the documented
   rules: keep a merchant side and answer NEITHER only when there is none; keep a merchant first side the call publishes
-  or opens a request for; between two merchants, prefer the one whose read caps later (its horizon, which counts the
-  marks a cancel or a switch-on leave); when paying, check the stamp before the payer. A capsule, when present,
-  overrides it. (Category: HIGH_LEVEL; Guarantee: SHOULD-HOLD — archived plan "The side hint": "The choice follows three
-  rules, the same in the SDK and in the fallback probe"; Priority: LOW; Scope: always-on; Sources: ST-20, SPEC-45)
+  or opens a request for; between two merchants, prefer the one whose read caps later (its horizon, which counts a
+  pending change of value but not a cancel or a switch back on, which schedule the current one); when paying, check the
+  stamp before the payer. A capsule, when present, overrides it. (Category: HIGH_LEVEL; Guarantee: SHOULD-HOLD —
+  archived plan "The side hint": "The choice follows three rules, the same in the SDK and in the fallback probe";
+  Priority: LOW; Scope: always-on; Sources: ST-20, SPEC-45)
   Coverage: PARTIAL by token/src/test/hints.nr: the_probe_finds_the_one_merchant_side_or_neither,
   between_two_settled_merchants_the_probe_proves_the_recipient, of_two_merchants_the_probe_proves_the_one_with_the_later_cap,
-  a_switched_off_merchant_is_never_picked, the_payment_probe_follows_its_order, a_capsule_overrides_the_probe — the
-  horizon of an entry marked by a cancel or a switch-on is untested.
-  Test goes in: token/src/test/hints.nr :: a_cancelled_entry_reads_pending_until_its_mark_lands
+  a_switched_off_merchant_is_never_picked, the_payment_probe_follows_its_order, a_capsule_overrides_the_probe,
+  a_cancelled_entry_reads_unmarked — a switch back on, the same `pre == post` schedule as a cancel, is not run
+  separately.
+  Test goes in: token/src/test/hints.nr :: an_entry_switched_back_on_reads_unmarked
 
 ### Token: privacy and expiry
 
@@ -636,8 +642,8 @@
   be redeemed at completion"; Priority: MEDIUM; Scope: after initialize_transfer_commitment and the opening half of
   transfer_private_to_public_with_commitment; Sources: CON-07, RT-11)
   Coverage: PARTIAL by token/src/test/transfer_private_to_commitment.nr:transfer_private_to_commitment and
-  transfer_private_to_public_with_commitment.nr:transfer_private_to_public_with_commitment_and_finalize (the recipient
-  ends with exactly what was paid) — nothing reads supply or balances right after a bare opening;
+  transfer_private_to_public_with_commitment.nr:transfer_private_to_public_with_commitment_refunds_from (the owner
+  ends with exactly the refund) — nothing reads supply or balances right after a bare opening;
   initialize_transfer_commitment.nr:initialize_transfer_commitment asserts only the validity nullifier.
   Test goes in: token/src/test/initialize_transfer_commitment.nr :: opening_a_request_moves_no_balance_and_no_supply
 
@@ -655,12 +661,15 @@
   Coverage: COVERED by token/src/test/rules_private.nr:merchants_pay_each_other_and_move_their_own_funds
   (`utils::check_public_balance(w.env, w.token, w.m1, mint_amount);`). A user cannot run it at all (GL-08).
 
-- [x] **SP-09** — Sending x privately to a public balance with a commitment, then paying that commitment from the same
-  public balance, leaves the recipient with exactly x privately, its public balance back at zero, and the sender down
-  x. (Category: STATE_TRANSITION; Guarantee: SHOULD-HOLD — exact identity across both legs; Priority: MEDIUM; Scope:
-  after transfer_private_to_public_with_commitment then transfer_public_to_commitment; Sources: RT-09)
+- [x] **SP-09** — Sending x privately to a merchant's public balance with a commitment, then refunding r into that
+  commitment from the merchant's public balance, leaves the sender with exactly r more privately (down x − r), the
+  merchant up x − r publicly, and the supply unchanged: the commitment is the sender's. (Category: STATE_TRANSITION;
+  Guarantee: SHOULD-HOLD — exact identity across both legs; aztec-standards v6.0.0-rc.3 README "Refunds": "returns a
+  commitment owned by `from`"; Priority: MEDIUM; Scope: after transfer_private_to_public_with_commitment then
+  transfer_public_to_commitment; Sources: RT-09)
   Coverage: COVERED by
-  token/src/test/transfer_private_to_public_with_commitment.nr:transfer_private_to_public_with_commitment_and_finalize.
+  token/src/test/transfer_private_to_public_with_commitment.nr:transfer_private_to_public_with_commitment_refunds_from
+  and rules_requests.nr:a_merchant_refunds_a_users_commitment_unstamped.
 
 ### Token: authwits
 
@@ -685,20 +694,22 @@
 - [x] **SP-12** — Every successful opening pushes exactly one validity commitment, exactly one of `stamp(c)` or
   `pad(c)`, and one request effect carrying `c` to the opener; `stamp(c)` exactly when the recipient was the side
   proven a merchant. If it's a user opening for a merchant, or a merchant for a merchant, the request is stamped; if
-  it's a merchant opening for a user, padded; a user opening for a user is refused. (Category: STATE_TRANSITION;
-  Guarantee: SHOULD-HOLD — docs/architecture.md "The rules": "the token pushes `stamp(c)` when the recipient is a
-  merchant, `pad(c)` otherwise"; Priority: HIGH; Scope: after initialize_transfer_commitment,
-  transfer_private_to_public_with_commitment; Sources: ST-21, SPEC-39, CON-19)
+  it's a merchant opening for a user, padded; a user opening for a user is refused. A refund commitment from
+  `transfer_private_to_public_with_commitment` opens no request: it pushes its validity commitment and neither marker
+  nor effect. (Category: STATE_TRANSITION; Guarantee: SHOULD-HOLD — docs/architecture.md "The rules": "the token
+  pushes `stamp(c)` when the recipient is a merchant, `pad(c)` otherwise"; Priority: HIGH; Scope: after
+  initialize_transfer_commitment, transfer_private_to_public_with_commitment; Sources: ST-21, SPEC-39, CON-19)
   Coverage: COVERED by token/src/test/rules_requests.nr: a_request_a_user_opens_for_a_merchant_is_stamped,
   a_request_a_merchant_opens_for_a_user_is_padded, a_request_a_merchant_opens_for_a_merchant_is_stamped,
-  with_commitment_to_a_merchant_is_stamped_and_from_a_merchant_padded, both_openings_hand_the_commitment_to_the_opener,
-  a_user_cannot_open_a_request_for_a_user, and initialize_transfer_commitment.nr:initialize_transfer_commitment.
+  an_opening_hands_the_commitment_to_the_opener, a_user_cannot_open_a_request_for_a_user,
+  a_merchant_refunds_a_users_commitment_unstamped, and
+  initialize_transfer_commitment.nr:initialize_transfer_commitment.
 
 - [~] **SP-13** — Without `c`, an observer cannot tell a request opened for a merchant from one a merchant opened for a
-  user: a stamped and a padded opening leave the same numbers of nullifiers, note hashes and private logs, on both
-  opening entry points. (Category: HIGH_LEVEL; Guarantee: SHOULD-HOLD — docs/architecture.md "The rules": "Both are one
-  token-siloed nullifier, so an observer can't tell them apart"; A22: "with the same number of nullifiers"; Priority:
-  MEDIUM; Scope: after the openings; Sources: ADV-38, SPEC-48, CON-19)
+  user: a stamped and a padded opening leave the same numbers of nullifiers, note hashes and private logs, on the one
+  opening entry point, `initialize_transfer_commitment`. (Category: HIGH_LEVEL; Guarantee: SHOULD-HOLD —
+  docs/architecture.md "The rules": "Both are one token-siloed nullifier, so an observer can't tell them apart"; A22:
+  "with the same number of nullifiers"; Priority: MEDIUM; Scope: after the openings; Sources: ADV-38, SPEC-48, CON-19)
   Coverage: PARTIAL by token/src/test/rules_requests.nr's stamped and padded tests (which marker exists, never the
   counts; `get_last_tx_effects` is unused). packages/integration/test/requests.test.ts "[A22] a merchant's request is
   stamped…" compares nullifier counts only.
@@ -764,25 +775,27 @@
 
 - [~] **SP-20** — If it's a merchant whose switch-off is scheduled and then stopped before it lands (by the admin's
   cancel, the guardian's, or a switch back on), it stays a merchant at every instant, including the original landing
-  time and after, publicly and in a private proof; its entry reads off and scheduled-off both false, and stays marked
-  until the stop time plus D. (Category: STATE_TRANSITION; Guarantee: SHOULD-HOLD — docs/architecture.md "The list":
-  "Within that delay the admin, or a guardian if one is set, can cancel"; A20; Priority: HIGH; Scope: after
-  schedule_merchant_off(m, true) then cancel_merchant_change(m) or schedule_merchant_off(m, false); Sources: RT-13)
+  time and after, publicly and in a private proof; its entry reads off and scheduled-off both false, and its reads are
+  unmarked: a stop schedules the current value, which caps no read. (Category: STATE_TRANSITION; Guarantee: SHOULD-HOLD
+  — docs/architecture.md "The list": "Within that delay the admin, or a guardian if one is set, can cancel"; A20;
+  Priority: HIGH; Scope: after schedule_merchant_off(m, true) then cancel_merchant_change(m) or schedule_merchant_off(m,
+  false); Sources: RT-13)
   Coverage: PARTIAL by token/src/test/merchants.nr:switching_back_on_cancels_a_pending_switch_off
   (`assert_eq(s.scheduled_off_at, t0 + HOUR + DAY);`) and the_guardian_cancels_a_pending_switch_off_once_in_office
   (`at(w, t0 + 3 * DAY); assert(is_merchant(w, w.m1));`) — the admin's own cancel appears only as setup in
-  cancel_refuses_to_re_mark_a_cancelled_entry, and no private proof follows a stop.
+  cancel_refuses_a_cancelled_entry, and no private proof follows a stop.
   Test goes in: token/src/test/merchants.nr :: an_admin_cancel_keeps_the_merchant_on_past_the_original_landing
 
 - [~] **SP-21** — A cancel re-schedules the entry's current value, and its current delay if a decrease is pending:
   afterwards the scheduled value and delay equal the current ones, which are unchanged; one cancel clears both kinds
-  when both are pending; after a value cancel the entry stays marked until now plus D. (Category: STATE_TRANSITION;
-  Guarantee: SHOULD-HOLD — docs/operations.md "Cancel": "keeps the current value; the entry stays marked until the new
-  change time"; Priority: MEDIUM; Scope: after cancel_merchant_change; Sources: ST-08, SPEC-34)
+  when both are pending; a value cancel leaves the entry unmarked. (Category: STATE_TRANSITION; Guarantee:
+  SHOULD-HOLD — docs/operations.md "Cancel": "keeps the current value, and leaves the entry unmarked"; Priority:
+  MEDIUM; Scope: after cancel_merchant_change; Sources: ST-08, SPEC-34)
   Coverage: PARTIAL by token/src/test/merchants.nr:the_guardian_cancels_a_pending_switch_off_once_in_office
   (`assert(!s.scheduled_off);`) and the_guardian_cancels_a_pending_delay_decrease
-  (`assert_eq(s.delay, DAY); assert_eq(s.scheduled_delay, DAY);`) — both kinds pending at once, the new mark
-  (`scheduled_off_at == now + D`), and an admin cancel asserted as such are untested.
+  (`assert_eq(s.delay, DAY); assert_eq(s.scheduled_delay, DAY);`), and hints.nr:a_cancelled_entry_reads_unmarked (the
+  unmarked read) — both kinds pending at once, the re-scheduled change time (`scheduled_off_at == now + D`), and an
+  admin cancel asserted as such are untested.
   Test goes in: token/src/test/merchants.nr :: one_cancel_clears_a_pending_switch_off_and_a_delay_decrease
 
 - [x] **SP-22** — The delay setting accepts exactly [3600, 86400]: 3599 and 86401 are refused, 3600 and 86400 are
@@ -794,13 +807,16 @@
 
 - [x] **SP-23** — `set_merchant_delay` changes the setting at once and no entry; an entry adopts it only when synced
   or added; on sync an increase applies at once and a decrease waits old − new; a sync of an entry already on the
-  setting changes nothing; a merchant added at any setting starts on it. (Category: STATE_TRANSITION; Guarantee:
+  setting changes nothing; a merchant added at any setting starts on it. Anyone may sync an entry to a setting at or
+  above its delay in force, which restores an entry left alone on a shorter delay at once and never restarts a pending
+  decrease. (Category: STATE_TRANSITION; Guarantee:
   SHOULD-HOLD — docs/operations.md "Delay": "An increase applies at once; a decrease waits old − new"; archived plan
   "Non-obvious mechanics" 2; Priority: MEDIUM; Scope: after set_merchant_delay, sync_merchant_delay, add_merchant;
   Sources: ST-11, RT-17, SPEC-33)
   Coverage: COVERED by token/src/test/merchants.nr: a_delay_decrease_waits_the_difference_and_an_increase_applies_at_once,
   sync_is_a_no_op_on_a_synced_entry (`assert(status(w, w.m1) == before);`), add_merchant_is_instant_on_the_delay_setting,
-  a_switch_off_uses_the_entrys_delay_once_synced.
+  a_switch_off_uses_the_entrys_delay_once_synced, a_stranger_restores_a_targeted_entry_at_once,
+  a_strangers_sync_never_restarts_a_pending_decrease.
 
 - [~] **SP-24** — Every way of undoing a pending delay decrease restores the old delay at once and leaves no shorter
   window: a cancel by the admin or the guardian, or setting the old value back and syncing before the decrease lands,
@@ -833,10 +849,11 @@
 ### Token: the side hint
 
 - [~] **SP-27** — Nobody gets a stamp for a request opened for a user: if it's a merchant opening for a user under a
-  capsule that names the user recipient (FIRST), the opening fails rather than stamps, on both opening entry points; a
-  pad is pushed only after the creator is proven a merchant. (Category: STATE_TRANSITION; Guarantee: SHOULD-HOLD —
+  capsule that names the user recipient (FIRST), the opening fails rather than stamps, on the one opening entry point,
+  `initialize_transfer_commitment`; a pad is pushed only after the creator is proven a merchant. A refund commitment
+  is never stamped (scripts/check-stamp-constraint.sh). (Category: STATE_TRANSITION; Guarantee: SHOULD-HOLD —
   docs/architecture.md "The rules": `stamp(c)` "when the recipient is a merchant, `pad(c)` otherwise"; Priority: HIGH;
-  Scope: after initialize_transfer_commitment, transfer_private_to_public_with_commitment; Sources: ADV-14)
+  Scope: after initialize_transfer_commitment; Sources: ADV-14)
   Coverage: PARTIAL by token/src/test/rules_requests.nr:a_request_a_merchant_opens_for_a_user_is_padded and
   a_user_cannot_open_a_request_for_a_user (honest hint) — no opening runs under a lying capsule.
   Test goes in: token/src/test/hints.nr :: a_capsule_naming_a_user_recipient_cannot_stamp_a_request
@@ -874,9 +891,13 @@
 
 - [~] **SP-31** — Accepted: without a capsule, the hint asks the node about the second side unless the first is kept or
   its read already allows the longest expiry, so a user paying a merchant whose cap is shorter than the longest has its
-  own address queried. The query buys the later expiry on chain; bridge-core always attaches a capsule, which queries
-  nothing. hints.nr's header and docs/integration.md ("Your node") say so. (Category: VALID_STATE — when the counterparty
-  is a merchant; Guarantee: EXPLORATORY; Priority: MEDIUM; Scope: after merchant_side_hint; Sources: ADV-40)
+  own address queried. The query buys the later expiry on chain. bridge-core attaches a side capsule to each restricted
+  private token call it sends, plus a bucket capsule when a payment proves a stamp (`payments.ts`), which spares the
+  hint's node queries and nothing else: the PXE's own witness requests still carry a slot derived from the sending
+  account's address, and a merchant exit (`exitToL1`, through `try_prove_merchant`) carries no capsule and proves the
+  merchant's own entry. hints.nr's header states the probe's query, docs/integration.md ("Your node") all of them.
+  (Category: VALID_STATE — when the counterparty is a merchant; Guarantee: EXPLORATORY; Priority: MEDIUM; Scope: after
+  merchant_side_hint; Sources: ADV-40)
   Coverage: PARTIAL by token/src/test/hints.nr:of_two_merchants_the_probe_proves_the_one_with_the_later_cap
   (`assert_eq(side(w, w.m1, w.m2, false), SECOND);`) — it checks the side picked, never which accounts were queried.
 
@@ -1030,7 +1051,7 @@
 
 - [x] **SP-47** — If it's a merchant, it withdraws publicly or privately to any L1 address except zero and the
   portal, whatever its binding. (Category: STATE_TRANSITION; Guarantee: SHOULD-HOLD — A24: "a merchant exits publicly or
-  privately to any address but the portal"; Priority: MEDIUM; Scope: after exit_to_l1_* by a merchant; Sources: SPEC-24,
+  privately to any address but zero and the portal"; Priority: MEDIUM; Scope: after exit_to_l1_* by a merchant; Sources: SPEC-24,
   ST-38)
   Coverage: COVERED by token_bridge/src/test/exits.nr: a_merchant_exits_publicly_anywhere,
   a_merchant_exits_privately_anywhere (bound, exits elsewhere), exit_to_l1_{public,private}_portal_recipient_rejected,

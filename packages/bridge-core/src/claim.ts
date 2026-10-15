@@ -24,15 +24,18 @@ import type { StageSink } from "./types"
 export type ClaimResult = "claimed" | "consumed-unknown"
 
 /**
- * Who pays a tx's fee. The wallet's default payer usually links the user's account to a private claim or exit; the
- * sponsor does not. Default: sponsored for private ops, the wallet for public ones; an explicit choice overrides.
+ * Who pays a tx's fee, a public field of every tx. "sponsored": the network's sponsor, which keeps the account out of
+ * it. "account-public": the sending account, from its own Fee Juice, named as the tx's fee payer beside what the tx
+ * shows: a claim's amount, an exit's funding address, a return's depositor. Default: sponsored for private ops, the
+ * account for public ones, which publish it anyway; an explicit choice overrides.
  */
-export type FeeChoice = "sponsored" | "wallet-default"
+export type FeeChoice = "sponsored" | "account-public"
 
 export function feeFor(kind: "public" | "private", m: BridgeManifest, choice?: FeeChoice): { paymentMethod: FeePaymentMethod } | undefined {
-	return (choice ?? (kind === "private" ? "sponsored" : "wallet-default")) === "sponsored"
-		? { paymentMethod: sponsoredPayment(m) }
-		: undefined
+	const chosen = choice ?? (kind === "private" ? "sponsored" : "account-public")
+	if (chosen === "sponsored") return { paymentMethod: sponsoredPayment(m) }
+	if (chosen === "account-public") return undefined
+	throw new Error(`Unknown fee choice ${String(choice)}: name "sponsored" or "account-public".`)
 }
 
 /** The network's sponsor could not pay (exhausted, missing or refused); the ticket is untouched and can be retried. */
@@ -222,10 +225,10 @@ export interface WaitClaimFinalizedOptions {
 }
 
 /**
- * Waits until this ticket's claim is in a finalized block, the first point at which its secret may be forgotten: an
- * epoch that misses its proof window is pruned, and an L1 reorg can remove a proof that landed near its deadline.
- * "dropped" once the nullifier is not even proposed any more, so the caller claims again; a failed read counts as not
- * final yet.
+ * Waits until this ticket's claim is in a finalized block: before that, an epoch that misses its proof window is
+ * pruned, and an L1 reorg can remove a proof that landed near its deadline. "dropped" once the nullifier is not even
+ * proposed any more, so the caller claims again; a failed read counts as not final yet. "finalized" is the node's
+ * unproven word: mark the ticket final and keep it, never delete the only copy of its secret on this answer.
  */
 export async function waitClaimFinalized(
 	t: ClaimTicket,
@@ -250,7 +253,7 @@ async function claimFinality(t: ClaimTicket, node: NullifierNode, m: BridgeManif
 /**
  * Mints the deposit on L2 from `from`: a private claim only from its recipient, a public one from anyone (the mint
  * goes to the merchant the message names), paid per {@link FeeChoice}. Both outcomes hold only at `opts.wait`'s tip, a
- * checkpoint by default: keep the secret until {@link waitClaimFinalized} says "finalized". "consumed-unknown" needs
+ * checkpoint by default: keep the secret, also past {@link waitClaimFinalized}'s "finalized". "consumed-unknown" needs
  * this ticket's nullifier on L2 at that tip: a nullifier error can come from any part of the tx. A first private claim
  * needs `allowBind` ({@link ClaimConsent}).
  */

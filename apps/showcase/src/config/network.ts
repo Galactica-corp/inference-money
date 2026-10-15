@@ -21,6 +21,7 @@ export const WALLETS: Record<"A_demo" | "B_demo", Address> = {
 }
 
 export const USERS_TAG: string = __SHOWCASE_USERS_TAG__
+export const MERCHANTS_SALT: string | null = __SHOWCASE_MERCHANTS_SALT__
 export const L1_RPC_URL: string = __SHOWCASE_L1_RPC__
 /** Whether the embedded wallet proves for real: always on testnet, on local only in the proving harness. */
 export const PROVES: boolean = __SHOWCASE_PROOFS__ === "real"

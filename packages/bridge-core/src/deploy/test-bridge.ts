@@ -5,10 +5,9 @@ import type { AztecNode } from "@aztec-labs/aztec.js/node"
 import type { EmbeddedWallet } from "@aztec-labs/wallets/embedded"
 import type { Address, Hex } from "viem"
 import { sponsoredFpcArtifact } from "../artifacts"
-import { L2_DONE, sponsorInstance } from "../claim"
+import { sponsorInstance } from "../claim"
 import { TESTNET_MANIFEST } from "../deployments"
 import type { BridgeManifest } from "../manifest"
-import { tokenOf } from "./admin"
 import { deployBridge } from "./deploy"
 import { deployMockUsdc } from "./deploy-l1"
 import type { BridgeEvmArtifacts } from "./evm"
@@ -69,15 +68,12 @@ export async function deployTestBridge(o: TestBridgeOptions): Promise<TestBridge
 		...(o.registry ? { registry: o.registry } : {}),
 		deployerSecret: o.deployerSecret,
 		fees: { accountDeploy: async () => sponsored, tx: sponsored },
+		merchantDelay: o.merchantDelay,
 		sponsoredFpc: sponsor.address.toString() as Hex,
 		sourceCommit: TESTNET_MANIFEST.sourceCommit,
 		log,
 	})
 	const manifest: BridgeManifest = { ...deployed, l2: { ...deployed.l2, admin: deployed.l2.bridge.deployer } }
 	const admin = AztecAddress.fromStringUnsafe(deployed.l2.bridge.deployer)
-	if (o.merchantDelay !== undefined) {
-		const fee = { paymentMethod: sponsored }
-		await tokenOf(o.wallet, manifest).methods.set_merchant_delay!(o.merchantDelay).send({ from: admin, fee, wait: L2_DONE })
-	}
 	return { manifest, admin }
 }

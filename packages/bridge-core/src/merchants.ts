@@ -129,11 +129,11 @@ export async function syncMerchantList(node: MerchantNode, token: AztecAddress, 
 	return { block: at, at: data.header.globalVariables.timestamp, entries: new Map(entries) }
 }
 
-/** Whether `account` is a switched-on merchant at `at`, and whether its entry has a change scheduled after `at`. */
+/** Whether `account` is a switched-on merchant at `at`, and whether its entry has a switch scheduled after `at`. */
 export function merchantStatus(list: MerchantList, account: AztecAddress, at = list.at): { merchant: boolean; pending: boolean } {
 	const e = list.entries.get(account.toString())
 	if (!e) return { merchant: false, pending: false }
-	return { merchant: !(at < e.changeAt ? e.off : e.scheduledOff), pending: e.changeAt > at }
+	return { merchant: !(at < e.changeAt ? e.off : e.scheduledOff), pending: e.changeAt > at && e.off !== e.scheduledOff }
 }
 
 /** How long a read of `e` at `at` must assume its value holds: aztec's `get_effective_minimum_delay_at`. */
@@ -145,9 +145,12 @@ export function effectiveMinimumDelayAt(e: MerchantEntry, at: bigint): bigint {
 	return (pre < throughChange ? pre : throughChange) - 1n
 }
 
-/** The last second a read of `e` at `at` holds, given its effective minimum delay `d`: aztec's `get_time_horizon`. */
+/**
+ * The last second a read of `e` at `at` holds, given its effective minimum delay `d`: aztec's `get_time_horizon`, under
+ * which a change scheduled to the current value (a cancel, a switch back on) caps nothing.
+ */
 export function timeHorizon(e: MerchantEntry, at: bigint, d: bigint): bigint {
-	if (at >= e.changeAt) return at + d
+	if (at >= e.changeAt || e.off === e.scheduledOff) return at + d
 	return at + d < e.changeAt - 1n ? at + d : e.changeAt - 1n
 }
 

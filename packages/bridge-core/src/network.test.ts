@@ -2,17 +2,20 @@ import { describe, expect, it } from "bun:test"
 import { AztecAddress } from "@aztec-labs/aztec.js/addresses"
 import { Fr } from "@aztec-labs/aztec.js/fields"
 import type { PublicClient, WalletClient } from "viem"
-import { assertNetworkIdentity, assertSigningContext, NetworkMismatchError, walletChainIdOf } from "./network"
+import { assertNetworkIdentity, assertSigningContext, depositsOpen, NetworkMismatchError, walletChainIdOf } from "./network"
 import { MANIFEST as M } from "./test/fixtures"
 
 const ROLLUP = "0x00000000000000000000000000000000000000cc"
+const OTHER = "0x00000000000000000000000000000000000000ee"
 
 function l1Reads(over: Partial<Record<string, unknown>> = {}): PublicClient {
 	const reads: Record<string, unknown> = {
 		getCanonicalRollup: ROLLUP,
-		getInbox: M.l1.inbox.toUpperCase().replace("0X", "0x"),
-		getOutbox: M.l1.outbox,
-		getVersion: BigInt(M.l2.rollupVersion),
+		rollup: ROLLUP.toUpperCase().replace("0X", "0x"),
+		registry: M.l1.registry,
+		inbox: M.l1.inbox.toUpperCase().replace("0X", "0x"),
+		outbox: M.l1.outbox,
+		rollupVersion: BigInt(M.l2.rollupVersion),
 		...over,
 	}
 	return {
@@ -40,16 +43,29 @@ describe("walletChainIdOf", () => {
 })
 
 describe("assertNetworkIdentity", () => {
-	it("passes on the manifest's network (addresses compared case-insensitively)", async () => {
-		await assertNetworkIdentity(node(), l1Reads(), M)
+	it("passes on the manifest's network with deposits open (addresses compared case-insensitively)", async () => {
+		expect(await assertNetworkIdentity(node(), l1Reads(), M)).toEqual({ depositsOpen: true })
+	})
+
+	it("passes with deposits closed once the registry's canonical rollup moved", async () => {
+		const moved = l1Reads({ getCanonicalRollup: OTHER })
+		expect(await assertNetworkIdentity(node(), moved, M)).toEqual({ depositsOpen: false })
+		expect(await depositsOpen(moved, M)).toBe(false)
 	})
 
 	it.each([
 		["node version", node({ nodeVersion: "5.0.1" }), l1Reads()],
 		["node rollup", node({ rollupVersion: 1 }), l1Reads()],
+		[
+			"node outbox",
+			node({ l1ContractAddresses: { registryAddress: M.l1.registry, inboxAddress: M.l1.inbox, outboxAddress: OTHER } }),
+			l1Reads(),
+		],
 		["L1 chain", node(), l1Reads({ chainId: 1 })],
-		["canonical rollup outbox", node(), l1Reads({ getOutbox: "0x00000000000000000000000000000000000000ee" })],
-		["canonical rollup version", node(), l1Reads({ getVersion: 1n })],
+		["portal registry", node(), l1Reads({ registry: OTHER })],
+		["portal outbox", node(), l1Reads({ outbox: OTHER })],
+		["portal rollup version", node(), l1Reads({ rollupVersion: 1n })],
+		["portal registry, after a switch", node(), l1Reads({ registry: OTHER, getCanonicalRollup: OTHER })],
 	])("refuses a different %s", async (_, n, l1) => {
 		await expect(assertNetworkIdentity(n, l1, M)).rejects.toBeInstanceOf(NetworkMismatchError)
 	})

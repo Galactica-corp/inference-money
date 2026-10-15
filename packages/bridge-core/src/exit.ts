@@ -8,6 +8,7 @@ import type { Wallet } from "@aztec-labs/aztec.js/wallet"
 import { computeL2ToL1MessageHash } from "@aztec-labs/stdlib/hash"
 import type { AztecNode } from "@aztec-labs/stdlib/interfaces/client"
 import { computeL2ToL1MembershipWitness, getL2ToL1MessageLeafId } from "@aztec-labs/stdlib/messaging"
+import type { Tx } from "@aztec-labs/stdlib/tx"
 import { type Address, type Hex, isAddressEqual, zeroAddress } from "viem"
 import { tokenArtifact, tokenBridgeArtifact } from "./artifacts"
 import { assertExitDestination } from "./binding"
@@ -16,6 +17,7 @@ import { withdrawContentHash } from "./content-hash"
 import type { BridgeManifest } from "./manifest"
 import type { OutboxReader } from "./outbox"
 import { randomSecret } from "./random"
+import type { HandedTx, SendJournal } from "./sent"
 import { MAX_L2_AMOUNT } from "./types"
 
 export interface ExitIntent {
@@ -42,7 +44,8 @@ export type ExitNode = Pick<AztecNode, "getTxEffect" | "getL2ToL1Messages" | "ge
 
 /**
  * Refused before any burn. The portal's payout check measures its own balance drop and a self-transfer drops nothing,
- * so an exit to the portal is unwithdrawable; the router has no way to release tokens sent to it.
+ * so an exit to the portal is unwithdrawable; the router, Permit2, the Inbox, the Outbox, the registry and USDC itself
+ * have no way to release USDC sent to them. The L2 bridge refuses only zero and the portal, so a raw call can still name the rest.
  */
 export function assertExitIntent(e: ExitIntent, m: BridgeManifest): void {
 	if (e.amount <= 0n) throw new Error("The amount must be positive.")
@@ -51,6 +54,11 @@ export function assertExitIntent(e: ExitIntent, m: BridgeManifest): void {
 		["the zero address", zeroAddress],
 		["the bridge portal", m.l1.portal],
 		["the deposit router", m.l1.router],
+		["Permit2", m.l1.permit2],
+		["the Aztec Inbox", m.l1.inbox],
+		["the Aztec Outbox", m.l1.outbox],
+		["the Aztec registry", m.l1.registry],
+		["the USDC contract", m.l1.usdc],
 	] as const) {
 		if (isAddressEqual(e.recipientL1, blocked)) throw new Error(`An Ethereum recipient of ${label} could never be paid out.`)
 	}
@@ -86,7 +94,7 @@ function exitCall(e: ExitIntent, wallet: Wallet, m: BridgeManifest, nonce: Fr) {
 }
 
 /**
- * The burn mined but its ticket could not be built. Exiting again would burn again: recover with
+ * The burn may have happened but its ticket could not be built. Exiting again would burn again: recover with
  * {@link exitTicketFromTx} from these fields.
  */
 export class ExitUnconfirmedError extends Error {
@@ -95,13 +103,29 @@ export class ExitUnconfirmedError extends Error {
 		readonly recipient: Address,
 		readonly amount: bigint,
 		options?: ErrorOptions,
+		/**
+		 * Set when the send failed after the tx was handed to the node: every handed tx that may be this exit, each able
+		 * to be included until its own expiry. Exiting again is safe only once every one is gone.
+		 */
+		readonly sent?: readonly HandedTx[],
 	) {
 		super(
-			`Exit ${l2TxHash} was sent, but its withdrawal could not be located yet. Do not exit again; resume it from this hash.`,
+			sent
+				? handedOffText(sent, options?.cause)
+				: `Exit ${l2TxHash} was sent, but its withdrawal could not be located yet. Do not exit again; resume it from this hash.`,
 			options,
 		)
 		this.name = "ExitUnconfirmedError"
 	}
+}
+
+// The node's answer about a tx handed to it is its word alone: a fee rejection may come after it gossiped the tx.
+function handedOffText(sent: readonly HandedTx[], cause: unknown): string {
+	const latest = sent.reduce((at, s) => (s.expiresAt > at ? s.expiresAt : at), 0n)
+	const answer = sponsorFailure(cause, "withdrawal") ? "reported a fee rejection this client cannot verify" : "gave no confirmation"
+	const txs = sent.map((s) => s.txHash.toString()).join(" or ")
+	const until = new Date(Number(latest) * 1000).toISOString()
+	return `Exit ${txs} was handed to the node, which then ${answer}. It can be included until ${until}: do not exit again; resume it from its hash until it lands or a finalized block passes that time.`
 }
 
 /**
@@ -124,10 +148,9 @@ export class ExitRevertedError extends Error {
 	}
 }
 
-async function sendExit(e: ExitIntent, wallet: Wallet, m: BridgeManifest, fee: ReturnType<typeof feeFor>): Promise<TxHash> {
+async function sendExit(e: ExitIntent, wallet: Wallet, m: BridgeManifest, fee: ReturnType<typeof feeFor>, nonce: Fr): Promise<TxHash> {
 	const proxy = AztecAddress.fromStringUnsafe(m.l2.proxy.address)
-	// The burn authwit's nullifier hashes the sender with public data and this nonce, so a guessable nonce names it.
-	const { exit, burn } = exitCall(e, wallet, m, randomSecret())
+	const { exit, burn } = exitCall(e, wallet, m, nonce)
 	if (e.kind === "private") {
 		const witness = await wallet.createAuthWit(e.from, { caller: proxy, call: await burn.getFunctionCall() })
 		return (await exit.send({ from: e.from, authWitnesses: [witness], fee, wait: NO_WAIT })).txHash
@@ -137,30 +160,61 @@ async function sendExit(e: ExitIntent, wallet: Wallet, m: BridgeManifest, fee: R
 }
 
 /**
- * Burns on L2 and emits the withdraw message, paid per {@link FeeChoice}. The burn is authorized for the proxy (the
- * bridge's only path to the token) with a fresh nonce: an off-chain witness for a private exit, and an auth-registry
- * entry batched into the same tx for a public one. A sponsor that cannot pay is a {@link SponsorUnavailableError} with
- * nothing burned. The send returns its hash before any wait, so every failure after it, the wait for `opts.wait`
- * included, is an {@link ExitUnconfirmedError} carrying that hash; only a checkpointed revert with no withdraw message
- * in its effect, which burned nothing so far, is an {@link ExitRevertedError}.
+ * Whether a tx handed to the node is this exit: a public one by its fresh nonce (`exit_to_l1_public`'s calldata is
+ * `[selector, recipient, amount, caller_on_l1, nonce]`), a private one by its withdraw message, which only an identical
+ * exit or a return to the same address for the same amount shares.
+ */
+async function isExit(e: ExitIntent, m: BridgeManifest, nonce: Fr): Promise<(tx: Tx) => boolean> {
+	const bridge = AztecAddress.fromStringUnsafe(m.l2.bridge.address)
+	if (e.kind === "public") {
+		return (tx) =>
+			tx
+				.getPublicCallRequestsWithCalldata()
+				.some(({ request, calldata }) => request.contractAddress.equals(bridge) && !!calldata[4]?.equals(nonce))
+	}
+	const portal = EthAddress.fromString(m.l1.portal)
+	const content = Fr.fromHexString(await withdrawContentHash(e.recipientL1, e.amount, zeroAddress))
+	return (tx) =>
+		tx.data
+			.getNonEmptyL2ToL1Msgs()
+			.some((s) => s.contractAddress.equals(bridge) && s.message.recipient.equals(portal) && s.message.content.equals(content))
+}
+
+/**
+ * Burns on L2 and emits the withdraw message, paid per {@link FeeChoice}, from a wallet built on `sends`
+ * ({@link SendJournal.bindWallet}), which also serves the reads. The burn is authorized for the proxy (the bridge's only
+ * path to the token) with a fresh nonce: an off-chain witness for a private exit, and an auth-registry entry batched
+ * into the same tx for a public one. A sponsor that cannot pay before the tx is handed to the node is a
+ * {@link SponsorUnavailableError} with nothing burned. Once it is handed over, every failure is an
+ * {@link ExitUnconfirmedError} carrying its hash: a failed send with every handed tx that may be this exit
+ * (`sent`), and any failure after the send, the wait for `opts.wait` included. Only a checkpointed revert with no
+ * withdraw message in its effect, which burned nothing so far, is an {@link ExitRevertedError}.
  */
 export async function exitToL1(
 	e: ExitIntent,
 	wallet: Wallet,
-	node: ExitNode,
+	sends: SendJournal<ExitNode & Pick<AztecNode, "sendTx">>,
 	m: BridgeManifest,
 	opts: { fee?: FeeChoice; wait?: L2Wait } = {},
 ): Promise<ExitTicket> {
 	assertExitIntent(e, m)
+	if (!sends.isBound(wallet)) throw new Error("exitToL1 needs a wallet built on its journal's node, by SendJournal.bindWallet.")
 	if (e.kind === "private" && !e.asMerchant) await assertExitDestination(wallet, m, e.from, e.recipientL1)
 	const fee = feeFor(e.kind, m, opts.fee)
+	// The burn authwit's nullifier hashes the sender with public data and this nonce, so a guessable nonce names it.
+	const nonce = randomSecret()
+	const watch = sends.watch(await isExit(e, m, nonce))
 	let txHash: TxHash
 	try {
-		txHash = await sendExit(e, wallet, m, fee)
+		txHash = await sendExit(e, wallet, m, fee, nonce)
 	} catch (err) {
+		const sent = [...watch.seen]
+		if (sent[0]) throw new ExitUnconfirmedError(sent[0].txHash, e.recipientL1, e.amount, { cause: err }, sent)
 		throw (fee && sponsorFailure(err, "withdrawal")) || err
+	} finally {
+		watch.stop()
 	}
-	const located = await locateWithdrawal(e.recipientL1, e.amount, txHash, node, m, opts.wait).catch((cause: unknown) => {
+	const located = await locateWithdrawal(e.recipientL1, e.amount, txHash, sends.node, m, opts.wait).catch((cause: unknown) => {
 		throw new ExitUnconfirmedError(txHash, e.recipientL1, e.amount, { cause })
 	})
 	if (typeof located === "string") throw new ExitRevertedError(txHash, located === "reverted")

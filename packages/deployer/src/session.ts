@@ -10,6 +10,7 @@ import {
 	type PaymentStore,
 	registerBridgeContracts,
 	registerSponsor,
+	SendJournal,
 	signingKeyFor,
 } from "@galactica-net/inference-money-core"
 import { resolveEndpoints, runIdFor } from "@galactica-net/inference-money-local-network"
@@ -71,6 +72,8 @@ export interface Session {
 	sent: SentTx[]
 	/** The wallet is bound to it, so `payRequest` accepts the wallet. */
 	gate: PaymentGate
+	/** Under the gate's node; the wallet is bound to it too, so `exitToL1` accepts the wallet. */
+	sends: SendJournal
 }
 
 export interface SessionOptions extends EndpointFlags {
@@ -84,17 +87,18 @@ export interface SessionOptions extends EndpointFlags {
 export function withSession<T>(ref: ManifestRef, opts: SessionOptions, fn: (s: Session) => Promise<T>): Promise<T> {
 	const endpoints = endpointsFor(ref, opts)
 	const sent: SentTx[] = []
-	const gate = (node: AztecNode) => new PaymentGate(recordingNode(node, sent, opts.onSend), opts.payments ?? memoryPaymentStore())
-	let bound: PaymentGate | undefined
+	let bound: { gate: PaymentGate; sends: SendJournal } | undefined
 	const bind = (node: AztecNode, open: (n: AztecNode) => Promise<EmbeddedWallet>) => {
-		bound = gate(node)
-		return bound.bindWallet(open)
+		const sends = new SendJournal(recordingNode(node, sent, opts.onSend))
+		const gate = new PaymentGate(sends.node, opts.payments ?? memoryPaymentStore())
+		bound = { gate, sends }
+		return gate.bindWallet((gated) => sends.bindWallet(() => open(gated)))
 	}
 	return withBridgeWallet(endpoints.nodeUrl, { prove: provesFor(ref.m), bind }, async (wallet, node) => {
 		if (!bound) throw new Error("the session's wallet was opened without its payment gate")
 		await registerSponsor(wallet, ref.m)
 		await registerBridgeContracts(wallet, ref.m)
-		return fn({ ref, m: ref.m, node, wallet, endpoints, sent, gate: bound })
+		return fn({ ref, m: ref.m, node, wallet, endpoints, sent, ...bound })
 	})
 }
 

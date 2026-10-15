@@ -3,6 +3,6 @@
 	"private": true,
 	"description": "Pinned Aztec JS toolchain (aztec compile, bb, the TXE oracle server) for the Noir scripts; installed with --frozen-lockfile by scripts/toolchain.sh.",
 	"dependencies": {
-		"@aztec-labs/aztec": "6.0.0-rc.1"
+		"@aztec-labs/aztec": "6.0.0-rc.3"
 	}
 }

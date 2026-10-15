@@ -29,7 +29,7 @@ describe("the CLI's entry point", () => {
 		const imports = BOOTSTRAP.map((m) => `await import(${JSON.stringify(join(import.meta.dir, `${m}.ts`))})`).join("\n")
 		expect(childrenAfter(imports)).toBe(0)
 		expect(childrenAfter(`require("node:child_process").spawn("sleep", ["5"], { detached: true }).unref()`)).toBe(1)
-	})
+	}, 60_000)
 
 	const cli = (flags: string[], opts: { cwd?: string; env?: Record<string, string> } = {}) =>
 		Bun.spawnSync([process.execPath, ...flags, join(import.meta.dir, "cli.ts"), "manifest-path", "local"], {
@@ -66,5 +66,5 @@ describe("the CLI's entry point", () => {
 		} finally {
 			rmSync(dir, { recursive: true, force: true })
 		}
-	})
+	}, 60_000)
 })

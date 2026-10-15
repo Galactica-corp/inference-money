@@ -8,9 +8,9 @@ import type { EmbeddedWallet } from "@aztec-labs/wallets/embedded"
 import { tokenArtifact, tokenBridgeArtifact } from "../artifacts"
 import { L2_DONE, sponsoredPayment } from "../claim"
 import type { BridgeManifest } from "../manifest"
-import { type MerchantNode, merchantStatus, syncMerchantList } from "../merchants"
+import { MERCHANT_MIN_DELAY, type MerchantList, type MerchantNode, merchantStatus, syncMerchantList } from "../merchants"
 import { ensureAccount } from "./deploy-l2"
-import { entryDelay, readRoles } from "./token-reads"
+import { entryDelay, readDelays, readRoles } from "./token-reads"
 
 /** What an admin call needs: a wallet holding the admin account, the deployment it acts on, and a node to read. */
 export interface AdminSession {
@@ -116,6 +116,39 @@ export async function setMerchantDelay(s: AdminSession, admin: AztecAddress, del
 	const syncs = [...list.entries.keys()].map((account) => token.methods.sync_merchant_delay!(at(account)))
 	const txs = await sendChunked(s.wallet, [token.methods.set_merchant_delay!(delay), ...syncs], admin, sponsored(s.m))
 	return { txs, synced: syncs.length }
+}
+
+export interface DelayReadBack {
+	setting: bigint
+	/** Listed merchants whose entry is not scheduled to the requested delay. */
+	unsynced: string[]
+	/** Why the send threw, if it did; a lost response can follow a tx that landed, so the read-back decides. */
+	sendError?: string | undefined
+}
+
+export async function readBackDelay(node: MerchantNode, m: BridgeManifest, requested: bigint, sendError?: string): Promise<DelayReadBack> {
+	const { setting, list } = await readDelays(node, at(m.l2.token.address))
+	return { setting, unsynced: unsyncedMerchants(list, requested), sendError }
+}
+
+const unsyncedMerchants = (list: MerchantList, delay: bigint) =>
+	[...list.entries].filter(([, e]) => (e.scheduledDelay ?? MERCHANT_MIN_DELAY) !== delay).map(([account]) => account)
+
+/** The manifest records `requested` only once the chain shows it set; anything short of every merchant synced exits 1. */
+export function merchantDelayVerdict(requested: bigint, r: DelayReadBack): { record: boolean; exit: 0 | 1; lines: string[] } {
+	const record = r.setting === requested
+	const exit = r.sendError !== undefined || !record || r.unsynced.length > 0 ? 1 : 0
+	const lines = [
+		...(r.sendError === undefined ? [] : [`the send failed (${r.sendError}); judging from the chain`]),
+		record
+			? `the setting reads ${requested}s: the manifest records it, commit it`
+			: `the setting reads ${r.setting}s, not the requested ${requested}s: the manifest is unchanged`,
+		...(r.unsynced.length > 0 ? [`${r.unsynced.length} merchant(s) not scheduled to ${requested}s: ${r.unsynced.join(", ")}`] : []),
+		exit
+			? "rerun `bridge merchants delay` with the same delay to finish"
+			: `every listed merchant is scheduled to ${requested}s; a decrease applies after old − new`,
+	]
+	return { record, exit, lines }
 }
 
 /** Schedules the cancel-only guardian (zero removes it), effective after the guardian slot's delay. */

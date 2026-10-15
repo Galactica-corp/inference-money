@@ -15,7 +15,7 @@ const COMMANDS = {
 	"merchants cancel": { args: ["manifest", "account"] },
 	"merchants list": { args: ["manifest"] },
 	pause: { args: ["manifest", "on|off"] },
-	verify: { args: ["manifest"], flags: ["tour", "node", "l1-rpc", "guardian"] },
+	verify: { args: ["manifest"], flags: ["tour", "node", "l1-rpc", "guardian", "allow-pending"] },
 	smoke: { args: ["manifest"], flags: ["record"] },
 	export: { args: ["manifest"], flags: ["out"] },
 	"manifest-path": { args: ["local"] },
@@ -30,7 +30,7 @@ const COMMANDS = {
 export type Command = keyof typeof COMMANDS
 
 /** Flags that take no value. */
-const SWITCHES = new Set(["rotate"])
+const SWITCHES = new Set(["rotate", "allow-pending"])
 /** Flags a command cannot run without. */
 const REQUIRED: Partial<Record<Command, string[]>> = { export: ["out"] }
 

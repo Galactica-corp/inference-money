@@ -72,6 +72,7 @@ export default defineConfig(() => {
 		define: {
 			__BRIDGE_MANIFEST__: embedded,
 			__SHOWCASE_USERS_TAG__: JSON.stringify(target.usersTag),
+			__SHOWCASE_MERCHANTS_SALT__: JSON.stringify(target.merchantsSalt),
 			__SHOWCASE_L1_RPC__: JSON.stringify(target.l1RpcUrl),
 			__SHOWCASE_PROOFS__: JSON.stringify(target.proofs),
 			__SHOWCASE_PRESTO__: JSON.stringify(target.presto),

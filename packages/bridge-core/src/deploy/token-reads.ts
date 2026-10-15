@@ -7,7 +7,7 @@ import { DelayedPublicMutableValues } from "@aztec-labs/stdlib/delayed-public-mu
 import { deriveStorageSlotInMap } from "@aztec-labs/stdlib/hash"
 import { tokenArtifact, tokenBridgeArtifact } from "../artifacts"
 import type { BridgeManifest } from "../manifest"
-import { delayAt, MERCHANT_MIN_DELAY } from "../merchants"
+import { delayAt, MERCHANT_MIN_DELAY, type MerchantList, type MerchantNode, syncMerchantList } from "../merchants"
 
 /** A delayed slot's delay in force at `at`, the one scheduled to follow, and when that takes over. */
 export interface DelayState {
@@ -84,3 +84,19 @@ export async function readGuardian(
 /** The guardian slot's delay, read at `block` (timestamp `at`). */
 export const guardianDelay = (node: Pick<AztecNode, "getPublicStorageAt">, token: AztecAddress, block: number, at: bigint) =>
 	delayOf(node, token, tokenSlot("merchant_guardian"), block, at)
+
+/** The delay setting, the guardian slot's delay and every listed entry, all read at the merchant list's block. */
+export interface DelayReads {
+	setting: bigint
+	guardian: DelayState
+	list: MerchantList
+}
+
+export async function readDelays(node: MerchantNode, token: AztecAddress): Promise<DelayReads> {
+	const list = await syncMerchantList(node, token)
+	const [setting, guardian] = await Promise.all([
+		node.getPublicStorageAt(BlockNumber(list.block), token, tokenSlot("merchant_delay")),
+		guardianDelay(node, token, list.block, list.at),
+	])
+	return { setting: setting.toBigInt(), guardian, list }
+}

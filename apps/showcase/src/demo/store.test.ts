@@ -60,10 +60,16 @@ describe("browser stores", () => {
 		const sent = { l2TxHash: `0x${"12".repeat(32)}`, recipient: `0x${"ab".repeat(20)}`, amount: "oops", expiresAt: "9" }
 		kv.set("exit:unpriced", JSON.stringify({ id: "x", actor: "alice", since: 0, sent }))
 		t.putDeposit({ id: "d1", user: "alice", since: 3, draft: "d" })
+		t.putDeposit({ id: "d2", user: "bob", since: 4, draft: "d", archived: true })
+		t.putDeposit({ id: "d3", user: "bob", since: 5, claim: "c", claimed: true, final: true })
 		expect(t.exits().map((e) => e.id)).toEqual(["e1", "e2"])
 		t.dropExit("e1")
 		expect(t.exits().map((e) => e.id)).toEqual(["e2"])
-		expect(t.deposits()).toEqual([{ id: "d1", user: "alice", since: 3, draft: "d" }])
+		expect(t.deposits()).toEqual([
+			{ id: "d1", user: "alice", since: 3, draft: "d" },
+			{ id: "d2", user: "bob", since: 4, draft: "d", archived: true },
+			{ id: "d3", user: "bob", since: 5, claim: "c", claimed: true, final: true },
+		])
 	})
 
 	it("refuse a send's record that a reload would lose, before the send leaves, while releases still go through", async () => {

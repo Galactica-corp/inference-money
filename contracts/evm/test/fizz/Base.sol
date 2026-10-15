@@ -21,7 +21,7 @@ import {Permit2DepositRouter} from "../../src/Permit2DepositRouter.sol";
 import {ISignatureTransfer} from "../../src/interfaces/ISignatureTransfer.sol";
 import {ITokenPortal} from "../../src/interfaces/ITokenPortal.sol";
 
-import {CapturingInbox, FakeRegistry, FakeRollup} from "../mocks/AztecFakes.sol";
+import {CapturingInbox, FAKE_ROLLUP_VERSION, FakeRegistry, FakeRollup} from "../mocks/AztecFakes.sol";
 import {MockPermit2} from "../mocks/MockPermit2.sol";
 import {ModalUsdc} from "./mocks/ModalUsdc.sol";
 import {RealOutboxStack} from "./mocks/RealOutboxStack.sol";
@@ -187,7 +187,7 @@ abstract contract Base is StringUtils, Clamp, Deployer, Math {
 
         portal = new TokenPortal();
         router = new Permit2DepositRouter(ISignatureTransfer(address(permit2)), ITokenPortal(address(portal)), usdc);
-        portal.initialize(address(registry), address(usdc), L2_BRIDGE, address(router));
+        portal.initialize(address(registry), address(usdc), L2_BRIDGE, address(router), FAKE_ROLLUP_VERSION);
 
         nextEpoch = 1;
 

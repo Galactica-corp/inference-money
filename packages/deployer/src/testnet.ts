@@ -3,9 +3,8 @@ import { join } from "node:path"
 import { AztecAddress } from "@aztec-labs/aztec.js/addresses"
 import { FeeJuicePaymentMethodWithClaim } from "@aztec-labs/aztec.js/fee"
 import type { createAztecNodeClient } from "@aztec-labs/aztec.js/node"
-import { type BridgeManifest, L2_DONE, sponsoredFpcArtifact, sponsorInstance } from "@galactica-net/inference-money-core"
-import type { L2Fees } from "@galactica-net/inference-money-core/deploy"
-import { deployBridge, type L1Signer, l1Signer, proposeAdmin, tokenOf } from "@galactica-net/inference-money-core/deploy"
+import { type BridgeManifest, sponsoredFpcArtifact, sponsorInstance } from "@galactica-net/inference-money-core"
+import { deployBridge, type L1Signer, type L2Fees, l1Signer, proposeAdmin } from "@galactica-net/inference-money-core/deploy"
 import { REPO_ROOT } from "@galactica-net/inference-money-local-network"
 import type { Hex } from "viem"
 import { privateKeyToAccount } from "viem/accounts"
@@ -65,9 +64,9 @@ function selfFundedFees(
 		accountDeploy: async (account: AztecAddress) => {
 			const claim = await bridgeFeeJuice({
 				node,
+				pins: TESTNET,
 				l1RpcUrl: l1.l1RpcUrl,
 				l1PrivateKey: l1.l1PrivateKey,
-				l1ChainId: TESTNET.l1ChainId,
 				to: account,
 				log,
 			})
@@ -106,13 +105,11 @@ export async function deployTestnet(opts: DeployOptions): Promise<BridgeManifest
 			deployerSecret,
 			sourceCommit: sourceCommit(),
 			fees: selfFundedFees(keys, node, log),
+			merchantDelay: opts.merchantDelay,
 			sponsoredFpc: TESTNET.sponsoredFpc,
 			log,
 		})
 		const deployer = await accountFor(wallet, deployerSecret)
-		if (opts.merchantDelay !== undefined) {
-			await tokenOf(wallet, m).methods.set_merchant_delay!(opts.merchantDelay).send({ from: deployer, wait: L2_DONE })
-		}
 		await proposeAdmin(wallet, m, deployer, admin)
 		log(`handover proposed to ${admin}: accept it with \`bridge admin accept\``)
 		assertAllPass(await verifyDeployment(m, evm, keys.l1.publicClient, node, { pendingTo: admin.toString() }), log)

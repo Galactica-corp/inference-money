@@ -9,8 +9,15 @@ import { getFeeJuiceBalance } from "@aztec-labs/aztec.js/utils"
 import type { Wallet } from "@aztec-labs/aztec.js/wallet"
 import { createEthereumChain } from "@aztec-labs/ethereum/chain"
 import { createExtendedL1Client } from "@aztec-labs/ethereum/client"
+import { EthAddress } from "@aztec-labs/foundation/eth-address"
 import { createLogger } from "@aztec-labs/foundation/log"
-import type { Hex } from "viem"
+import { type Hex, parseAbi } from "viem"
+import type { NetworkPins } from "./networks"
+
+/** Where the funder mints and what it approves: a network's pins, never a node's answer. */
+export type FeeJuicePins = Pick<NetworkPins, "l1ChainId" | "feeJuicePortal" | "feeAssetHandler">
+
+const PORTAL_ABI = parseAbi(["function UNDERLYING() view returns (address)"])
 
 /**
  * Mints the testnet fee asset from its permissionless L1 handler and bridges it to `to` as Fee Juice.
@@ -18,16 +25,24 @@ import type { Hex } from "viem"
  */
 export async function bridgeFeeJuice(p: {
 	node: AztecNode
+	pins: FeeJuicePins
 	l1RpcUrl: string
 	l1PrivateKey: Hex
 	to: AztecAddress
-	l1ChainId: number
 	log: (msg: string) => void
 }): Promise<L2AmountClaim> {
 	// Aztec's L1 helpers are typed against its own viem fork, so the key crosses as a string, in process.
-	const chain = createEthereumChain([p.l1RpcUrl], p.l1ChainId)
+	const chain = createEthereumChain([p.l1RpcUrl], p.pins.l1ChainId)
 	const l1 = createExtendedL1Client(chain.rpcUrls, p.l1PrivateKey, chain.chainInfo)
-	const portal = await L1FeeJuicePortalManager.new(p.node, l1, createLogger("deployer:fee-juice"))
+	// `L1FeeJuicePortalManager.new` would take the token, portal and handler from the node's `getNodeInfo()`.
+	const token = await l1.readContract({ address: p.pins.feeJuicePortal, abi: PORTAL_ABI, functionName: "UNDERLYING" })
+	const portal = new L1FeeJuicePortalManager(
+		EthAddress.fromString(p.pins.feeJuicePortal),
+		EthAddress.fromString(token),
+		EthAddress.fromString(p.pins.feeAssetHandler),
+		l1,
+		createLogger("deployer:fee-juice"),
+	)
 	p.log(`minting + bridging Fee Juice to ${p.to}`)
 	const claim = await portal.bridgeTokensPublic(p.to, undefined, true)
 	p.log(`bridged ${claim.claimAmount} (message ${claim.messageHash}); waiting until it is consumable on L2`)

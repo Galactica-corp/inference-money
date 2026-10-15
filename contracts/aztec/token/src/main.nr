@@ -1,10 +1,12 @@
-// Forked from AztecProtocol/aztec-standards v6.0.0-rc.1 (cdfba943), src/token_contract; MIT, see LICENSE.
+// Forked from AztecProtocol/aztec-standards v6.0.0-rc.3 (f7bf63d5), src/token_contract; MIT, see LICENSE.
 // Delta:
 // - the package is `merchant_token`, and its path dependencies are the same upstream crates by pinned git tag;
 // - a merchant list is appended (storage, events, the MERCHANTS section); upstream's storage slots, events and function
 //   signatures are unchanged (scripts/abi-superset.test.ts);
 // - the private transfers, request openings and payments refuse unless one side is a listed merchant or the request was
-//   opened for one, except a transfer into the sender's own private balance; each check runs before any balance moves.
+//   opened for one, except a transfer into the sender's own private balance; each check runs before any balance moves;
+// - a note its owner's own call or nullifier key proves (change, a send or shield to oneself, a bridge mint) is
+//   delivered unconstrained under an address-derived tag, so it announces no handshake.
 pub mod hints;
 pub mod test;
 
@@ -20,7 +22,7 @@ pub contract Token {
             functions::{authorize_once, external, initializer, internal, only_self, view},
             storage::storage,
         },
-        messages::delivery::MessageDelivery,
+        messages::delivery::{MessageDelivery, OnchainUnconstrainedDelivery},
         protocol::{address::AztecAddress, traits::{FromField, ToField}},
         state_vars::{Map, Owned, PublicImmutable, PublicMutable, StateVariable},
     };
@@ -243,14 +245,16 @@ pub contract Token {
         self.enqueue_self.increase_public_balance_internal(to, amount);
     }
 
-    /// @notice Transfer tokens from private balance to public balance and initializes a commitment
-    /// @dev Spends notes, emits a new note (UintNote) with any remaining change, enqueues a public call, and returns a partial note.
-    ///      The sender will be used as the completer for the initialized partial note.
-    /// @param from The address of the sender
-    /// @param to The address of the recipient
+    /// @notice Transfer tokens from private balance to public balance, with a refund commitment for `from`
+    /// @dev The refund pattern: a contract pulls `amount` publicly and later returns any unused part to `from`
+    ///      privately via `transfer_public_to_commitment`. The commitment is owned by `from` and completable only by
+    ///      `msg_sender` (the integrating contract when called through an authwit). Complete it at most once (see
+    ///      README). It is never stamped, so only a merchant source can complete it.
+    /// @param from The address of the sender, and the owner of the commitment
+    /// @param to The address of the recipient of the public balance
     /// @param amount The amount of tokens to transfer
     /// @param _nonce The nonce used for authwitness
-    /// @return commitment The partial note utilized for the transfer commitment (privacy entrance)
+    /// @return commitment The refund commitment owned by `from`
     #[authorize_once("from", "_nonce")]
     #[external("private")]
     fn transfer_private_to_public_with_commitment(
@@ -268,10 +272,9 @@ pub contract Token {
 
         self.enqueue_self.increase_public_balance_internal(to, amount);
 
-        // Only the sender will be able to complete the partial note
         let completer = self.msg_sender();
-        let commitment = self.internal._initialize_transfer_commitment(to, completer);
-        self.internal._push_request_stamp(commitment.to_field(), side);
+        // Never stamped: a stamp is the only owner check a payment makes, and this commitment's owner may be a user.
+        let commitment = self.internal._initialize_transfer_commitment(from, completer);
         commitment.to_field()
     }
 
@@ -289,19 +292,20 @@ pub contract Token {
         amount: u128,
         _nonce: Field,
     ) {
-        let side = self.internal._prove_merchant_side(to, from, false);
         // A send to oneself moves value between no two accounts, and is how a user merges notes a payment cannot all
-        // spend in one tx.
-        assert(
-            (side != NEITHER) | (from == to),
-            "Transfer refused: neither sender nor recipient is a merchant",
-        );
+        // spend in one tx. It proves no side whatever the hint says: reading a merchant entry would cap the merge's
+        // expiry like a merchant-rule tx's.
+        if from != to {
+            let side = self.internal._prove_merchant_side(to, from, false);
+            assert(side != NEITHER, "Transfer refused: neither sender nor recipient is a merchant");
+        }
 
         self.internal._call_auth_private(from, amount);
 
         self.internal._decrease_private_balance(from, amount, INITIAL_TRANSFER_CALL_MAX_NOTES);
 
-        self.internal._increase_private_balance(to, amount);
+        // A send to oneself: this call just nullified the recipient's notes.
+        self.internal._increase_private_balance(to, amount, from == to);
     }
 
     /// @notice Transfer tokens from a private balance to the recipient commitment, which must be already initialized.
@@ -366,7 +370,8 @@ pub contract Token {
 
         self.enqueue_self.decrease_public_balance_internal(from, amount);
 
-        self.internal._increase_private_balance(to, amount);
+        // Only `to` shielding for itself: a caller acting on `to`'s authwit could withhold the note.
+        self.internal._increase_private_balance(to, amount, (from == to) & (to == self.msg_sender()));
     }
 
     /// @notice Initializes a transfer commitment to be used for transfers/mints
@@ -693,7 +698,7 @@ pub contract Token {
 
     /// @notice Schedules switching a merchant off (`off`) or back on, after the entry's delay
     /// @dev A no-op when `off` is already the latest scheduled value, so repeats never restart the clock. Scheduling the
-    ///      current value cancels a pending change, and still marks the entry until the new change time.
+    ///      current value cancels a pending change and unmarks the entry: a change to the current value caps no read.
     /// @param account The listed merchant
     /// @param off Whether the merchant is to be switched off
     #[external("public")]
@@ -722,15 +727,21 @@ pub contract Token {
     }
 
     /// @notice Schedules the delay setting on one entry; a no-op when it is already the entry's scheduled delay
+    /// @dev Anyone may sync an entry to a setting at or above its current delay, which undoes an entry singled out on a
+    ///      shorter delay; only the admin may start a decrease, so a guardian's cancel of one binds everyone else
     /// @param account The listed merchant
     #[external("public")]
     fn sync_merchant_delay(account: AztecAddress) {
-        self.internal._assert_merchant_admin();
         assert(self.storage.merchants.at(account).is_initialized(), "Not a registered merchant");
         let delay = self.storage.merchant_delay.read();
         let entry = self.storage.merchant_off.at(account);
         let (scheduled, _) = entry.get_scheduled_delay();
         if scheduled != delay {
+            assert(
+                (delay >= entry.get_current_delay())
+                    | (self.msg_sender() == self.storage.merchant_admin.read()),
+                "Only the merchant admin lowers a delay",
+            );
             entry.schedule_delay_change(delay);
             let (_, effective_at) = entry.get_scheduled_delay();
             self.emit(MerchantDelayScheduled { account, delay, effective_at });
@@ -773,8 +784,7 @@ pub contract Token {
 
     /// @notice Cancels an entry's pending change: re-schedules its current value, and its current delay if a decrease
     ///         is pending
-    /// @dev Refused when nothing is pending: re-scheduling an unchanged value would only restart the mark, so a
-    ///      guardian could otherwise keep an entry marked forever
+    /// @dev Refused when nothing is pending, so a mistaken cancel fails rather than doing nothing
     /// @param account The merchant whose pending change to cancel
     #[external("public")]
     fn cancel_merchant_change(account: AztecAddress) {
@@ -908,6 +918,16 @@ pub contract Token {
         assert(minter.eq(sender), "caller is not minter");
     }
 
+    /// @notice Delivery for a note proven by its owner's own call or by a holder of its nullifier key, so a wrong
+    ///         delivery hides the note only from an owner that trusts its prover
+    /// @dev The tag derives from the (tx sender, recipient) address pair, which no third party can compute, so no
+    ///      handshake is announced; a PXE scans its own accounts as senders, so a wallet finds every such note a tx
+    ///      from one of its accounts delivered
+    #[contract_library_method]
+    fn self_delivery() -> OnchainUnconstrainedDelivery {
+        MessageDelivery::onchain_unconstrained().via_address_derived_secret()
+    }
+
     /// @notice Decreases the private balance of `account` by `amount` and emits a private balance note with the change to account
     /// @param account The address of the account to decrease the balance of
     /// @param amount The amount of tokens to decrease the balance by
@@ -916,21 +936,22 @@ pub contract Token {
     fn _decrease_private_balance(account: AztecAddress, amount: u128, max_notes: u32) {
         // Subtracts `amount` from the private balance of `account`
         let change = self.internal._subtract_balance(account, amount, max_notes);
-        // Increases `change` to the private balance of `account`, and emits a private balance note to account
-        self.storage.private_balances.at(account).add(change).deliver(
-            MessageDelivery::onchain_constrained(),
-        );
+        // The prover just nullified `account`'s notes, which takes the owner's nullifier key.
+        self.storage.private_balances.at(account).add(change).deliver(self_delivery());
     }
 
     /// @notice Increases the private balance of `to` by `amount`
     /// @param to The address of the recipient
     /// @param amount The amount of tokens to increase the balance by
+    /// @param self_send Whether `to`'s own call or its nullifier key proves this tx; otherwise delivery is constrained
     #[internal("private")]
-    fn _increase_private_balance(to: AztecAddress, amount: u128) {
-        // Increases `amount` to the private balance of `to`, and emits a private balance note to `to` from `from`
-        self.storage.private_balances.at(to).add(amount).deliver(
-            MessageDelivery::onchain_constrained(),
-        );
+    fn _increase_private_balance(to: AztecAddress, amount: u128, self_send: bool) {
+        let note = self.storage.private_balances.at(to).add(amount);
+        if self_send {
+            note.deliver(self_delivery());
+        } else {
+            note.deliver(MessageDelivery::onchain_constrained());
+        }
     }
 
     /// @notice Increases the public balance of `to` by `amount`
@@ -1044,7 +1065,9 @@ pub contract Token {
     /// @param amount The amount of tokens to mint
     #[internal("private")]
     fn _mint_to_private(to: AztecAddress, amount: u128) {
-        self.internal._increase_private_balance(to, amount);
+        // The only minter is the proxy, which only the bridge calls, and `claim_private` requires `msg_sender ==
+        // recipient`: the recipient's own call proves the mint.
+        self.storage.private_balances.at(to).add(amount).deliver(self_delivery());
         self.enqueue_self.increase_total_supply_internal(amount);
     }
 

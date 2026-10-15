@@ -63,3 +63,7 @@ Status: **green 2026-09-26** (gate evidence below).
 - Run 1: 1 pass / 14 fail. Thirteen failures were the signer issue, one was the spec 9 flaw above.
 - Run 2: 14 pass / 1 fail. Spec 11 hit the cached tip.
 - Run 3: 15 pass / 0 fail, clean teardown.
+
+## Moved from lessons.md
+
+- The local network skips real-proof verification (5.0.0): proof acceptance is proven only on testnet. [plan](../plan.md)

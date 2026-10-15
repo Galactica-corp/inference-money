@@ -17,7 +17,7 @@ describe.skipIf(!INTEGRATION)("the merchant list", () => {
 		await expect(listMerchant(m1)).rejects.toThrow(TOKEN_REFUSALS.alreadyAdded)
 	})
 
-	it("[A20] a switch-off waits the entry's delay, and switching back on keeps the entry marked; the synced list shows both", async () => {
+	it("[A20] a switch-off waits the entry's delay, and switching back on unmarks the entry; the synced list shows both", async () => {
 		const m1 = await l2Actor()
 		await listMerchant(m1)
 		const { receipt } = await token().methods.schedule_merchant_off!(m1, true).send(asAdmin())
@@ -37,6 +37,8 @@ describe.skipIf(!INTEGRATION)("the merchant list", () => {
 		await token().methods.schedule_merchant_off!(m1, false).send(asAdmin())
 		list = await merchantList()
 		expect(list.entries.get(m1.toString())).toMatchObject({ off: false, scheduledOff: false })
-		expect(merchantStatus(list, m1)).toEqual({ merchant: true, pending: true })
+		// A change to the current value caps no read (aztec-nr's horizon), so the entry reads as a settled one.
+		expect(merchantStatus(list, m1)).toEqual({ merchant: true, pending: false })
+		expect(merchantHorizon(list, m1)).toBe(list.at + MERCHANT_MAX_DELAY - 1n)
 	})
 })

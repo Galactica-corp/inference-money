@@ -4,13 +4,14 @@
 // (aztec-packages l1-contracts/test/portals/TokenPortal.sol), with these changes:
 //   - Deposit messages name their depositor: `mint_to_public(bytes32,uint256,address)` and
 //     `mint_to_private(uint256,address)`. A public deposit names the refund address its caller passes (never zero,
-//     this portal or the router). A direct private deposit names the key holder whose EIP-712 `FundingAuthorization`
-//     (bound to this portal, the submitting `msg.sender`, the amount, the secret hash and a deadline) it carries,
-//     usable once. The bound router's `...For` deposits name the Permit2 signer it pulled from. Every deposit pulls
-//     from `msg.sender`. `withdraw`'s message is the canonical one.
+//     this portal, the router, the token, the Inbox, the Outbox or the registry). A direct private deposit names the
+//     key holder whose EIP-712 `FundingAuthorization` (bound to this portal, the submitting `msg.sender`, the amount,
+//     the secret hash and a deadline) it carries, usable once. The bound router's `...For` deposits name the Permit2
+//     signer it pulled from. Every deposit pulls from `msg.sender`. `withdraw`'s message is the canonical one.
 //   - Deposits refuse a zero amount, and refuse once the registry's canonical rollup is no longer the bound one.
-//   - `initialize` is deployer-only and init-once, and binds the router, which must name this portal and token. The
-//     L2 bridge address is derived from this contract's address, so the binding cannot move into the constructor.
+//   - `initialize` is deployer-only and init-once, and binds the router, which must name this portal and token, and
+//     the canonical rollup only if its version is the one the caller expects. The L2 bridge address is derived from
+//     this contract's address, so the binding cannot move into the constructor.
 //   - Deposits cap `amount` at u128 (the L2 amount type), public deposits require `_to` to be a field element (an
 //     Aztec address), and every deposit must raise the portal's balance by exactly `amount`.
 //   - `withdraw` must lower the portal's balance by exactly `amount`.
@@ -59,7 +60,11 @@ contract TokenPortal is ITokenPortal, ReentrancyGuardTransient, EIP712 {
     error ZeroAmount();
     /// @notice The registry's canonical rollup moved on; a deposit to the old one's Inbox might never be consumed.
     error RollupNotCanonical();
-    /// @notice A public refund address of zero, this portal or the router: a returned deposit could never leave it.
+    /// @notice The canonical rollup is not the version the L2 side was deployed on, so its messages could never reach
+    /// the bridge.
+    error RollupVersionMismatch(uint256 expected, uint256 actual);
+    /// @notice A public refund address of zero, this portal, the router, the underlying token, the Inbox, the Outbox
+    /// or the registry: a returned deposit could never leave it.
     error InvalidDepositor();
     error AuthorizationExpired(uint256 deadline);
     error AuthorizationUsed();
@@ -117,8 +122,16 @@ contract TokenPortal is ITokenPortal, ReentrancyGuardTransient, EIP712 {
      * @param _underlying - The underlying token address
      * @param _l2Bridge - The L2 bridge address
      * @param _router - The deposit router, which must already name this portal and `_underlying`
+     * @param _expectedRollupVersion - The version of the rollup the L2 bridge lives on; the registry's canonical rollup
+     * must have it
      */
-    function initialize(address _registry, address _underlying, bytes32 _l2Bridge, address _router) external {
+    function initialize(
+        address _registry,
+        address _underlying,
+        bytes32 _l2Bridge,
+        address _router,
+        uint256 _expectedRollupVersion
+    ) external {
         _requireInitializable();
         if (IDepositRouter(_router).PORTAL() != address(this) || IDepositRouter(_router).TOKEN() != _underlying) {
             revert RouterMismatch();
@@ -133,6 +146,7 @@ contract TokenPortal is ITokenPortal, ReentrancyGuardTransient, EIP712 {
         outbox = rollup.getOutbox();
         inbox = rollup.getInbox();
         rollupVersion = rollup.getVersion();
+        _requireRollupVersion(_expectedRollupVersion);
 
         emit PortalInitialized(
             _registry, _underlying, _l2Bridge, _router, address(rollup), address(inbox), address(outbox), rollupVersion
@@ -312,6 +326,10 @@ contract TokenPortal is ITokenPortal, ReentrancyGuardTransient, EIP712 {
         if (address(registry) != address(0)) revert AlreadyInitialized();
     }
 
+    function _requireRollupVersion(uint256 _expected) internal view virtual {
+        if (rollupVersion != _expected) revert RollupVersionMismatch(_expected, rollupVersion);
+    }
+
     /// @dev Runs before any hashing or pull, so a stranger's `...For` call learns nothing and moves nothing.
     function _requireRouter() internal view virtual {
         if (msg.sender != router) revert NotRouter();
@@ -331,9 +349,15 @@ contract TokenPortal is ITokenPortal, ReentrancyGuardTransient, EIP712 {
     }
 
     /// @dev A withdraw to the portal never debits it, so it always reverts; the router is ownerless and must settle
-    /// to its starting balance on every deposit, so nothing could ever move a refund out of it.
+    /// to its starting balance on every deposit, and USDC, the Inbox, the Outbox and the registry have no way to send
+    /// USDC they hold, so nothing could ever move a refund out of them. Permit2 is refused by the SDK: the portal does
+    /// not store it.
     function _requireDepositor(address _depositor) internal view virtual {
-        if (_depositor == address(0) || _depositor == address(this) || _depositor == router) {
+        if (
+            _depositor == address(0) || _depositor == address(this) || _depositor == router
+                || _depositor == address(underlying) || _depositor == address(inbox) || _depositor == address(outbox)
+                || _depositor == address(registry)
+        ) {
             revert InvalidDepositor();
         }
     }
