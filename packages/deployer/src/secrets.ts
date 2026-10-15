@@ -41,6 +41,8 @@ let held: NodeJS.ProcessEnv | undefined
  * Moves every credential-named variable out of `env` into this module, so no process this one spawns inherits one: a
  * child that needs a value is handed it explicitly. node:child_process and `Bun.$` honor the deletion; `Bun.spawn`
  * without `env` passes the environment the process started with, so every spawn here goes through node:child_process.
+ * A Worker started after this sees that original environment too: no secret-handling code may run in one, and a Worker
+ * that spawns must pass `env: scrubbedEnv()`.
  */
 export function holdSecrets(env: NodeJS.ProcessEnv = process.env): void {
 	held ??= {}

@@ -7,6 +7,9 @@
 > - `[-]` skipped / manual — `/fizz-convert` will NOT touch it. Use this for TODO stubs,
 >   properties that need human judgment, or properties you add yourself later.
 >
+> IDs are local to this file: `contracts/aztec/PROPERTIES.md` uses the same `GL-NN` / `SP-NN` numbers for other
+> properties.
+>
 > Users may freely add their own entries (use any unused `GL-NN` / `SP-NN` ID) and mark
 > them `[ ]` to have `/fizz-convert` implement them, or `[-]` to leave them as a spec
 > note only.

@@ -105,10 +105,17 @@ export function parseInvocation(argv: readonly string[]): Invocation {
 	return { command, args: positional, flags }
 }
 
-/** A delay in seconds within the token's bounds, [3600, 86400]. */
+/** Every tx's expiry (the token's `STANDARD_TX_LIFETIME`); a merchant read capped at or below it stands out. */
+const STANDARD_TX_LIFETIME = 82_800n
+
+/** A delay in seconds within the token's bounds, [3600, 86400]; one that marks merchant proofs warns on stderr. */
 export function parseDelay(value: string): bigint {
 	if (!/^\d+$/.test(value)) throw new UsageError("a delay is a whole number of seconds")
 	const delay = BigInt(value)
 	if (delay < 3600n || delay > 86_400n) throw new UsageError("a delay must be within [3600, 86400] seconds")
+	if (delay <= STANDARD_TX_LIFETIME)
+		console.warn(
+			`warning: a merchant delay of ${STANDARD_TX_LIFETIME} s or less shortens the expiry of every tx that proves a merchant side, which marks those txs`,
+		)
 	return delay
 }

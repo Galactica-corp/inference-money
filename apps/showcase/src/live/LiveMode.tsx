@@ -105,12 +105,15 @@ function Fields({ v, locked }: { v: LiveView; locked: boolean }) {
 }
 
 const OPENING = "Opening the demo wallet: it syncs the demo accounts first."
+const PRESTO_WITNESS =
+	"Proving through Presto hands it each transaction's full private inputs, the keys that track this account's spends included; they stay on this machine."
 
 /** A status means the visitor connected Presto, which then proves when it answers; any other view keeps proofs here. */
 function readyHint(view: PrestoView | undefined): string {
 	if (!PROVES) return "Runs live on this local network, with proofs off."
-	const where = typeof view === "object" ? "by Presto when it can, else in this browser" : "in this browser"
-	return `Runs live on ${MANIFEST.network === "testnet" ? "testnet" : "this local network"}, proven ${where}.`
+	const network = MANIFEST.network === "testnet" ? "testnet" : "this local network"
+	if (typeof view !== "object") return `Runs live on ${network}, proven in this browser.`
+	return `Runs live on ${network}, proven by Presto when it can, else in this browser. ${PRESTO_WITNESS}`
 }
 
 function Payouts({ payouts }: { payouts: readonly Payout[] }) {

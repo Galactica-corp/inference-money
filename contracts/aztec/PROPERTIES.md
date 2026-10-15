@@ -11,7 +11,8 @@
 >   public logs, enqueued-call inspection, a batched tx, tx phases); its Coverage line names the layer that could check
 >   it and whether that layer already does.
 >
-> IDs are stable. Do not renumber. Add your own entries under any unused `GL-NN` / `SP-NN`.
+> IDs are stable. Do not renumber. Add your own entries under any unused `GL-NN` / `SP-NN`. IDs are local to this file:
+> `contracts/evm/PROPERTIES.md` uses the same numbers for other properties.
 >
 > **Guarantee.** `SHOULD-HOLD` is backed by the cited evidence: docs/*.md, AGENTS.md, the archived
 > galactica-compliant-usdc plan's accepted design, a documented aztec-nr library contract, or an exact identity in the

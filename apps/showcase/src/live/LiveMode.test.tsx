@@ -5,12 +5,24 @@ import { WALLETS } from "@/config/network"
 import type { SendStage } from "@/demo/wallet"
 import { cell } from "@/lib/observable"
 import { TESTIDS } from "@/lib/testids"
-import type { ProofSource, ProofState } from "@/presto"
+import type { PrestoView, ProofSource, ProofState } from "@/presto"
 import type { FeedRow } from "@/tour/player"
 import { DEPOSITS_CLOSED, type Draft, type ValidDraft } from "./draft"
 import type { LiveEngine } from "./engine"
 import { LiveMode } from "./LiveMode"
 import { classify, type Outcome } from "./outcome"
+
+/** `PROVES` is a build constant, false under vitest; a test that needs real proofs flips it here and resets it. */
+const build = vi.hoisted(() => ({ proves: false }))
+vi.mock("@/config/network", async (importOriginal) => {
+	const actual = await importOriginal<typeof import("@/config/network")>()
+	return {
+		...actual,
+		get PROVES() {
+			return build.proves
+		},
+	}
+})
 
 const liveRow = (key: string): FeedRow => ({ key, source: "live", chain: "aztec", text: "A private transaction.", items: [] })
 
@@ -188,6 +200,23 @@ describe("LiveMode", () => {
 			labels.push(proveChip()?.textContent)
 		}
 		expect(labels).toEqual(["Prove · Presto", "Prove", "Prove · Presto", "Prove"])
+	})
+
+	it("says Presto receives each proof's private inputs, keys included, only while it is connected", async () => {
+		build.proves = true
+		try {
+			const view = cell<PrestoView | undefined>({ available: true, needsDownload: false, protocol: "https" })
+			const presto = { consent: { view, connect: vi.fn(), stop: vi.fn() }, proof: cell<ProofState>({}) }
+			render(<LiveMode header={null} engine={fakeEngine().engine} wallet={ready} presto={presto} />)
+			const hint = screen.getByTestId(TESTIDS.walletStatus)
+			expect(hint).toHaveTextContent("proven by Presto when it can, else in this browser.")
+			expect(hint).toHaveTextContent("full private inputs, the keys that track this account's spends included")
+			act(() => view.set("ask"))
+			expect(hint).toHaveTextContent("proven in this browser.")
+			expect(hint).not.toHaveTextContent("private inputs")
+		} finally {
+			build.proves = false
+		}
 	})
 
 	it("resets the balances with galactica's refund to alice, or says why there is none", async () => {
