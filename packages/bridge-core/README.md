@@ -14,7 +14,7 @@ for: use the same one in your own package.
 |---|---|
 | `@galactica-net/inference-money-core` | Deposit, claim, pay, exit and withdraw flows, the rules and their refusals, `tokenArtifact`, `tokenBridgeArtifact`, `tokenMinterProxyArtifact`, `TOKEN_PORTAL_ABI`, `PERMIT2_DEPOSIT_ROUTER_ABI` |
 | `…/deployments` | `TESTNET_MANIFEST`, `DEPLOYMENTS`: every address and instance record of the deployments this version ships |
-| `…/deploy` | `deployTestBridge`, `deployBridge`, `addMerchants` and the other admin calls, `BRIDGE_EVM_ARTIFACTS`, the `TESTNET` pins |
+| `…/deploy` | `deployTestBridge`, `deployBridge`, `addMerchants` and the other admin calls, `BRIDGE_EVM_ARTIFACTS`, the `TESTNET` pins, the local-network helpers (`installCanonicalPermit2`, `startBlockHeartbeat`) |
 | `…/manifest`, `…/rules`, `…/types`, `…/networks` | Leaf modules that load no Aztec SDK: the manifest schema, the refusal strings, shared types, the testnet pins |
 
 ## The testnet deployment
@@ -51,6 +51,30 @@ await addMerchants({ wallet, m: manifest, node }, admin, [merchant])
 
 Keep the returned manifest (it is plain JSON) and reuse it across runs: a deploy proves and sends about ten
 transactions. Test deployments only: one key holds every role, and nothing is verified against a fresh build.
+
+On a local network (anvil and the Aztec local network) Permit2 is not deployed, and a block is built only when a tx
+arrives:
+
+```ts
+import { registerSponsor } from "@galactica-net/inference-money-core"
+import { deployTestBridge, installCanonicalPermit2, l1Signer, startBlockHeartbeat } from "@galactica-net/inference-money-core/deploy"
+
+const l1 = l1Signer(anvilUrl, 31337, anvilAccount)
+const { manifest } = await deployTestBridge({
+	network: "local",
+	node,
+	nodeUrl,
+	wallet,
+	l1,
+	deployerSecret,
+	usdc: "mock",
+	permit2: await installCanonicalPermit2(l1), // anvil_setCode: the vendored Sepolia runtime, at the canonical address
+})
+await registerSponsor(beatWallet, manifest) // a second wallet, so the beats never share an account with your txs
+const stop = await startBlockHeartbeat(beatWallet, manifest) // without it a deposit never becomes claimable
+// deposit, claim, pay
+await stop()
+```
 
 Who may do what, every refusal and the message formats:
 [docs/integration.md](https://github.com/Galactica-corp/inference-money/blob/main/docs/integration.md).

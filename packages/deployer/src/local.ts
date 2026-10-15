@@ -1,12 +1,19 @@
 import { SponsoredFeePaymentMethod } from "@aztec-labs/aztec.js/fee"
 import { Fr } from "@aztec-labs/aztec.js/fields"
 import { type BridgeManifest, L2_DONE, sponsoredFpcArtifact, sponsorInstance } from "@galactica-net/inference-money-core"
-import { acceptAdmin, deployBridge, deployMockUsdc, l1Signer, proposeAdmin, tokenOf } from "@galactica-net/inference-money-core/deploy"
+import {
+	acceptAdmin,
+	deployBridge,
+	deployMockUsdc,
+	installCanonicalPermit2,
+	l1Signer,
+	proposeAdmin,
+	tokenOf,
+} from "@galactica-net/inference-money-core/deploy"
 import { ANVIL_ACCOUNTS, L1_CHAIN_ID, resolveEndpoints } from "@galactica-net/inference-money-local-network"
 import type { Hex } from "viem"
 import { mnemonicToAccount } from "viem/accounts"
 import { buildBridgeContracts } from "./evm"
-import { installCanonicalPermit2 } from "./l1"
 import { localManifestPath, writeManifest } from "./manifest"
 import { scrubbedEnv } from "./secrets"
 import { accountFor, LOCAL_ADMIN_SECRET } from "./session"

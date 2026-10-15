@@ -92,7 +92,7 @@ function nodeEnv(t: Toolchain, anvilUrl: string, tmpDir: string): NodeJS.Process
 		PATH: `${t.internalBin}${delimiter}${process.env.PATH ?? ""}`,
 		// The node's L1 deploy leaks a large scratch dir per boot; confined here, teardown reclaims it.
 		TMPDIR: tmpDir,
-		// One tx makes a block. It does not make the chain tick on its own: see withBlockHeartbeat.
+		// One tx makes a block. It does not make the chain tick on its own: see withBlockHeartbeat (bridge-core).
 		SEQ_MIN_TX_PER_BLOCK: "0",
 		ETHEREUM_HOSTS: anvilUrl,
 		// The launcher starts an anvil of its own on ANVIL_PORT (8545 unless set) and never uses it: aimed at the port

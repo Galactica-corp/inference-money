@@ -5,7 +5,9 @@ export {
 	type L1Signer,
 	l1Chain,
 	l1Signer,
+	newSponsoredAccount,
 	proposeAdmin,
+	startBlockHeartbeat,
 	tokenOf,
 } from "@galactica-net/inference-money-core/deploy"
 export { approvePermit2 } from "@galactica-net/inference-money-demo"
@@ -15,7 +17,6 @@ export { buildBridgeContracts, forgeRunDir } from "./evm"
 export { readBundle } from "./export"
 export { bridgeFeeJuice, topUpSponsor } from "./fee-juice"
 export { deployLocal, LOCAL_DEPLOYER_SECRET, localL1Account } from "./local"
-export { newSponsoredAccount, startBlockHeartbeat } from "./local-actors"
 export { localManifestPath, readManifest } from "./manifest"
 export { enterOwnedTmpDir, withOwnedTmpDir } from "./owned-tmp"
 export { accountFor, LOCAL_ADMIN_SECRET } from "./session"

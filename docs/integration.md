@@ -74,6 +74,10 @@ through the canonical sponsor, and returns its manifest.
   `{ wallet, m, node }`).
 - **`usdc: "mock"`** deploys a 6-decimal token anyone can mint (`BRIDGE_EVM_ARTIFACTS.mockUsdc.abi`, `mint(to, amount)`),
   so the L1 key needs Sepolia ETH only. An address binds the bridge to that token instead (`TESTNET.usdc`: Circle's).
+- **A local network** has no Permit2 and builds a block only when a tx arrives: `installCanonicalPermit2(l1)` puts the
+  vendored Sepolia runtime at the canonical address (`anvil_setCode`) and returns it for `permit2`, and
+  `startBlockHeartbeat(wallet, manifest)`, in a wallet of its own, keeps blocks coming until its returned stop is
+  awaited, so a deposit becomes claimable. Both are local only.
 - **Tokens still come over the bridge.** The token's only minter is the proxy, so an account gets a balance by a deposit
   and its claim (`prepareDeposit`, `submitDeposit`, `confirmDeposit`, `waitClaimable`, `claim`), about the time of an L1 to L2 message.
 - **Reuse the manifest.** The deploy proves and sends about ten transactions; store the JSON and read it back with

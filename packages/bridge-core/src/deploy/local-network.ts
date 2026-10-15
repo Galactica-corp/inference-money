@@ -4,8 +4,35 @@ import { SetPublicAuthwitContractInteraction } from "@aztec-labs/aztec.js/author
 import { Fr } from "@aztec-labs/aztec.js/fields"
 import { TxStatus } from "@aztec-labs/aztec.js/tx"
 import type { EmbeddedWallet } from "@aztec-labs/wallets/embedded"
-import { type BridgeManifest, signingKeyFor, sponsoredPayment } from "@galactica-net/inference-money-core"
-import { withBlockHeartbeat } from "@galactica-net/inference-money-local-network"
+import { sponsoredPayment } from "../claim"
+import type { BridgeManifest } from "../manifest"
+import { signingKeyFor } from "../signing-key"
+
+/**
+ * Runs `fn` while forcing a block every `intervalMs`. The local network builds a block only when a tx arrives, so a
+ * wait on chain progress (an L1→L2 message becoming consumable, an epoch proving) never advances without one.
+ * `forceBlock` failures are ignored: a missed beat only delays the next one.
+ */
+export async function withBlockHeartbeat<T>(forceBlock: () => Promise<unknown>, fn: () => Promise<T>, intervalMs = 3_000): Promise<T> {
+	let beating = true
+	let wake: () => void = () => {}
+	const beats = (async () => {
+		while (beating) {
+			await forceBlock().catch(() => {})
+			await new Promise<void>((r) => {
+				wake = r
+				setTimeout(r, intervalMs)
+			})
+		}
+	})()
+	try {
+		return await fn()
+	} finally {
+		beating = false
+		wake()
+		await beats
+	}
+}
 
 /** A fresh Schnorr account in `wallet`, deployed through the sponsor; `secret` alone rebuilds it in any wallet. */
 export async function newSponsoredAccount(wallet: EmbeddedWallet, m: BridgeManifest, secret = Fr.random()): Promise<AztecAddress> {
@@ -17,8 +44,9 @@ export async function newSponsoredAccount(wallet: EmbeddedWallet, m: BridgeManif
 
 /**
  * Keeps a local network building blocks until the returned stop is awaited: it builds one only when a tx arrives, so
- * an L1→L2 message never becomes claimable without traffic. The beat revokes a random, never-granted public authwit:
- * the cheapest public tx, from an account of its own so it never races a test's nonces.
+ * an L1→L2 message never becomes claimable without traffic. Local networks only: testnet builds its own blocks. The
+ * beat revokes a random, never-granted public authwit: the cheapest public tx, from an account of its own so it never
+ * races a test's nonces. Give it a wallet of its own, with the sponsor registered (`registerSponsor`).
  */
 export async function startBlockHeartbeat(wallet: EmbeddedWallet, m: BridgeManifest): Promise<() => Promise<void>> {
 	const beater = await newSponsoredAccount(wallet, m)

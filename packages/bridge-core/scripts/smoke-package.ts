@@ -29,6 +29,8 @@ for (const s of ${JSON.stringify(subpaths.slice(3))}) await import(s)
 const need = (ok, what) => { if (!ok) throw new Error(what) }
 need(typeof core.tokenArtifact?.name === "string", "the token artifact is missing")
 need(typeof deploy.deployTestBridge === "function", "deployTestBridge is missing")
+need(typeof deploy.installCanonicalPermit2 === "function", "installCanonicalPermit2 is missing")
+need(typeof deploy.startBlockHeartbeat === "function", "startBlockHeartbeat is missing")
 need(deploy.BRIDGE_EVM_ARTIFACTS.portal.bytecode.length > 2, "the portal bytecode is missing")
 need(deployments.TESTNET_MANIFEST.network === "testnet", "the testnet manifest is missing")
 console.log(deployments.TESTNET_MANIFEST.l2.bridge.address)
