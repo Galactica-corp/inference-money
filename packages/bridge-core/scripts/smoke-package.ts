@@ -15,9 +15,13 @@ if (pkg.private) throw new Error("the packed manifest is still private")
 const unresolved = Object.entries(pkg.dependencies).filter(([, range]) => range.startsWith("workspace:"))
 if (unresolved.length > 0) throw new Error(`workspace dependencies would not install from npm: ${unresolved.map(([n]) => n).join(", ")}`)
 
-const [packed] = JSON.parse(execFileSync("npm", ["pack", "--dry-run", "--json"], { cwd: OUT, encoding: "utf8" })) as [
-	{ files: { path: string }[] },
-]
+type Packed = { files: { path: string }[] }
+// npm ≤ 11 prints an array of packed packages; npm 12 an object keyed by package name.
+const report = JSON.parse(execFileSync("npm", ["pack", "--dry-run", "--json"], { cwd: OUT, encoding: "utf8" })) as
+	| Packed[]
+	| Record<string, Packed>
+const packed = Array.isArray(report) ? report[0] : report[pkg.name]
+if (!packed) throw new Error(`npm pack reported no ${pkg.name}`)
 const stray = packed.files.map((f) => f.path).filter((p) => !p.startsWith("dist/") && !["package.json", "README.md", "LICENSE"].includes(p))
 if (stray.length > 0) throw new Error(`the tarball would ship ${stray.join(", ")}`)
 
