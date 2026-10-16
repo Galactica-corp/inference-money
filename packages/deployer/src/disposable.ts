@@ -213,8 +213,9 @@ function assertRecorded(file: string, ref: ManifestRef): void {
 }
 
 /**
- * Deletes the disposable keys once the deployment they made shows, at its last finalized block, both roles held by the
- * manifest's admin alone, an account none of the keys control. Absence is no evidence (a finalized block from before
+ * Deletes the disposable keys once the deployment they made shows, in reads at the `finalized` tag through the pinned
+ * node (separate reads, not necessarily of one block), both roles held by the manifest's admin alone, an account none of
+ * the keys control. Absence is no evidence (a finalized block from before
  * the deploy holds no roles at all), and a prune can undo a switch short of finalized; with the keys gone, a role left
  * with them could never move again. Anything less, a failed read or an unrecorded deploy included, keeps the file.
  */

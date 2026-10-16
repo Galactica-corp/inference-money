@@ -10,6 +10,7 @@ import type { Address } from "viem"
 import { tokenArtifact, tokenBridgeArtifact, tokenMinterProxyArtifact } from "../artifacts"
 import { instanceRecord } from "../instances"
 import type { L2InstanceRecord } from "../manifest"
+import { randomSecret } from "../random"
 import { signingKeyFor } from "../signing-key"
 
 /** How a network pays: the account deploy (the account has no balance yet), then every later tx (undefined: its own Fee Juice). */
@@ -61,7 +62,7 @@ export async function deployBridgeL2(
 ): Promise<L2Deployment> {
 	const send = { from: deployer, fee: fees.tx ? { paymentMethod: fees.tx } : undefined }
 	const deployOne = async (label: string, artifact: ContractArtifact, initializer: string, args: unknown[]) => {
-		const method = Contract.deploy(wallet, artifact, args, initializer, { deployer, salt: Fr.random() })
+		const method = Contract.deploy(wallet, artifact, args, initializer, { deployer, salt: randomSecret() })
 		const instance = await method.getInstance()
 		log(`${label} ${instance.address}: deploying`)
 		await method.send(send)

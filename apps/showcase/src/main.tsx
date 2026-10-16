@@ -1,16 +1,17 @@
 import { StrictMode } from "react"
 import { createRoot } from "react-dom/client"
 import { App } from "./App"
+import { openOnce } from "./demo/useOpening"
 import "./index.css"
 
 const root = document.getElementById("root")
 if (!root) throw new Error("index.html lost its #root")
 
-// The wallet and the Aztec SDK start loading with the page: "Try it yourself" waits for them, the recording needs neither.
-const demo = import("./demo/start").then((m) => m.startDemo())
+// The wallet and the Aztec SDK load with the first view that needs them: the recording reaches neither chain.
+const openDemo = openOnce(() => import("./demo/start").then((m) => m.startDemo()))
 
 createRoot(root).render(
 	<StrictMode>
-		<App demo={demo} />
+		<App openDemo={openDemo} />
 	</StrictMode>,
 )

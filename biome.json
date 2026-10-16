@@ -44,6 +44,10 @@
 			"linter": { "rules": { "complexity": { "noExcessiveLinesPerFunction": "off" } } }
 		},
 		{
+			"includes": ["**", "!**/*.test.*", "!**/*.spec.*", "!**/test/**", "!**/e2e/**", "!packages/integration/**"],
+			"plugins": ["./biome/no-fr-random.grit"]
+		},
+		{
 			"includes": ["packages/bridge-core/**", "apps/showcase/**"],
 			"linter": {
 				"rules": {

@@ -27,7 +27,7 @@ test("[A29] serves the testnet build as built: its manifest, its tour, its heade
 	const built = servedHeaders({
 		manifest,
 		usersTag: "",
-		merchantsSalt: null,
+		merchantsSalt: "",
 		l1RpcUrl: TESTNET.defaultL1RpcUrl,
 		proofs: "real",
 		presto: PRESTO_DEFAULT,

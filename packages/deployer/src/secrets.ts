@@ -41,6 +41,8 @@ let held: NodeJS.ProcessEnv | undefined
  * Moves every credential-named variable out of `env` into this module, so no process this one spawns inherits one: a
  * child that needs a value is handed it explicitly. node:child_process and `Bun.$` honor the deletion; `Bun.spawn`
  * without `env` passes the environment the process started with, so every spawn here goes through node:child_process.
+ * A Worker started after this sees that original environment too: no secret-handling code may run in one, and a Worker
+ * that spawns must pass `env: scrubbedEnv()`.
  */
 export function holdSecrets(env: NodeJS.ProcessEnv = process.env): void {
 	held ??= {}
@@ -59,10 +61,14 @@ export function scrubbedEnv(env: NodeJS.ProcessEnv = process.env): NodeJS.Proces
 	return Object.fromEntries(Object.entries(env).filter(([k]) => !SECRET_NAME.test(k)))
 }
 
+/** A URL part inside a committed public endpoint (`aztec-testnet`) is public text: it matches the source pinning it. */
+const inPublicEndpoint = (part: string): boolean =>
+	[TESTNET.defaultL1RpcUrl, TESTNET.nodeUrl].some((e) => e.toLowerCase().includes(part.toLowerCase()))
+
 /**
  * An RPC URL as libraries may print it: as given, normalized, and without its userinfo (viem strips it). Plus its
  * credential parts: the userinfo, the path + query (where providers put API keys, however short), and any segment or
- * query value long enough to be a key by itself.
+ * query value long enough to be a key by itself, unless it is part of a committed public endpoint.
  */
 function urlForms(url: string): string[] {
 	let u: URL
@@ -74,7 +80,7 @@ function urlForms(url: string): string[] {
 	const bare = `${u.protocol}//${u.host}${u.pathname}${u.search}`
 	const tail = `${u.pathname}${u.search}`
 	const userinfo = [u.username, u.password, `${u.username}:${u.password}`].filter((p) => p.length >= 3)
-	const parts = [...u.pathname.split("/"), ...u.searchParams.values()].filter((p) => p.length >= 8)
+	const parts = [...u.pathname.split("/"), ...u.searchParams.values()].filter((p) => p.length >= 8 && !inPublicEndpoint(p))
 	return [url, u.href, bare, bare.replace(/\/$/, ""), ...(tail.length > 1 ? [tail] : []), ...userinfo, ...parts]
 }
 

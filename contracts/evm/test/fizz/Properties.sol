@@ -4,6 +4,7 @@ pragma solidity >=0.6.2 <0.9.0;
 import {Epoch} from "@aztec/core/libraries/TimeLib.sol";
 import {TokenPortal} from "../../src/TokenPortal.sol";
 import {FAKE_ROLLUP_VERSION} from "../mocks/AztecFakes.sol";
+import {Permit2Digest} from "../mocks/Permit2Digest.sol";
 import {ModalUsdc} from "./mocks/ModalUsdc.sol";
 import {vm} from "./utils/Hevm.sol";
 import {Snapshots} from "./Snapshots.sol";
@@ -285,9 +286,10 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
         eq(ghosts.payableExitStuck, 0, "GL-28: payable exit reverted in a healthy environment");
     }
 
-    /// @notice GL-29: a funded caller's in-range deposit in a Normal environment always succeeds
+    /// @notice GL-29: a funded caller's in-range deposit in a Normal environment (a direct one also under a sender
+    /// surcharge) always succeeds, a deadline equal to the block's timestamp included
     function property_depositsLive() public {
-        eq(ghosts.depositLivenessBroken, 0, "GL-29: Normal-environment deposit reverted");
+        eq(ghosts.depositLivenessBroken, 0, "GL-29: a deposit that must go through reverted");
     }
 
     /// @notice GL-30: inexact token behaviour is never accepted
@@ -317,6 +319,11 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
             0,
             "GL-34: a foreign signature was not refused before Permit2 and the Inbox"
         );
+    }
+
+    /// @notice GL-35: a refused deposit spends neither its Permit2 nonce nor its portal authorization
+    function property_refusedDepositsKeepAuthorizations() public {
+        eq(ghosts.authorizationRollbackBroken, 0, "GL-35: a refused deposit spent its authorization");
     }
 
     // ――――――――――――――――――― Specific properties ――――――――――――――――――――
@@ -425,9 +432,15 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
         }
     }
 
-    /// @notice SP-03: the router hands Permit2 exactly the transfer, witness and type string the signer authorised
-    function property_routerPermit2Binding(
-        uint256 callsBefore,
+    /// @notice SP-03: the real Permit2 accepted the signer's signature over the spec digest and spent its free nonce,
+    /// so the router handed it the signed owner, spender, token, amount, nonce, deadline and witness
+    function property_routerPermit2Binding(bool nonceWasFree, uint256 nonce) internal {
+        t(nonceWasFree, "SP-03: a deposit went through on a spent nonce");
+        t(_nonceUsed(actor, nonce), "SP-03: Permit2 left the signer's nonce unspent");
+    }
+
+    /// @notice SP-23: the router's permit digest and Permit2's domain equal their independent derivation
+    function property_permitDigestMatchesSpec(
         uint256 amount,
         bytes32 recipient,
         bytes32 secretHash,
@@ -435,21 +448,15 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
         uint256 nonce,
         uint256 deadline
     ) internal {
-        eq(permit2.calls(), callsBefore + 1, "SP-03: Permit2 not called exactly once");
-        _eqA(permit2.lastOwner(), actor, "SP-03: Permit2 owner != caller");
-        _eqA(permit2.lastSpender(), address(router), "SP-03: Permit2 spender != router");
-        _eqA(permit2.lastTo(), address(router), "SP-03: Permit2 destination != router");
-        _eqA(permit2.lastToken(), address(usdc), "SP-03: Permit2 token != USDC");
-        eq(permit2.lastAmount(), amount, "SP-03: Permit2 amount != deposit amount");
-        eq(permit2.lastNonce(), nonce, "SP-03: Permit2 nonce not passed through");
-        eq(permit2.lastDeadline(), deadline, "SP-03: Permit2 deadline not passed through");
         _eqB(
-            permit2.lastWitness(), router.hashWitness(recipient, secretHash, isPrivate), "SP-03: witness != hashWitness"
+            permit2.DOMAIN_SEPARATOR(),
+            Permit2Digest.domainSeparator(block.chainid, address(permit2)),
+            "SP-23: Permit2's domain separator != the spec's"
         );
         _eqB(
-            permit2.lastWitnessTypeHash(),
-            keccak256(bytes(router.DEPOSIT_WITNESS_TYPE_STRING())),
-            "SP-03: witness type string mismatch"
+            router.permitDigest(amount, recipient, secretHash, isPrivate, nonce, deadline),
+            _specPermitDigest(amount, recipient, secretHash, isPrivate, nonce, deadline),
+            "SP-23: router.permitDigest != the spec digest"
         );
     }
 

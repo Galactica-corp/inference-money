@@ -27,6 +27,7 @@ import {
 	tipOf,
 	transferPrivate,
 	waitClaimable,
+	withRebuiltTicket,
 } from "@galactica-net/inference-money-core"
 import {
 	type Account,
@@ -163,23 +164,35 @@ export async function castDeposit(
 
 const CLAIMABLE = { pollMs: 5_000, attempts: 720 }
 
+/** How a claim rebuilds its ticket when a reorg moved the deposit's Inbox message: an L1 reader, and where it stores. */
+export interface TicketRebuild {
+	l1: L1Ctx
+	/** Stores the rebuilt ticket in place of the old one; throws if it cannot, and then nothing is claimed with it. */
+	keep(t: ClaimTicket): void
+}
+
 /**
  * Claims `t` once its message is consumable, as its recipient (a private claim must be; a public one goes through the
  * sponsor). "already" when its message was consumed before, by this claim or anyone's. A first private claim binds its
- * recipient only with `consent.allowBind`.
+ * recipient only with `consent.allowBind`. With `rebuild`, a message that never arrives is looked for again on L1
+ * ({@link withRebuiltTicket}).
  */
 export async function castClaim(
 	s: DemoSession,
 	t: ClaimTicket,
 	onWait?: (w: ClaimWait) => void,
 	consent: ClaimConsent = {},
+	rebuild?: TicketRebuild,
 ): Promise<"claimed" | "already"> {
 	const wait = s.wait ?? L2_DONE
-	if (await isClaimConsumed(t, s.node, s.m, tipOf(wait))) return "already"
-	const from = t.draft.intent.recipient
-	await waitClaimable(t, s.node, s.wallet, s.m, from, onWait, { ...CLAIMABLE, ...consent })
-	const result = await claim(t, s.node, s.wallet, s.m, { from, fee: "sponsored", wait, ...consent })
-	return result === "claimed" ? "claimed" : "already"
+	const once = async (t: ClaimTicket): Promise<"claimed" | "already"> => {
+		if (await isClaimConsumed(t, s.node, s.m, tipOf(wait))) return "already"
+		const from = t.draft.intent.recipient
+		await waitClaimable(t, s.node, s.wallet, s.m, from, onWait, { ...CLAIMABLE, ...consent })
+		const result = await claim(t, s.node, s.wallet, s.m, { from, fee: "sponsored", wait, ...consent })
+		return result === "claimed" ? "claimed" : "already"
+	}
+	return rebuild ? withRebuiltTicket(t, rebuild.l1, s.m, rebuild.keep, once) : once(t)
 }
 
 /**

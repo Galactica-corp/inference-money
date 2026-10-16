@@ -5,6 +5,7 @@ import {Test} from "forge-std/Test.sol";
 import {console} from "forge-std/console.sol";
 import {Handlers} from "./handlers/Handlers.sol";
 import {TokenPortal} from "../../src/TokenPortal.sol";
+import {ModalUsdc} from "./mocks/ModalUsdc.sol";
 
 /// @notice Contract to be used for quick testing with Foundry
 contract FoundryTester is Test, Handlers {
@@ -25,7 +26,7 @@ contract FoundryTester is Test, Handlers {
 
     /// Harness smoke: every lifecycle leg succeeds once and lands in the model.
     function test_smoke_lifecycle() public {
-        tokenPortal_depositToAztecPublic_clamped(0, 5e6, bytes32(uint256(1)));
+        tokenPortal_depositToAztecPublic_clamped(0, 5e6, bytes32(uint256(1)), address(0));
         tokenPortal_depositToAztecPrivate_clamped(7e6, bytes32(uint256(2)));
         permit2DepositRouter_deposit_clamped(3e6, 1, bytes32(uint256(3)), false, 0);
         permit2DepositRouter_deposit_clamped(4e6, 0, bytes32(uint256(4)), true, 0);
@@ -59,12 +60,13 @@ contract FoundryTester is Test, Handlers {
         tokenPortal_secondary(2, 0, bytes32(uint256(9)), address(0));
         tokenPortal_secondary(3, 0, bytes32(uint256(9)), address(0));
         tokenPortal_secondary(4, 0, bytes32(0), address(1));
-        permit2DepositRouter_secondary(1e6, false);
-        permit2DepositRouter_secondary(1e6, true);
+        permit2DepositRouter_secondary(1e6, false, false, 0);
+        permit2DepositRouter_secondary(1e6, true, true, 1);
         permit2DepositRouter_deposit_malformed(0, 1, bytes32(0));
         permit2DepositRouter_deposit_malformed(1, 1, bytes32(0));
         permit2DepositRouter_deposit_malformed(2, 1, bytes32(0));
         permit2DepositRouter_deposit_malformed(3, 1, bytes32(0));
+        permit2DepositRouter_deposit_malformed(4, 1, bytes32(0));
         tokenPortal_deposit_overU128(true);
         tokenPortal_depositToAztecPublic_fieldBoundary(1e6, true);
         env_secondary(5, 1e6, 0, address(0));
@@ -91,7 +93,7 @@ contract FoundryTester is Test, Handlers {
     /// Harness regression: two identical returns proven as sibling leaves make a "moved leaf index" a genuine payout
     /// of the sibling's message, which the tamper handler must not count as tampering.
     function test_harness_tamperSkipsIdenticalSibling() public {
-        tokenPortal_depositToAztecPublic_clamped(0, 5e6, bytes32(0));
+        tokenPortal_depositToAztecPublic_clamped(0, 5e6, bytes32(0), address(0));
         tokenPortal_depositToAztecPrivate_clamped(5e6, bytes32(0));
         l2_returnDeposit(0);
         l2_returnDeposit(0);
@@ -124,14 +126,14 @@ contract FoundryTester is Test, Handlers {
     /// GL-29 and GL-32 under a rollup upgrade: deposits stop (liveness is not owed then), and a proven exit still
     /// pays through the bound Outbox.
     function test_harness_staleRollupStopsDepositsNotWithdrawals() public {
-        tokenPortal_depositToAztecPublic_clamped(0, 5e6, bytes32(uint256(1)));
+        tokenPortal_depositToAztecPublic_clamped(0, 5e6, bytes32(uint256(1)), address(0));
         l2_returnDeposit(0);
         l2_proveEpoch(0, 0);
         env_secondary(6, 0, 0, address(0));
         _tokenPortal_freshBinding(address(0));
         adv_depositLiveness(0, 1e6, false);
         vm.expectRevert(TokenPortal.RollupNotCanonical.selector);
-        this.tokenPortal_depositToAztecPublic_clamped(0, 1e6, bytes32(uint256(2)));
+        this.tokenPortal_depositToAztecPublic_clamped(0, 1e6, bytes32(uint256(2)), address(0));
         tokenPortal_withdraw_clamped(0);
         assertEq(ghosts.withdrawCount, 1, "the exit paid after the switch");
         property_depositsLive();
@@ -159,6 +161,55 @@ contract FoundryTester is Test, Handlers {
                 + ghosts.misnamedMessages,
             0,
             "a signed-path probe was not refused for its own reason"
+        );
+    }
+
+    /// The real-Permit2, deadline, rollback, refund and fee-mode probes reach their checks: each branch shows its
+    /// effect, not only zero counters.
+    function test_harness_permit2EdgeAndFeeProbes() public {
+        tokenPortal_depositToAztecPublic_clamped(0, 5e6, bytes32(uint256(1)), address(1));
+        assertTrue(depositMsgs[0].depositor == actors[1] && actors[1] != actor, "the refund names another actor");
+
+        permit2DepositRouter_deposit_clamped(3e6, 1, bytes32(uint256(3)), false, 7);
+        assertTrue(_nonceUsed(actor, 7), "Permit2 spent the signed nonce");
+        uint256 sent = inbox.sent();
+        permit2DepositRouter_secondary(1e6, true, false, 0);
+        permit2DepositRouter_secondary(1e6, false, true, 1);
+        permit2DepositRouter_deposit_malformed(4, 2e6, bytes32(0));
+        permit2DepositRouter_digest(type(uint256).max, bytes32(type(uint256).max), bytes32(0), true, 1 << 200, 0);
+        assertEq(inbox.sent(), sent, "a refused router deposit messaged the Inbox");
+        assertTrue(permitNonce[actor] == 2 && !_nonceUsed(actor, 0) && !_nonceUsed(actor, 1), "a refusal spent a nonce");
+
+        uint256 count = ghosts.depositCount;
+        adv_deadlineEdge(false, true, false, 4e6);
+        adv_deadlineEdge(true, false, false, 4e6);
+        adv_deadlineEdge(true, true, false, 4e6);
+        assertEq(ghosts.depositCount, count + 3, "a deposit at its deadline was refused");
+        adv_deadlineEdge(false, true, true, 4e6);
+        adv_deadlineEdge(true, true, true, 4e6);
+        assertEq(ghosts.depositCount, count + 3, "a past deadline deposited");
+
+        tokenPortal_authorizationRollback(6e6, bytes32(uint256(9)));
+        Authorization memory a = lastAuthorization;
+        bytes32 digest = portal.fundingAuthorizationDigest(a.depositor, a.submitter, a.amount, a.secretHash, a.deadline);
+        assertTrue(ghosts.depositCount == count + 4 && portal.authorizationUsed(digest), "the retry did not deposit");
+
+        usdc.setMode(ModalUsdc.Mode.SenderSurcharge);
+        adv_depositLiveness(0, 5e6, false);
+        adv_depositLiveness(1, 5e6, false);
+        adv_depositLiveness(2, 5e6, false);
+        assertEq(ghosts.depositCount, count + 6, "surcharged direct deposits did not land, or a router one ran");
+        usdc.setMode(ModalUsdc.Mode.FeeOnTransfer);
+        l2_returnDeposit(0);
+        l2_proveEpoch(0, 0);
+        tokenPortal_withdraw_clamped(0);
+        assertEq(ghosts.withdrawCount, 1, "a withdraw under a recipient fee did not pay");
+
+        assertEq(
+            ghosts.permit2RejectBypassed + ghosts.boundaryAccepted + ghosts.depositLivenessBroken
+                + ghosts.authorizationRollbackBroken + ghosts.misnamedMessages + ghosts.payableExitStuck,
+            0,
+            "a probe misfired"
         );
     }
 

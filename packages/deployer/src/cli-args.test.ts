@@ -1,4 +1,4 @@
-import { describe, expect, it } from "bun:test"
+import { describe, expect, it, spyOn } from "bun:test"
 import { parseDelay, parseInvocation } from "./cli-args"
 
 describe("bridge CLI arguments", () => {
@@ -43,8 +43,19 @@ describe("bridge CLI arguments", () => {
 		}
 	})
 
-	it("bounds a delay to the token's [3600, 86400] seconds", () => {
-		expect(parseDelay("3600")).toBe(3600n)
-		for (const bad of ["3599", "86401", "1h", "-1"]) expect(() => parseDelay(bad)).toThrow()
+	it("bounds a delay to the token's [3600, 86400] seconds, and warns on stderr at 82 800 s or less", () => {
+		const warn = spyOn(console, "warn").mockImplementation(() => {})
+		try {
+			expect(parseDelay("3600")).toBe(3600n)
+			for (const bad of ["3599", "86401", "1h", "-1"]) expect(() => parseDelay(bad)).toThrow()
+			warn.mockClear()
+			parseDelay("82800")
+			expect(warn).toHaveBeenCalledTimes(1)
+			expect(String(warn.mock.calls[0]?.[0])).toContain("marks those txs")
+			for (const unmarked of ["82801", "86400"]) parseDelay(unmarked)
+			expect(warn).toHaveBeenCalledTimes(1)
+		} finally {
+			warn.mockRestore()
+		}
 	})
 })

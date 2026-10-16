@@ -49,7 +49,7 @@ export const TESTNET_SPONSORED_TXS = [
 ] as const
 
 /**
- * Per-tx gas estimate. Testnet txs sampled 2026-09-25 paid ≤ 2.02 FJ at p90 with 2.02e12 FJ per L2 gas
+ * Per-tx gas estimate. Testnet txs sampled 2026-09-25 paid ≤ 2.02 FJ at p90 with 2.02e12 FJ-wei (1e-18 FJ) per L2 gas
  * (≈ 1.0M L2 gas) and a zero DA fee; 1.5M L2 gas bounds that with margin.
  */
 export const ESTIMATED_GAS_PER_TX: Gas = { daGas: 20_000, l2Gas: 1_500_000 }

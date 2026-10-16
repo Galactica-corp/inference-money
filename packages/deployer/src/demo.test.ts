@@ -113,6 +113,28 @@ describe("demo setup", () => {
 		expect(kept.archived.get(tag)?.drafts).toEqual({})
 	})
 
+	it("stores a ticket its claim rebuilt and waits for that one's finality", async () => {
+		const { store, kept } = memoryStore()
+		const rebuilt = { ...ticketOf("alice"), leafIndex: 7n }
+		const finalChecked: bigint[] = []
+		const { ops } = fakeOps({
+			finality: async (t) => {
+				if (seedOf(t) === "alice") finalChecked.push(t.leafIndex)
+				return "finalized"
+			},
+		})
+		const claim = ops.claim
+		ops.claim = async (t, keep) => {
+			if (seedOf(t) === "alice") keep(rebuilt)
+			return claim(t, keep)
+		}
+		const published: SetupKeys[] = []
+		await runSetup(store, ops, (keys) => published.push(keys))
+		expect(finalChecked).toEqual([7n])
+		const stored = kept.archived.get(published[0]?.usersTag as string)?.tickets.alice
+		expect(stored).toBe(encodeTicket("claim", rebuilt))
+	})
+
 	it("binds both merchants and lists them before any user seed, and resumes past a listing it stopped for", async () => {
 		const { store, current } = memoryStore()
 		const stop = fakeOps({
@@ -189,7 +211,7 @@ describe("demo setup", () => {
 		expect(published).toEqual([drawn as SetupKeys])
 	})
 
-	it("rotates to a new users' tag that keeps a published salt, so the merchants stay the demo's, and refuses a version-1 demo", async () => {
+	it("rotates to a new users' tag that keeps a published salt, so the merchants stay the demo's", async () => {
 		const before = { usersTag: "b".repeat(32), merchantsSalt: SALT }
 		const { store } = memoryStore()
 		const { ops, calls } = fakeOps()
@@ -201,7 +223,6 @@ describe("demo setup", () => {
 		expect(castMember(MANIFEST, "galactica", after)).toEqual(castMember(MANIFEST, "galactica", before))
 		expect(castMember(MANIFEST, "supplier", after)).toEqual(castMember(MANIFEST, "supplier", before))
 		expect(castMember(MANIFEST, "alice", after)).not.toEqual(castMember(MANIFEST, "alice", before))
-		expect(() => keptSalt({ version: 1, bridge: MANIFEST.l2.bridge.address, usersTag: before.usersTag })).toThrow("redeploy")
 		expect(keptSalt(undefined), "a first setup draws its own").toBeUndefined()
 	})
 })

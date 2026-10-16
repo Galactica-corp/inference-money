@@ -53,9 +53,9 @@ bun run secrets:scan     # yes/no only: any of this environment's secrets in the
 bun run test:evm        # forge fmt --check, forge lint src, unit + fuzz + invariant (hermetic)
 bun run test:evm:formal # halmos, strict: exact proof names and counts (scripts/halmos-gate.sh)
 bun run test:evm:gas    # .gas-snapshot --check --tolerance 2
-bun run test:evm:slither # Slither over src/ from its own build; any finding fails (slither.config.json, inline reasons)
-bun run test:evm:fuzz [-- <seconds>]  # Medusa over test/fizz (default 3600 s; nightly in CI); properties: contracts/evm/PROPERTIES.md
-SEPOLIA_RPC_URL=… bun run test:evm:fork  # real Permit2, Circle USDC, Aztec registry + Inbox; refuses to run unset
+bun run test:evm:slither # Slither over src/ from its own build; any finding fails (slither.config.json, inline reasons), and any src/ function it cannot lift outside slither.sh's OZ allow-list
+bun run test:evm:fuzz [-- <seconds>]  # Medusa over test/fizz (default 3600 s; nightly in CI, 120 s on PRs touching contracts/evm); properties: contracts/evm/PROPERTIES.md
+SEPOLIA_RPC_URL=… bun run test:evm:fork  # real Permit2, Circle USDC, Aztec registry + Inbox; refuses to run unset; nightly in CI through PublicNode
 
 bun run test:noir                                     # TXE suites (token, token_bridge, keystone), manifest-gated
 bash contracts/aztec/scripts/noir-deps.sh             # fetch + verify the pinned Noir git deps (--self-test)

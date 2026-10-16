@@ -10,7 +10,7 @@ export interface SentTx {
 	feePayer: string
 	expiresAt: bigint
 	anchorTs: bigint
-	/** The node refused this copy outright (`Invalid tx: …`), so it never entered the node's pool. */
+	/** The node answered `Invalid tx: …`: its word alone, which proves nothing about other pools or a later inclusion. */
 	refused?: true
 }
 

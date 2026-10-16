@@ -3,6 +3,7 @@ pragma solidity >=0.8.27 <0.9.0;
 
 import "../Base.sol";
 import {Properties} from "../Properties.sol";
+import {IERC20Errors} from "@oz/interfaces/draft-IERC6093.sol";
 import {IERC20} from "@oz/token/ERC20/IERC20.sol";
 
 /// @notice Handles the interaction with TokenPortal
@@ -15,12 +16,15 @@ abstract contract TokenPortalHandler is Properties {
         tokenPortal_depositToAztecPrivate(_amount, _toField(_secretHash));
     }
 
-    function tokenPortal_depositToAztecPublic_clamped(uint256 _accountSeed, uint256 _amount, bytes32 _secretHash)
-        public
-    {
+    function tokenPortal_depositToAztecPublic_clamped(
+        uint256 _accountSeed,
+        uint256 _amount,
+        bytes32 _secretHash,
+        address _refundSeed
+    ) public {
         _amount = clampBetween(_amount, 1, MAX_REALISTIC_AMOUNT);
         _ensureFunds(actor, _amount);
-        tokenPortal_depositToAztecPublic(toL2Account(_accountSeed), _amount, _toField(_secretHash));
+        _depositToAztecPublic(toActor(_refundSeed), toL2Account(_accountSeed), _amount, _toField(_secretHash));
     }
 
     /// Pays the proven, unpaid exit at `_exitSeed` exactly as its L2 message committed it. The portal call is wrapped
@@ -174,12 +178,11 @@ abstract contract TokenPortalHandler is Properties {
     }
 
     /// The current actor submits a private deposit carrying another actor's signature, to the portal (naming itself)
-    /// or to the router: refused with the signer rule's own selector before Permit2 or the Inbox sees it.
+    /// or to the router: refused with the signer rule's own selector, which Permit2 (`InvalidSigner`) would not raise.
     function tokenPortal_foreignSignature(bool _viaRouter, uint256 _amount, uint256 _signerSeed) public {
         _amount = clampBetween(_amount, 1, MAX_REALISTIC_AMOUNT);
         _ensureFunds(actor, _amount);
         address signer = _otherActor(actor, _signerSeed);
-        uint256 permit2Calls = permit2.calls();
         uint256 consumed = _noopBegin();
         bytes4 refusal;
         bool ok;
@@ -198,8 +201,46 @@ abstract contract TokenPortalHandler is Properties {
             (ok, reason) = address(portal)
                 .call(abi.encodeCall(portal.depositToAztecPrivate, (actor, _amount, bytes32(0), deadline, signature)));
         }
-        if (ok || bytes4(reason) != refusal || permit2.calls() != permit2Calls) ghosts.foreignSignatureAccepted++;
+        if (ok || bytes4(reason) != refusal) ghosts.foreignSignatureAccepted++;
         _noopEnd(consumed);
+    }
+
+    /// A private deposit that reverts at the pull, after the portal marked its authorization used (the actor withdrew
+    /// its approval), must leave the authorization unspent; with the approval back the same signature deposits once.
+    function tokenPortal_authorizationRollback(uint256 _amount, bytes32 _secretHash) public {
+        if (!_depositEnvClean()) return;
+        _amount = clampBetween(_amount, 1, MAX_REALISTIC_AMOUNT);
+        if (!_ensureFunds(actor, _amount)) return;
+        bytes32 secretHash = _toField(_secretHash);
+        (uint256 deadline, bytes memory signature) = _authorize(actor, actor, _amount, secretHash);
+        bytes32 digest = portal.fundingAuthorizationDigest(actor, actor, _amount, secretHash, deadline);
+        vm.prank(actor);
+        usdc.approve(address(portal), 0);
+        uint256 consumed = _noopBegin();
+        vm.prank(actor);
+        try portal.depositToAztecPrivate(actor, _amount, secretHash, deadline, signature) {
+            ghosts.authorizationRollbackBroken++;
+        } catch (bytes memory reason) {
+            if (bytes4(reason) != IERC20Errors.ERC20InsufficientAllowance.selector) {
+                ghosts.authorizationRollbackBroken++;
+            }
+        }
+        _noopEnd(consumed);
+        vm.prank(actor);
+        usdc.approve(address(portal), type(uint256).max);
+        if (portal.authorizationUsed(digest)) ghosts.authorizationRollbackBroken++;
+        snapshotBefore();
+        vm.prank(actor);
+        try portal.depositToAztecPrivate(actor, _amount, secretHash, deadline, signature) returns (
+            bytes32, uint256 index
+        ) {
+            lastAuthorization = Authorization(actor, actor, _amount, secretHash, deadline, signature);
+            _afterDirectDeposit(actor, bytes32(0), _amount, true);
+            snapshotAfter();
+            _directDepositProperties(_amount, secretHash, index);
+        } catch {
+            ghosts.authorizationRollbackBroken++;
+        }
     }
 
     /// A public deposit naming zero, the portal, the router, USDC, the Inbox, the Outbox or the registry as its refund
@@ -343,12 +384,8 @@ abstract contract TokenPortalHandler is Properties {
         _directDepositProperties(_amount, _secretHashForL2MessageConsumption, index);
     }
 
-    function tokenPortal_depositToAztecPublic(bytes32 _to, uint256 _amount, bytes32 _secretHash) public asActor {
-        snapshotBefore();
-        (, uint256 index) = portal.depositToAztecPublic(actor, _to, _amount, _secretHash);
-        _afterDirectDeposit(actor, _to, _amount, false);
-        snapshotAfter();
-        _directDepositProperties(_amount, _secretHash, index);
+    function tokenPortal_depositToAztecPublic(bytes32 _to, uint256 _amount, bytes32 _secretHash) public {
+        _depositToAztecPublic(actor, _to, _amount, _secretHash);
     }
 
     function tokenPortal_withdraw(
@@ -371,6 +408,15 @@ abstract contract TokenPortalHandler is Properties {
     }
 
     // ――――――――――――――――――――――――― Helpers ――――――――――――――――――――――――――
+
+    /// `refund` must be an actor: a return pays it, and USDC outside the actors escapes the supply GL-13 accounts for.
+    function _depositToAztecPublic(address refund, bytes32 to, uint256 amount, bytes32 secretHash) internal asActor {
+        snapshotBefore();
+        (, uint256 index) = portal.depositToAztecPublic(refund, to, amount, secretHash);
+        _afterDirectDeposit(refund, to, amount, false);
+        snapshotAfter();
+        _directDepositProperties(amount, secretHash, index);
+    }
 
     /// Model update after a successful direct deposit by `depositor`.
     function _afterDirectDeposit(address depositor, bytes32 to, uint256 amount, bool isPrivate) internal {
@@ -406,10 +452,11 @@ abstract contract TokenPortalHandler is Properties {
         _universalChecks(true, false);
     }
 
-    /// A payable exit has nothing in its way: Normal token, nothing armed, no blacklisted party.
+    /// A payable exit has nothing in its way: no sender surcharge (a recipient-side fee still debits the portal exactly
+    /// `amount`), nothing armed, no blacklisted party.
     function _withdrawHealthy(address recipient, address sender) internal view returns (bool) {
-        return usdc.mode() == ModalUsdc.Mode.Normal && usdc.hookPayload().length == 0 && !usdc.blacklisted(recipient)
-            && !usdc.blacklisted(address(portal)) && !usdc.blacklisted(sender);
+        return usdc.mode() != ModalUsdc.Mode.SenderSurcharge && usdc.hookPayload().length == 0
+            && !usdc.blacklisted(recipient) && !usdc.blacklisted(address(portal)) && !usdc.blacklisted(sender);
     }
 
     /// Anyone but the router naming a depositor must be refused before anything moves.

@@ -36,6 +36,7 @@ import type { OffchainEffect, Tx } from "@aztec-labs/stdlib/tx"
 import { tokenArtifact } from "./artifacts"
 import { type FeeChoice, L2_DONE, type L2Wait } from "./claim"
 import {
+	ListRefusal,
 	MERCHANT_MAX_DELAY,
 	type MerchantList,
 	merchantSide,
@@ -184,7 +185,7 @@ export interface ListOptions {
 	 * prove a merchant whose read has since come to cap the tx early, naming it.
 	 */
 	list: MerchantList
-	/** Re-syncs the list; a call refused on a merchant rule is retried once on the fresh one. */
+	/** Re-syncs the list; a call refused on a merchant rule before its send is retried once on the fresh one. */
 	resync?: () => Promise<MerchantList>
 	fee: PaymentFee
 	/** How far {@link openRequest} and {@link payRequest} wait for their tx; default {@link L2_DONE}. */
@@ -225,7 +226,7 @@ export async function openRequest(
 		// publish whom it pays, and the token proves the merchant recipient's side whoever opens.
 		if (!r.from.equals(r.to) && !staysMerchant(list, r.from)) throw new Error(OPENER_REFUSAL)
 		const side = merchantSide(list, r.to, r.from, true)
-		if (side === Side.Neither) throw new Error(TOKEN_REFUSALS.request)
+		if (side === Side.Neither) throw new ListRefusal(TOKEN_REFUSALS.request)
 		const open = Contract.at(token, tokenArtifact, wallet).methods.initialize_transfer_commitment!(r.to, r.completer)
 		return open.with({ capsules: [sideCapsule(token, side)] }).send({ from: r.from, fee, wait: NO_WAIT })
 	})
@@ -249,7 +250,7 @@ export async function transferPrivate(
 	const toSelf = t.from.equals(t.to)
 	const sent = await withFreshList(opts.list, opts.resync, async (list) => {
 		const side = toSelf ? Side.Neither : merchantSide(list, t.to, t.from, false)
-		if (side === Side.Neither && !toSelf) throw new Error(TOKEN_REFUSALS.transfer)
+		if (side === Side.Neither && !toSelf) throw new ListRefusal(TOKEN_REFUSALS.transfer)
 		const call = Contract.at(token, tokenArtifact, wallet).methods.transfer_private_to_private!(t.from, t.to, t.amount, 0)
 		return call.with({ capsules: [sideCapsule(token, side)] }).send({ from: t.from, fee, wait: NO_WAIT })
 	})
@@ -533,7 +534,7 @@ export async function payRequest(
 		const found = await requestStamp(gate.node, token, p.commitment)
 		const txHash = await withFreshList(opts.list, opts.resync, async (list) => {
 			const side = paymentSide(list, found, p.from)
-			if (side === Side.Neither) throw new Error(TOKEN_REFUSALS.payment)
+			if (side === Side.Neither) throw new ListRefusal(TOKEN_REFUSALS.payment)
 			const throughStamp = p.kind === "private" && side === Side.First
 			if (throughStamp && found?.state === "live") await gate.refuseStale(key, owner)
 			const call = paymentCall(wallet, token, p, side, throughStamp ? found?.bucket : undefined)

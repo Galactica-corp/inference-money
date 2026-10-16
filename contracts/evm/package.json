@@ -22,7 +22,7 @@
 		"test:evm:formal": "bun scripts/check-remappings.ts && bash scripts/halmos-gate.sh --self-test && bash scripts/halmos-gate.sh",
 		"test:evm:fuzz": "bun scripts/check-remappings.ts && bash scripts/fuzz.sh",
 		"test:evm:gas": "bun scripts/check-remappings.ts && forge snapshot --match-test test_gas_ --no-match-contract Fork --check --tolerance 2",
-		"test:evm:slither": "bun scripts/check-remappings.ts && bash scripts/slither.sh",
+		"test:evm:slither": "bun scripts/check-remappings.ts && bash scripts/slither.sh --self-test && bash scripts/slither.sh",
 		"typecheck": "tsc --noEmit -p tsconfig.json"
 	},
 	"devDependencies": {

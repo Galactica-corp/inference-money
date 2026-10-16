@@ -4,6 +4,7 @@ import { waitForTx } from "@aztec-labs/aztec.js/node"
 import { TxHash } from "@aztec-labs/aztec.js/tx"
 import {
 	assertNetworkIdentity,
+	awaitL1Receipt,
 	bridgeRefusalOf,
 	completionCount,
 	type DepositDraft,
@@ -22,6 +23,7 @@ import {
 	outboxReader,
 	payReplacingStale,
 	payRequest,
+	readBack,
 	syncMerchantList,
 	tokenRefusalOf,
 } from "@galactica-net/inference-money-core"
@@ -152,7 +154,7 @@ async function aztecEntry(r: Run, step: SmokeStep): Promise<TourStep> {
 async function ethereumEntry(r: Run, step: SmokeStep, hash: Hex | undefined, world: WorldItem[]): Promise<TourStep> {
 	const entry: TourStep = { id: step, ...STORY[step], verdict: "settled", world }
 	if (!hash) return entry
-	const receipt = await r.aDemo.publicClient.getTransactionReceipt({ hash })
+	const receipt = await awaitL1Receipt(r.aDemo.publicClient, hash)
 	return { ...entry, l1: { txHash: hash, block: Number(receipt.blockNumber) } }
 }
 
@@ -314,11 +316,15 @@ async function runSteps(r: Run): Promise<void> {
 	}
 }
 
+const offDeltas = (baseline: SmokeState["baseline"], now: Balances): string[] =>
+	(Object.keys(EXPECTED_DELTAS) as (keyof Balances)[]).flatMap((k) => {
+		const moved = now[k] - BigInt(baseline[k])
+		return moved === EXPECTED_DELTAS[k] ? [] : [`${k} moved ${moved}, expected ${EXPECTED_DELTAS[k]}`]
+	})
+
 export function assertDeltas(baseline: SmokeState["baseline"], now: Balances): void {
-	const moved = (k: keyof Balances) => now[k] - BigInt(baseline[k])
-	const wrong = (Object.keys(EXPECTED_DELTAS) as (keyof Balances)[]).filter((k) => moved(k) !== EXPECTED_DELTAS[k])
-	if (wrong.length === 0) return
-	const lines = wrong.map((k) => `${k} moved ${moved(k)}, expected ${EXPECTED_DELTAS[k]}`)
+	const lines = offDeltas(baseline, now)
+	if (lines.length === 0) return
 	throw new Error(`The run's deltas are off (as they are when anyone else moves the cast's funds meanwhile): ${lines.join("; ")}`)
 }
 
@@ -367,7 +373,8 @@ export function smoke(ref: ManifestRef, opts: { record?: string; log: Log }): Pr
 				await runSteps(run)
 				live = undefined
 				try {
-					assertDeltas(run.state.baseline, await balances(run))
+					const settled = (b: Balances) => offDeltas(run.state.baseline, b).length === 0
+					assertDeltas(run.state.baseline, await readBack(() => balances(run), settled))
 				} finally {
 					dir.remove(STATE)
 					dir.remove("payments.json")

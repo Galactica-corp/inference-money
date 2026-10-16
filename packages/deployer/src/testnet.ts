@@ -3,7 +3,7 @@ import { join } from "node:path"
 import { AztecAddress } from "@aztec-labs/aztec.js/addresses"
 import { FeeJuicePaymentMethodWithClaim } from "@aztec-labs/aztec.js/fee"
 import type { createAztecNodeClient } from "@aztec-labs/aztec.js/node"
-import { type BridgeManifest, sponsoredFpcArtifact, sponsorInstance } from "@galactica-net/inference-money-core"
+import { type BridgeManifest, readBack, sponsoredFpcArtifact, sponsorInstance } from "@galactica-net/inference-money-core"
 import { deployBridge, type L1Signer, type L2Fees, l1Signer, proposeAdmin } from "@galactica-net/inference-money-core/deploy"
 import { REPO_ROOT } from "@galactica-net/inference-money-local-network"
 import type { Hex } from "viem"
@@ -112,7 +112,8 @@ export async function deployTestnet(opts: DeployOptions): Promise<BridgeManifest
 		const deployer = await accountFor(wallet, deployerSecret)
 		await proposeAdmin(wallet, m, deployer, admin)
 		log(`handover proposed to ${admin}: accept it with \`bridge admin accept\``)
-		assertAllPass(await verifyDeployment(m, evm, keys.l1.publicClient, node, { pendingTo: admin.toString() }), log)
+		const verify = () => verifyDeployment(m, evm, keys.l1.publicClient, node, { pendingTo: admin.toString() })
+		assertAllPass(await readBack(verify, (checks) => checks.every((c) => c.ok)), log)
 		return m
 	})
 	writeManifest(TESTNET_MANIFEST, manifest)

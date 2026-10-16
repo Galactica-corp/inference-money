@@ -19,7 +19,7 @@ writeFileSync(join(root, "testnet-tour.json"), JSON.stringify({ recorded: "testn
 const local = join(root, "local", "run-1", "manifest.json")
 mkdirSync(join(root, "local", "run-1"), { recursive: true })
 writeFileSync(local, JSON.stringify({ ...fixture, network: "local" }))
-writeFileSync(join(root, "local", "run-1", "demo.json"), demoV1(fixture.l2.bridge.address))
+writeFileSync(join(root, "local", "run-1", "demo.json"), demo(fixture.l2.bridge.address))
 mkdirSync(join(root, "apps", "showcase", "e2e", "fixtures"), { recursive: true })
 writeFileSync(join(root, "apps", "showcase", "e2e", "fixtures", "tour.json"), JSON.stringify({ recorded: "fixture" }))
 /** A local manifest's L1 RPC comes from its run's network; attached endpoints stand in for one. */
@@ -55,9 +55,12 @@ describe("resolveTarget", () => {
 		expect(() => resolveTarget({ BRIDGE_MANIFEST: testnet }, root)).toThrow(/no published demo/)
 		writeFileSync(join(root, "testnet-demo.json"), demo(fixture.l2.bridge.address))
 
-		const v1 = { proofs: "fake", l1RpcUrl: ANVIL.NET_L1_RPC, merchantsSalt: null }
-		expect(resolveTarget({ BRIDGE_MANIFEST: local, ...ANVIL }, root), "a version-1 demo has no salt").toMatchObject(v1)
+		const fake = { proofs: "fake", l1RpcUrl: ANVIL.NET_L1_RPC, merchantsSalt: SALT }
+		expect(resolveTarget({ BRIDGE_MANIFEST: local, ...ANVIL }, root)).toMatchObject(fake)
 		expect(resolveTarget({ BRIDGE_MANIFEST: local, SHOWCASE_PROOFS: "real", ...ANVIL }, root).proofs).toBe("real")
+		writeFileSync(join(root, "local", "run-1", "demo.json"), demoV1(fixture.l2.bridge.address))
+		expect(() => resolveTarget({ BRIDGE_MANIFEST: local, ...ANVIL }, root), "a version-1 demo has no salt").toThrow(/bridge demo setup/)
+		writeFileSync(join(root, "local", "run-1", "demo.json"), demo(fixture.l2.bridge.address))
 		const v2 = { proofs: "real", usersTag: "ab".repeat(16), merchantsSalt: SALT }
 		expect(resolveTarget({ BRIDGE_MANIFEST: testnet }, root)).toMatchObject(v2)
 	})
@@ -118,7 +121,7 @@ describe("served headers", () => {
 		expect(cspFor(faked)).toContain("frame-ancestors 'none'")
 		const shipped = resolveTarget({ BRIDGE_MANIFEST: testnet }, root)
 		expect(cspFor(shipped)).toContain(
-			`connect-src 'self' data: blob: ${node} https://ethereum-sepolia-rpc.publicnode.com https://crs.aztec-cdn.foundation https://crs.aztec-labs.com https://127.0.0.1:59834 http://127.0.0.1:59833;`,
+			`connect-src 'self' data: blob: ${node} https://lb.drpc.live https://crs.aztec-cdn.foundation https://crs.aztec-labs.com https://127.0.0.1:59834 http://127.0.0.1:59833;`,
 		)
 		expect(headersFile(shipped)).toMatch(
 			/^\/\*\n {2}Cross-Origin-Opener-Policy: same-origin\n {2}Cross-Origin-Embedder-Policy: require-corp\n/,

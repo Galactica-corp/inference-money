@@ -158,8 +158,8 @@ contract TokenPortal is ITokenPortal, ReentrancyGuardTransient, EIP712 {
      * @param _depositor - The L1 address a returned deposit pays; no exit reads it. Unsigned, so it names no identity.
      * @param _to - The aztec address of the recipient
      * @param _amount - The amount to deposit, pulled from `msg.sender`
-     * @param _secretHash - The hash of the secret consumable message. The hash should be 254 bits (so it can fit in a
-     * Field element)
+     * @param _secretHash - The hash of the secret consumable message; the Inbox refuses one above
+     * `Constants.MAX_FIELD_VALUE`
      * @return The key of the entry in the Inbox and its leaf index
      */
     function depositToAztecPublic(address _depositor, bytes32 _to, uint256 _amount, bytes32 _secretHash)
@@ -186,8 +186,8 @@ contract TokenPortal is ITokenPortal, ReentrancyGuardTransient, EIP712 {
      * this exact deposit for this submitter; the funds still come from `msg.sender`. Each authorization works once.
      * @param _depositor - The key holder whose `FundingAuthorization` signature this is
      * @param _amount - The amount to deposit, pulled from `msg.sender`
-     * @param _secretHashForL2MessageConsumption - The hash of the secret consumable L1 to L2 message. The hash should be
-     * 254 bits (so it can fit in a Field element)
+     * @param _secretHashForL2MessageConsumption - The hash of the secret consumable L1 to L2 message; the Inbox refuses
+     * one above `Constants.MAX_FIELD_VALUE`
      * @param _deadline - The last timestamp the authorization is valid at
      * @param _signature - The depositor's 65-byte, low-s ECDSA signature over `fundingAuthorizationDigest`
      * @return The key of the entry in the Inbox and its leaf index
@@ -348,7 +348,7 @@ contract TokenPortal is ITokenPortal, ReentrancyGuardTransient, EIP712 {
         if (_amount == 0) revert ZeroAmount();
     }
 
-    /// @dev A withdraw to the portal never debits it, so it always reverts; the router is ownerless and must settle
+    /// @dev A non-zero withdraw to the portal never debits it, so it reverts; the router is ownerless and must settle
     /// to its starting balance on every deposit, and USDC, the Inbox, the Outbox and the registry have no way to send
     /// USDC they hold, so nothing could ever move a refund out of them. Permit2 is refused by the SDK: the portal does
     /// not store it.

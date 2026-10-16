@@ -55,13 +55,8 @@ export function castKeysFor(ref: ManifestRef): CastKeys {
 	return castKeysOf(f)
 }
 
-/** The salt `--rotate` keeps, so the listed merchants keep their accounts; a version-1 demo has none to keep. */
-export function keptSalt(published: DemoFile | undefined): string | undefined {
-	if (published?.version === 1) {
-		throw new Error("This deployment's demo predates the merchants' salt, so --rotate cannot keep its merchants: redeploy.")
-	}
-	return published?.merchantsSalt
-}
+/** The salt `--rotate` keeps, so the listed merchants keep their accounts. */
+export const keptSalt = (published: DemoFile | undefined): string | undefined => published?.merchantsSalt
 
 /**
  * What `demo setup` deposits: first each merchant's from its own treasury, which binds it there before it is listed;
@@ -105,7 +100,8 @@ export interface SetupOps {
 	/** Lists the demo merchants, or throws the instruction to list them. */
 	list(): Promise<void>
 	deposit(seed: Seed, tag: string, prior: PriorDraft | undefined, persist: (d: DepositDraft) => void): Promise<ClaimTicket>
-	claim(t: ClaimTicket): Promise<void>
+	/** Claims `t`; a ticket it rebuilt because a reorg moved the deposit's Inbox message goes to `keep` before its claim. */
+	claim(t: ClaimTicket, keep: (t: ClaimTicket) => void): Promise<void>
 	final: ReclaimSteps
 }
 
@@ -125,10 +121,16 @@ async function seedTicket(plan: SetupPlan, seed: Seed, store: PlanStore, ops: Se
 }
 
 async function seedAll(plan: SetupPlan, seeds: readonly Seed[], store: PlanStore, ops: SetupOps): Promise<void> {
-	const tickets: ClaimTicket[] = []
-	for (const seed of seeds) tickets.push(await seedTicket(plan, seed, store, ops))
-	for (const t of tickets) await ops.claim(t)
-	for (const t of tickets) await keepUntilFinal(t, ops.final)
+	const tickets = new Map<Seed, ClaimTicket>()
+	for (const seed of seeds) tickets.set(seed, await seedTicket(plan, seed, store, ops))
+	for (const [seed, t] of tickets) {
+		await ops.claim(t, (rebuilt) => {
+			plan.tickets[seed] = encodeTicket("claim", rebuilt)
+			store.write(plan)
+			tickets.set(seed, rebuilt)
+		})
+	}
+	for (const t of tickets.values()) await keepUntilFinal(t, ops.final)
 }
 
 /**
@@ -181,6 +183,7 @@ function liveSetupOps(s: Session, log: Log): SetupOps {
 	let players: Record<string, Player> = {}
 	// The private seeds bind cast accounts to their own L1 accounts, as intended; a pruned claim lost its binding too.
 	const BIND = { allowBind: true }
+	const reader = () => l1CtxOf(demoL1(s.endpoints.l1RpcUrl, s.m, "alice"))
 	const claimAgain = async (t: ClaimTicket) => {
 		await castClaim(s, t, logWait(log), BIND)
 	}
@@ -207,12 +210,12 @@ function liveSetupOps(s: Session, log: Log): SetupOps {
 			const plan = SEED_PLANS[seed](players)
 			return castDeposit(s, demoL1(s.endpoints.l1RpcUrl, s.m, plan.from), plan, prior, persist)
 		},
-		claim: async (t) => {
-			log(`claim to ${t.draft.intent.recipient}: ${await castClaim(s, t, logWait(log), BIND)}`)
+		claim: async (t, keep) => {
+			log(`claim to ${t.draft.intent.recipient}: ${await castClaim(s, t, logWait(log), BIND, { l1: reader(), keep })}`)
 		},
 		final: {
 			finality: (t) => waitClaimFinalized(t, s.node, s.m),
-			reconcile: (t) => reconcileDeposit(t.draft, l1CtxOf(demoL1(s.endpoints.l1RpcUrl, s.m, "alice")), s.m),
+			reconcile: (t) => reconcileDeposit(t.draft, reader(), s.m),
 			claimAgain,
 			pause: (ms) => new Promise((r) => setTimeout(r, ms)),
 			log,

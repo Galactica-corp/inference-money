@@ -55,8 +55,7 @@ export interface DemoWallet {
 
 export interface DemoWalletOptions {
 	usersTag: string
-	/** Null only for a version-1 demo. */
-	merchantsSalt: string | null
+	merchantsSalt: string
 	/** Real proofs, or the fake ones a local network accepts. */
 	proves: boolean
 	payments: PaymentStore

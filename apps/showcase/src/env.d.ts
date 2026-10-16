@@ -3,7 +3,7 @@ declare const __BRIDGE_MANIFEST__: unknown
 /** The deployment's published users' tag. */
 declare const __SHOWCASE_USERS_TAG__: string
 /** The deployment's published merchants' salt; null only for a version-1 demo. */
-declare const __SHOWCASE_MERCHANTS_SALT__: string | null
+declare const __SHOWCASE_MERCHANTS_SALT__: string
 /** The public L1 RPC endpoint the page reads and sends through. */
 declare const __SHOWCASE_L1_RPC__: string
 declare const __SHOWCASE_PROOFS__: "real" | "fake"

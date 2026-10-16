@@ -27,4 +27,3 @@ Open work lifted out of closed plans, one line each with a pointer; delete a lin
 - An external audit of the final contracts. `/harden security` (P14) ran before the P15 fixes; its finding and the two the arc-6 review found are fixed. [Arc 6](archive/galactica-compliant-usdc/plan.md#arc-6-hardening)
 - An SDK flow for the portal's signed path (smart-contract wallets, 7702 wallets without ERC-1271): today it is documented in `docs/integration.md` with typed data in bridge-core, and integrators build the submit themselves (owner, 2026-10-04).
 - A self-delivered note emits no delivery nullifier, so nullifier counts tell a tx that moves only its sender's own notes: #46. [plan: Security](archive/audit-fixes-contracts/plan.md#security--adversarial-considerations)
-- Revisit the unlimited USDC approval to Permit2 (`ensurePermit2Allowance`) against EIP-2612 exact permits. [D7](archive/usdc-bridge/plan.md#decision-ledger)

@@ -19,8 +19,8 @@ export interface BuildTarget {
 	readonly manifest: BridgeManifest
 	/** The published tag the demo's user accounts derive from. */
 	readonly usersTag: string
-	/** The published salt the demo's merchant accounts derive from; null only for a version-1 demo. */
-	readonly merchantsSalt: string | null
+	/** The published salt the demo's merchant accounts derive from. */
+	readonly merchantsSalt: string
 	/** A public endpoint the page reads and sends L1 through, never a keyed run's SEPOLIA_RPC_URL. */
 	readonly l1RpcUrl: string
 	readonly proofs: Proofs

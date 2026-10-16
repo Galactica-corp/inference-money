@@ -19,6 +19,31 @@ export interface AwaitL1ReceiptOptions {
 
 const REVERTED = /reverted on-chain/
 
+const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms))
+
+export interface ReadBackOptions {
+	/** Default 15 reads. */
+	attempts?: number
+	/** Between reads; default 2 s. */
+	delayMs?: number
+	waitMs?: (ms: number) => Promise<void>
+}
+
+/**
+ * Reads until `settled` holds or the attempts run out, and returns the last read: a load-balanced RPC can answer from
+ * a backend behind the block of the receipt it just returned, so one stale read after a receipt proves nothing.
+ */
+export async function readBack<T>(read: () => Promise<T>, settled: (value: T) => boolean, opts: ReadBackOptions = {}): Promise<T> {
+	const attempts = opts.attempts ?? 15
+	const wait = opts.waitMs ?? sleep
+	let value = await read()
+	for (let i = 1; i < attempts && !settled(value); i++) {
+		await wait(opts.delayMs ?? 2_000)
+		value = await read()
+	}
+	return value
+}
+
 /** A reverted tx also has a receipt, and callers treat any returned receipt as "landed": a revert throws, final. */
 function assertNotReverted<R>(receipt: R, hash: `0x${string}`): R {
 	if ((receipt as { status?: unknown })?.status === "reverted") {
@@ -38,7 +63,7 @@ async function probeMinedReceipt<R>(client: L1ReceiptClient<R>, hash: `0x${strin
 export async function awaitL1Receipt<R>(client: L1ReceiptClient<R>, hash: `0x${string}`, opts: AwaitL1ReceiptOptions = {}): Promise<R> {
 	const attempts = opts.attempts ?? 8
 	const attemptTimeoutMs = opts.attemptTimeoutMs ?? 90_000
-	const wait = opts.waitMs ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)))
+	const wait = opts.waitMs ?? sleep
 	let lastError: unknown
 	for (let attempt = 1; attempt <= attempts; attempt++) {
 		try {

@@ -9,16 +9,15 @@ import { demoDigest as digest, ethereumKey } from "./keys"
 import { MERCHANTS_SALT } from "./merchants-salt"
 import { USERS_TAG } from "./users-tag"
 
-/** What the cast derives from: the users' tag, and the merchants' salt, null only for a version-1 demo. */
+/** What the cast derives from: the users' tag and the merchants' salt. */
 export interface CastKeys {
 	usersTag?: string
-	merchantsSalt: string | null
+	merchantsSalt: string
 }
 
 /**
  * An actor's Aztec secret. A user's takes the users' tag and a merchant's the merchants' salt, which `demo setup` draws
- * and publishes only once every binding is final, so nobody can bind a cast account before the demo. A version-1 demo
- * predates the salt: its merchants derive from the deployment alone.
+ * and publishes only once every binding is final, so nobody can bind a cast account before the demo.
  */
 export function aztecSecret(bridge: Hex, actor: Actor, keys: CastKeys): Fr {
 	if (isUser(actor)) {
@@ -27,7 +26,6 @@ export function aztecSecret(bridge: Hex, actor: Actor, keys: CastKeys): Fr {
 		return new Fr(digest(`${bridge}/${tag}/${actor}/aztec`) % Fr.MODULUS)
 	}
 	const salt = keys.merchantsSalt
-	if (salt === null) return new Fr(digest(`${bridge}/${actor}/aztec`) % Fr.MODULUS)
 	if (!MERCHANTS_SALT.test(salt)) throw new Error(`${actor}'s key needs the merchants' salt (a 0x-prefixed field element)`)
 	return new Fr(digest(`${bridge}/${salt}/${actor}/aztec`) % Fr.MODULUS)
 }
