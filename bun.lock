@@ -85,7 +85,7 @@
     },
     "packages/bridge-core": {
       "name": "@galactica-net/inference-money-core",
-      "version": "0.2.0",
+      "version": "0.3.0",
       "dependencies": {
         "@aztec-labs/aztec.js": "6.0.0-rc.3",
         "@aztec-labs/constants": "6.0.0-rc.3",
