@@ -7,8 +7,7 @@
  *
  * GET /health → 200 once the heartbeat runs.
  */
-import { createAztecNodeClient } from "@aztec-labs/aztec.js/node"
-import { registerBridgeContracts, registerSponsor } from "@galactica-net/inference-money-core"
+import { createNodeClient, registerBridgeContracts, registerSponsor } from "@galactica-net/inference-money-core"
 import {
 	enterOwnedTmpDir,
 	localManifestPath,
@@ -24,7 +23,7 @@ async function main(): Promise<void> {
 	if (!Number.isInteger(port) || port <= 0) throw new Error("SIDECAR_PORT must name the port this run claimed")
 	const m = readManifest(localManifestPath(runId))
 	const exitTmp = enterOwnedTmpDir()
-	const wallet = await openBridgeWallet(createAztecNodeClient(resolveEndpoints(runId).nodeUrl), { prove: false })
+	const wallet = await openBridgeWallet(createNodeClient(resolveEndpoints(runId).nodeUrl), { prove: false })
 	await registerSponsor(wallet, m)
 	await registerBridgeContracts(wallet, m)
 	const stopBeat = await startBlockHeartbeat(wallet, m)

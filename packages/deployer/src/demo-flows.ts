@@ -1,7 +1,6 @@
 import type { AztecAddress } from "@aztec-labs/aztec.js/addresses"
 import { Fr } from "@aztec-labs/aztec.js/fields"
-import { createAztecNodeClient } from "@aztec-labs/aztec.js/node"
-import { registerSponsor, sponsoredPayment } from "@galactica-net/inference-money-core"
+import { createNodeClient, registerSponsor, sponsoredPayment } from "@galactica-net/inference-money-core"
 import { ensureAccount, startBlockHeartbeat } from "@galactica-net/inference-money-core/deploy"
 import { type Actor, type CastKeys, type CastMember, castMember, demoDigest } from "@galactica-net/inference-money-demo"
 import { accountFor, type Session } from "./session"
@@ -15,7 +14,7 @@ export type Log = (m: string) => void
  */
 export async function withHeartbeat<T>(s: Session, fn: () => Promise<T>): Promise<T> {
 	if (s.m.network !== "local") return fn()
-	const wallet = await openBridgeWallet(createAztecNodeClient(s.endpoints.nodeUrl), { prove: false })
+	const wallet = await openBridgeWallet(createNodeClient(s.endpoints.nodeUrl), { prove: false })
 	try {
 		await registerSponsor(wallet, s.m)
 		const stop = await startBlockHeartbeat(wallet, s.m)

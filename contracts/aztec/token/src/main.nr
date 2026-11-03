@@ -1,4 +1,4 @@
-// Forked from AztecProtocol/aztec-standards v6.0.0-rc.3 (f7bf63d5), src/token_contract; MIT, see LICENSE.
+// Forked from AztecProtocol/aztec-standards v6.0.0 (ed402d82), src/token_contract; MIT, see LICENSE.
 // Delta:
 // - the package is `merchant_token`, and its path dependencies are the same upstream crates by pinned git tag;
 // - a merchant list is appended (storage, events, the MERCHANTS section); upstream's storage slots, events and function

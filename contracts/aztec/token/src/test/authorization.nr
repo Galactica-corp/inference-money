@@ -292,7 +292,7 @@ unconstrained fn authorization_hook_not_called_on_mint_to_private() {
     let (env, token_contract_address, owner, _, minter, auth_contract) =
         utils::setup_with_auth_contract_and_minter(false);
 
-    // Mint to private balance (helper handles the getRandomField oracle mock)
+    // Mint to private balance
     utils::mint_to_private(env, token_contract_address, owner, mint_amount, minter);
 
     // Hook must not be invoked on mint (ARC-403 design: mints are gated by minter role)

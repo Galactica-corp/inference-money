@@ -19,7 +19,7 @@
 	"l2": {
 		"nodeVersion": "6.0.0-rc.3",
 		"rollupVersion": 3409706519,
-		"nodeUrl": "https://lb.drpc.live/aztec-testnet/Ak0qdxVWbkqUmLb-dN5IplyTiGDyyJwR8Yfybj3Fs6u0",
+		"nodeUrl": "https://aztec-testnet.drpc.org",
 		"sponsoredFpc": "0x2adfb70e860909f0db8268b3fec80bce52a94559963444f5c0341816b8412130",
 		"admin": "0x2d5a3f9af4f08262185dd13b64a894cf624335cd2ac094c316940b85639ef4e1",
 		"interimAdmin": true,

@@ -1,5 +1,6 @@
-import { type AztecNode, createAztecNodeClient } from "@aztec-labs/aztec.js/node"
+import type { AztecNode } from "@aztec-labs/aztec.js/node"
 import { EmbeddedWallet } from "@aztec-labs/wallets/embedded"
+import { createNodeClient } from "@galactica-net/inference-money-core"
 import { withOwnedTmpDir } from "./owned-tmp"
 
 /**
@@ -21,7 +22,7 @@ export interface BridgeWalletOptions {
 /** {@link openBridgeWallet} inside an owned tmp scope, stopped before the scope's dir is removed. */
 export function withBridgeWallet<T>(nodeUrl: string, opts: BridgeWalletOptions, fn: (w: EmbeddedWallet, node: AztecNode) => Promise<T>) {
 	return withOwnedTmpDir(async () => {
-		const node = createAztecNodeClient(nodeUrl)
+		const node = createNodeClient(nodeUrl)
 		const open: Open = (n) => openBridgeWallet(n, opts)
 		const wallet = await (opts.bind ? opts.bind(node, open) : open(node))
 		try {

@@ -24,7 +24,7 @@ Every operation is one `bun run bridge <command>`. `<manifest>` is a path, or `l
 | `demo fund <manifest>` | L1 key, `SEPOLIA_RPC_URL` | Tops the cast's Ethereum accounts up, then the sponsor's Fee Juice |
 | `disposable init \| exec <command…> \| destroy <manifest>` | the disposable file | The fallback when the owner is away (see below) |
 | `manifest-path local` | none | This `RUN_ID`'s manifest path |
-| `probe` | none | Testnet pins, L1 wiring, assets and the fee budget, before a deploy |
+| `probe` | none | `testnet` or `mainnet`: the network's pins, L1 wiring and assets, and on testnet the fee budget, before a deploy |
 | `scan` | the run's own | Whether any of the run's secrets reached the checkout or the caches, and any wallet store left on disk: yes or no, never where. `walletDirs` above 0 is a leftover store holding an account secret: delete `~/.cache/inference-money/wallet-tmp/` once no command runs |
 
 Local commands skip proving unless `BRIDGE_PROVE=1`; testnet always proves.

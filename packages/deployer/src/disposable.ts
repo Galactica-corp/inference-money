@@ -3,8 +3,7 @@ import { basename, dirname, join, resolve } from "node:path"
 import type { Writable } from "node:stream"
 import type { AztecAddress } from "@aztec-labs/aztec.js/addresses"
 import { Fr } from "@aztec-labs/aztec.js/fields"
-import { createAztecNodeClient } from "@aztec-labs/aztec.js/node"
-import { parseManifest, randomSecret, signingKeyFor, tokenBridgeArtifact } from "@galactica-net/inference-money-core"
+import { createNodeClient, parseManifest, randomSecret, signingKeyFor, tokenBridgeArtifact } from "@galactica-net/inference-money-core"
 import { layoutSlot, publicReader, type Roles, readRoles } from "@galactica-net/inference-money-core/deploy"
 import { aztecAddressOf } from "@galactica-net/inference-money-demo"
 import { REPO_ROOT } from "@galactica-net/inference-money-local-network"
@@ -196,7 +195,7 @@ async function execUnder(inv: Invocation, command: string[], file: string, root:
 
 /** Read at the pinned testnet node, never one a manifest names, with the token the bridge itself is configured with. */
 async function finalRoles(ref: ManifestRef): Promise<Roles & { token: Fr }> {
-	const node = createAztecNodeClient(TESTNET.nodeUrl)
+	const node = createNodeClient(TESTNET.nodeUrl)
 	const token = await publicReader(node, ref.m.l2.bridge.address, "finalized")(layoutSlot(tokenBridgeArtifact, "config", 1))
 	return { ...(await readRoles(node, ref.m, "finalized")), token }
 }

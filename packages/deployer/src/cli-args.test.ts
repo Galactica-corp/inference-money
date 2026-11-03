@@ -35,7 +35,7 @@ describe("bridge CLI arguments", () => {
 			["verify", "m.json", "--bogus", "1"],
 			["verify", "m.json", "--tour"],
 			["export", "m.json"],
-			["probe", "mainnet"],
+			["probe", "devnet"],
 			["disposable", "exec"],
 			["frobnicate"],
 		]) {

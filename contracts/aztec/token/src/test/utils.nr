@@ -3,13 +3,11 @@ use authorization_contract::AuthorizationContract;
 use authorization_contract::AuthorizationContract::AuthCall;
 use aztec::{
     note::{constants::MAX_NOTES_PER_PAGE, note_viewer_options::NoteViewerOptions},
-    oracle::random::random,
     protocol::{address::AztecAddress, traits::Packable},
     state_vars::{OwnedStateVariable, PrivateSet},
     test::helpers::test_environment::TestEnvironment,
 };
 use std::ops::WrappingSub;
-use std::test::OracleMock;
 use uint_note::UintNote;
 
 pub global mint_amount: u128 = 10_000 as u128;
@@ -223,9 +221,6 @@ pub unconstrained fn mint_to_private(
     amount: u128,
     caller: AztecAddress,
 ) {
-    let note_randomness = random();
-    let _ = OracleMock::mock("getRandomField").returns(note_randomness);
-
     env.call_private(caller, Token::at(token_contract_address).mint_to_private(recipient, amount));
 }
 

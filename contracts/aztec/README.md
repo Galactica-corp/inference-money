@@ -1,6 +1,6 @@
 # contracts/aztec
 
-Aztec.nr side of the USDC bridge, pinned to aztec-nr **v6.0.0-rc.3** (the `noir` entry in `toolchain.json`).
+Aztec.nr side of the USDC bridge, pinned to aztec-nr **v6.0.0** (the `noir` entry in `toolchain.json`).
 
 | Crate | Type | Role |
 |---|---|---|
@@ -17,7 +17,7 @@ to deploy.
 
 ## Commands
 
-nargo comes from `aztec-up install 6.0.0-rc.3`, or `NARGO=<path>` to the noir-lang release (the scripts check it is `toolchain.json`'s `nargo`). The aztec CLI, bb and
+nargo comes from `aztec-up install 6.0.0`, or `NARGO=<path>` to the noir-lang release (the scripts check it is `toolchain.json`'s `nargo`). The aztec CLI, bb and
 the TXE server come from `toolchain/`, a committed lockfile installed with `--frozen-lockfile` on first use.
 
 ```sh

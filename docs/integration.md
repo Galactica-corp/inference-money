@@ -1,6 +1,6 @@
 # Integrating the compliant USDC
 
-For wallets and x402 facilitators that hold, move or pay with the bridged USDC on Aztec. The token is aztec-standards' `Token` (v6.0.0-rc.3) plus a merchant list, so upstream calls keep working; what changes is who may do what. Every rule below is enforced on chain unless it names bridge-core alone; `@galactica-net/inference-money-core` checks the same rules before anything is signed or proven, so a refused action costs no fee.
+For wallets and x402 facilitators that hold, move or pay with the bridged USDC on Aztec. The token is aztec-standards' `Token` (v6.0.0) plus a merchant list, so upstream calls keep working; what changes is who may do what. Every rule below is enforced on chain unless it names bridge-core alone; `@galactica-net/inference-money-core` checks the same rules before anything is signed or proven, so a refused action costs no fee.
 
 ## Who may do what
 

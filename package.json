@@ -29,6 +29,7 @@
 		"net:status": "bun packages/local-network/src/cli.ts status",
 		"net:up": "bun packages/local-network/src/cli.ts up",
 		"prepare": "husky",
+		"probe:mainnet": "bun --no-env-file packages/deployer/src/cli.ts probe mainnet",
 		"probe:testnet": "bun --no-env-file packages/deployer/src/cli.ts probe testnet",
 		"release:check": "bun run lint && bun run typecheck && bun run --cwd packages/bridge-core test && bun run release:pack",
 		"release:pack": "bun run --cwd packages/bridge-core pack:npm && bun run --cwd packages/bridge-core smoke:npm",

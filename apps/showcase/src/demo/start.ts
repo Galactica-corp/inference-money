@@ -1,5 +1,4 @@
-import { createAztecNodeClient } from "@aztec-labs/aztec.js/node"
-import { assertNetworkIdentity } from "@galactica-net/inference-money-core"
+import { assertNetworkIdentity, createNodeClient } from "@galactica-net/inference-money-core"
 import { createPublicClient, http } from "viem"
 import { L1_CHAIN, L1_RPC_URL, MANIFEST, MERCHANTS_SALT, PROVES, USERS_TAG } from "@/config/network"
 import { browserPaymentStore, localKeyValue } from "./store"
@@ -13,7 +12,7 @@ export const deploymentStore = () => localKeyValue(`inference-money/${MANIFEST.l
  * Presto's prover on every route, kept in the page until "Try it yourself" asks the visitor.
  */
 export async function startDemo(): Promise<DemoWallet> {
-	const node = createAztecNodeClient(MANIFEST.l2.nodeUrl)
+	const node = createNodeClient(MANIFEST.l2.nodeUrl)
 	const l1 = createPublicClient({ chain: L1_CHAIN, transport: http(L1_RPC_URL) })
 	const { depositsOpen } = await assertNetworkIdentity(node, l1, MANIFEST)
 	const presto = PROVES ? (await import("@/presto")).pagePresto(__SHOWCASE_PRESTO__) : undefined

@@ -13,7 +13,7 @@ describe("demo cast", () => {
 	it("derives the address the wallet registers for a secret (the local deployer's, pinned)", async () => {
 		const secret = new Fr(0x1a7e0de9107e5n)
 		expect((await aztecAddressOf({ secret, signingKey: signingKeyFor(secret) })).toString()).toBe(
-			"0x19587f1dc5cae16bf09cf73c63a842ccf6f1fcb48936a868c44f709363101e8a",
+			"0x0f4f9ff0c66d478fb02ab6cf773b78ea656b53b7cb1af5a8e6529a6636989f6c",
 		)
 	})
 

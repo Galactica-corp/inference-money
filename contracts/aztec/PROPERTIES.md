@@ -27,7 +27,7 @@
 > the discovery lenses' raw ids: CON (conservation), ST (state transitions), RT (round trips and boundaries), ADV
 > (adversarial), SPEC (protocol spec).
 >
-> **What TXE can and cannot see (aztec-nr v6.0.0-rc.3, the same oracle surface as rc.1).** `get_last_tx_effects()`
+> **What TXE can and cannot see (aztec-nr v6.0.0).** `get_last_tx_effects()`
 > returns note hashes, nullifiers and private logs; there is no public-log reader, no L2→L1 message reader and no view
 > of enqueued public calls. A `should_fail` test ends at the failure, so state after a refused call is unobservable. TXE
 > runs no kernel or PXE (existence requests and expiry are not enforced, nothing is rounded) and cannot put two calls in
@@ -665,7 +665,7 @@
 - [x] **SP-09** — Sending x privately to a merchant's public balance with a commitment, then refunding r into that
   commitment from the merchant's public balance, leaves the sender with exactly r more privately (down x − r), the
   merchant up x − r publicly, and the supply unchanged: the commitment is the sender's. (Category: STATE_TRANSITION;
-  Guarantee: SHOULD-HOLD — exact identity across both legs; aztec-standards v6.0.0-rc.3 README "Refunds": "returns a
+  Guarantee: SHOULD-HOLD — exact identity across both legs; aztec-standards v6.0.0 README "Refunds": "returns a
   commitment owned by `from`"; Priority: MEDIUM; Scope: after transfer_private_to_public_with_commitment then
   transfer_public_to_commitment; Sources: RT-09)
   Coverage: COVERED by

@@ -17,7 +17,7 @@ describe("demo file", () => {
 		const galactica = async (file: unknown) =>
 			(await aztecAddressOf(castMember(MANIFEST, "galactica", castKeysOf(demoFileSchema.parse(file))))).toString()
 		expect(await galactica({ version: 2, bridge, usersTag, merchantsSalt })).toBe(
-			"0x1c73b1482122c8eca78d69f5b3a3a766c74d28d137be3ae027c11067f7a2952f",
+			"0x2d5bdf46d948dfc8feda7b22469a8b3c7b023d8e3050b54604bbd34684072294",
 		)
 		expect(() => demoFileSchema.parse({ version: 2, bridge, usersTag }), "v2 needs its salt").toThrow()
 	})

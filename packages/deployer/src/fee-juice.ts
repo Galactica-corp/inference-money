@@ -15,7 +15,7 @@ import { type Hex, parseAbi } from "viem"
 import type { NetworkPins } from "./networks"
 
 /** Where the funder mints and what it approves: a network's pins, never a node's answer. */
-export type FeeJuicePins = Pick<NetworkPins, "l1ChainId" | "feeJuicePortal" | "feeAssetHandler">
+export type FeeJuicePins = Pick<NetworkPins, "l1ChainId" | "feeJuicePortal"> & Required<Pick<NetworkPins, "feeAssetHandler">>
 
 const PORTAL_ABI = parseAbi(["function UNDERLYING() view returns (address)"])
 

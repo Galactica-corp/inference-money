@@ -26,7 +26,20 @@
 		"enabled": true,
 		"rules": {
 			"preset": "recommended",
-			"style": { "noNonNullAssertion": "off" },
+			"style": {
+				"noNonNullAssertion": "off",
+				"noRestrictedImports": {
+					"level": "error",
+					"options": {
+						"paths": {
+							"@aztec-labs/aztec.js/node": {
+								"importNames": ["createAztecNodeClient"],
+								"message": "Open node clients with bridge-core's createNodeClient: it caps batches at what dRPC accepts."
+							}
+						}
+					}
+				}
+			},
 			"suspicious": { "noExplicitAny": "error" },
 			"complexity": {
 				"noExcessiveCognitiveComplexity": { "level": "error", "options": { "maxAllowedComplexity": 15 } },
@@ -56,6 +69,10 @@
 							"level": "error",
 							"options": {
 								"paths": {
+									"@aztec-labs/aztec.js/node": {
+										"importNames": ["createAztecNodeClient"],
+										"message": "Open node clients with bridge-core's createNodeClient: it caps batches at what dRPC accepts."
+									},
 									"@aztec-labs/ethereum": "One viem: read L1 through canonical viem (see bridge-core/src/outbox.ts)."
 								},
 								"patterns": [
