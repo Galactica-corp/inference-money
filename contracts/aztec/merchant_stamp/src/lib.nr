@@ -5,7 +5,7 @@
 // its anchor block falls in; one a merchant opens for a user pushes `pad(c)` instead, so both publish one nullifier and
 // an observer without `c` cannot tell them apart. A payment into `c` pushes `paid(c)`, so a request takes one. The token
 // pushes all three unsiloed and the kernel silos them with its address, so no other contract can forge one.
-use aztec::protocol::hash::poseidon2_hash_with_separator;
+use aztec::protocol::{address::AztecAddress, hash::poseidon2_hash_with_separator, traits::ToField};
 
 // poseidon2_hash_bytes("dom_sep__merchant_token_stamp[_pad]") and ("dom_sep__merchant_token_request_paid") as u32,
 // pinned as literals; the keystone re-derives all three and asserts they differ from each other, from every protocol
@@ -13,6 +13,8 @@ use aztec::protocol::hash::poseidon2_hash_with_separator;
 pub global DOM_SEP__MERCHANT_STAMP: u32 = 1404036670;
 pub global DOM_SEP__MERCHANT_STAMP_PAD: u32 = 3491815610;
 pub global DOM_SEP__MERCHANT_REQUEST_PAID: u32 = 3533394975;
+// poseidon2_hash_bytes("dom_sep__merchant_token_ref_paid") as u32, pinned and checked by the keystone like the three above.
+pub global DOM_SEP__MERCHANT_REF_PAID: u32 = 4001138992;
 
 // poseidon2_hash_bytes("merchant_token_side_hint_capsule_slot"): where a tx's capsule tells the token which side of a
 // restricted call to prove. Read at the global (zero) capsule scope, which the PXE allows every tx.
@@ -63,4 +65,10 @@ pub fn pad(commitment: Field) -> Field {
 
 pub fn paid(commitment: Field) -> Field {
     poseidon2_hash_with_separator([commitment], DOM_SEP__MERCHANT_REQUEST_PAID)
+}
+
+/// The nullifier a `pay_private` into `merchant` under `payment_ref` pushes, so a reference takes one payment per merchant.
+/// The reference is a random field the merchant hands out, so the nullifier names neither party to anyone without it.
+pub fn paid_ref(merchant: AztecAddress, payment_ref: Field) -> Field {
+    poseidon2_hash_with_separator([merchant.to_field(), payment_ref], DOM_SEP__MERCHANT_REF_PAID)
 }

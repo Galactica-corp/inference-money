@@ -751,6 +751,40 @@
   transfer_public_to_commitment.nr:transfer_public_to_commitment_transfer_not_initialized,
   mint_to_commitment.nr:mint_to_private_failure_invalid_commitments_random and _zero.
 
+### Token: payments under a reference
+
+- [x] **SP-60** — A `pay_private` debits `from` by exactly `amount` and credits exactly `amount` to `to`, which sees it
+  only once it feeds the tx's offchain messages to `offchain_receive`; total supply is unchanged. (Category:
+  STATE_TRANSITION; Guarantee: SHOULD-HOLD — exact identity in `pay_private`; Priority: HIGH; Scope: after pay_private)
+  Coverage: COVERED by token/src/test/pay_private.nr:a_merchant_receives_a_payment_only_through_its_offchain_messages,
+  a_payment_moves_no_supply, a_merchant_pays_a_user_and_another_merchant.
+
+- [x] **SP-61** — A `pay_private` follows the private transfer rule (a merchant on one side, proven at the anchor) and
+  refuses a zero amount and a payment to oneself; authorization and the ARC-403 hook run as for every transfer.
+  (Category: STATE_TRANSITION; Guarantee: SHOULD-HOLD — docs/integration.md rules table; Priority: HIGH; Scope:
+  pay_private) Coverage: COVERED by token/src/test/pay_private.nr:a_user_cannot_pay_a_user,
+  a_switched_off_merchant_cannot_be_paid_by_a_user, a_merchant_being_switched_off_is_paid_before_the_delay,
+  a_zero_payment_is_refused, a_payment_to_oneself_is_refused, a_delegated_payment_without_an_authwit_is_refused,
+  a_delegated_payment_with_an_authwit_lands_with_the_merchant, authorization_hook_called_on_pay_private.
+
+- [x] **SP-62** — A reference takes one payment per recipient: each `pay_private` pushes `paid_ref(to, payment_ref)`,
+  and a second one into the same pair is refused; the same reference may pay another recipient. (Category:
+  STATE_TRANSITION; Guarantee: SHOULD-HOLD — exact identity; Priority: HIGH; Scope: pay_private) Coverage: COVERED by
+  token/src/test/pay_private.nr:a_reference_takes_one_payment_per_merchant, one_reference_pays_two_merchants,
+  a_payment_publishes_no_log_for_its_recipient (the siloed marker is in the tx's nullifiers).
+
+- [x] **SP-63** — A `pay_private` publishes no log for its recipient: its only private log is the payer's change, so
+  nothing on chain carries the amount or announces a handshake naming the recipient. (Category: HIGH_LEVEL; Guarantee:
+  SHOULD-HOLD — offchain delivery emits nothing; Priority: HIGH; Scope: pay_private's tx effects) Coverage: COVERED by
+  token/src/test/pay_private.nr:a_payment_publishes_no_log_for_its_recipient.
+
+- [x] **SP-64** — A payment's offchain messages credit only their recipient, only against the tx they name, and only
+  once; an altered message credits nothing. (Category: HIGH_LEVEL; Guarantee: SHOULD-HOLD — aztec-nr validates each
+  received note hash and event commitment against the named tx; Priority: HIGH; Scope: offchain_receive of a payment's
+  messages) Coverage: COVERED by token/src/test/pay_private.nr:another_account_cannot_take_in_a_payment_meant_for_a_merchant,
+  messages_naming_another_tx_are_dropped, an_altered_message_is_dropped,
+  receiving_the_same_messages_twice_counts_the_payment_once.
+
 ### Token: the merchant list
 
 - [x] **SP-18** — After the admin adds an account, it is registered and on with nothing scheduled, its current and
@@ -1193,18 +1227,18 @@ prevents" double completion (GL-02).
 
 ## Coverage summary
 
-108 properties: 49 global, 59 specific; 105 merged from the five lenses' 197 raw properties, 3 added (SYN). Priority: 52
-HIGH, 38 MEDIUM, 18 LOW. Guarantee: 89 SHOULD-HOLD, 19 EXPLORATORY. Category: 15 VALID_STATE, 69 STATE_TRANSITION, 9
-VARIABLE_TRANSITION, 15 HIGH_LEVEL. EXPECTED-FAIL today: 3 (GL-05, GL-13, SP-28); SP-07, SP-30, SP-33 and GL-34 are
+113 properties: 49 global, 64 specific; 105 merged from the five lenses' 197 raw properties, 3 added (SYN), 5 added with
+`pay_private` (SP-60 to SP-64). Priority: 57 HIGH, 38 MEDIUM, 18 LOW. Guarantee: 94 SHOULD-HOLD, 19 EXPLORATORY.
+Category: 15 VALID_STATE, 72 STATE_TRANSITION, 9 VARIABLE_TRANSITION, 17 HIGH_LEVEL. EXPECTED-FAIL today: 3 (GL-05, GL-13, SP-28); SP-07, SP-30, SP-33 and GL-34 are
 fixed, SP-31 and SP-49 accepted.
 
 | Crate | COVERED | PARTIAL | UNCOVERED | TXE-UNREACHABLE | Total |
 |---|---|---|---|---|---|
-| token (merchant Token, hints) | 23 | 34 | 2 | 8 | 67 |
+| token (merchant Token, hints) | 28 | 34 | 2 | 8 | 72 |
 | token_bridge (with token_minter_proxy) | 9 | 21 | 5 | 3 | 38 |
 | keystone (portal_messages vectors) | 0 | 1 | 0 | 0 | 1 |
 | cross-chain (L1 portal and L2 together) | 0 | 0 | 0 | 2 | 2 |
-| **All** | **32** | **56** | **7** | **13** | **108** |
+| **All** | **37** | **56** | **7** | **13** | **113** |
 
 The largest PARTIAL gap is the supply: no TXE test reads `total_supply` after a claim, an exit, a private burn, a
 transfer or a payment (GL-01, GL-42, SP-02, SP-04, SP-42, SP-44), so the L2 half of the books has no Noir check.
