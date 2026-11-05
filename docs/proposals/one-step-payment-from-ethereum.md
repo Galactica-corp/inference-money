@@ -66,12 +66,6 @@ collects into their own Aztec wallet whenever they want.
 - A new kind of deposit message and an IOU supply invariant warrant a careful security review.
 - aztec-x402: a new payment variant; bridge-core: deposit building and the merchant's verification.
 
-**Found during implementation**
-- A merchant should accept split deposits only once its listing has landed: `return_split` may prove a merchant unlisted
-  at any anchor after the deposit, so a deposit sent before the listing could be returned after the merchant served it.
-- Collecting the change needs no message from the merchant: the IOU is a nullifier the buyer recomputes from its own
-  data, and its spent marker includes the change salt, so the merchant cannot see when the change is collected.
-
 ## Alternatives considered
 
 | Option | Why not |
@@ -96,6 +90,33 @@ collects into their own Aztec wallet whenever they want.
 3. **The buyer's salts are random and kept in the deposit draft**, as for today's deposits. The SDK can export and
    import the draft, so any client or wallet can collect the change. Deriving them from an Ethereum signature is left
    for later.
+
+## Concerns
+
+Found while implementing; none blocks the testnet deploy, each needs an answer before mainnet.
+
+1. **The total supply now depends on the bridge's bookkeeping.** From a split claim on, the supply counts the whole
+   deposit, part of it change still owed to the buyer. Three new minter-only token functions keep the books, and only
+   the bridge can reach them. The contract tests check the supply after every flow, and the local-network tests check
+   that the portal's reserve still covers it, but this is the most sensitive change: it needs an external security
+   review before mainnet.
+2. **The merchant serves before its claim.** Once the deposit is two blocks deep on Ethereum, the merchant serves; until
+   its claim lands on Aztec minutes later, an Ethereum reorg, a bridge pause or a rollup upgrade can delay or undo it. The
+   exposure is the price of one request. Merchants can require more confirmations above a price threshold.
+3. **A deposit made before the merchant's listing can be taken back.** A deposit is returned to its depositor if the
+   merchant can be proven not listed at any point after the deposit. A deposit sent before the listing landed could
+   therefore be returned after the merchant served it. Merchants must accept split deposits only once their listing has
+   landed; the x402 integration has to enforce that.
+4. **A merchant switched off loses unclaimed deposits.** Once a switch-off takes effect (24 hours after it is scheduled),
+   the buyer can return any deposit the merchant has not claimed yet. Merchants should claim promptly.
+5. **The fixed amounts are enforced by the SDK only.** The contracts accept any amount, so a hand-built deposit of
+   exactly the price shows the price on Ethereum, and with it, likely the merchant.
+6. **The buyer must keep the deposit's data.** Without the draft's salts the change can never be collected; it stays
+   counted in the supply and locked. The payment itself is unaffected.
+7. **The fallback paths leak.** Returning the change to Ethereum publishes its amount, which with the deposit gives the
+   price. A split claimed by anyone but the merchant delivers the merchant's note on chain, which announces the merchant.
+8. **One claim per deposit.** Each split deposit costs the merchant one Aztec transaction (sponsored fee, a proof). Its
+   proving time and the sponsor's capacity at volume are not measured yet.
 
 ---
 
