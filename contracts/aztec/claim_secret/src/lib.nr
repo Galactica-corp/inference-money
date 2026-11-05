@@ -44,7 +44,7 @@ pub fn split_change_commitment(buyer: AztecAddress, change_salt: Field) -> Field
     poseidon2_hash_with_separator([buyer.to_field(), change_salt], DOM_SEP__TOKEN_BRIDGE_SPLIT_CHANGE)
 }
 
-/// The L1→L2 message secret of a split deposit. `salt` MUST be fresh randomness: the secret hash is public on L1.
+/// The L1-to-L2 message secret of a split deposit. `salt` MUST be fresh randomness: the secret hash is public on L1.
 pub fn split_secret(
     merchant: AztecAddress,
     price: u128,

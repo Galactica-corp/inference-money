@@ -1,6 +1,6 @@
 # Proposal: hide the amount of x402 payments
 
-Status: accepted (2026-11-05), in implementation. Affects the inference-money token (one new function) and aztec-x402 (payment flow
+Status: accepted (2026-11-05); implemented in this repository (token `pay_private`, bridge-core `payPrivate`, `receivePayment`, `consolidate`), awaiting the testnet deploy and the aztec-x402 integration. Affects the inference-money token (one new function) and aztec-x402 (payment flow
 and verification).
 
 ## Summary
@@ -58,6 +58,11 @@ merchant no longer sends a transaction for every request.
 - aztec-x402: new payment variant (no prepare phase; verification from the delivered messages). The current
   commitment flow can stay alongside during migration.
 - Needs a security review like any token change.
+
+**Found during implementation**
+- aztec.js returns a payment's offchain messages only after the node has accepted the transaction, so they cannot be
+  stored before the send. If the payer's process dies in that short window, the payment is spent and the merchant's
+  note cannot be delivered. The SDK hands the proof back at the earliest moment; the payer must persist it at once.
 
 ## Alternatives considered
 

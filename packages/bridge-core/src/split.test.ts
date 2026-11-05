@@ -69,7 +69,11 @@ function portalLog(o: { secretHash: Fr; amount?: bigint; address?: Address; inde
 
 const l1 = (logs: Log[], tip = 121n, status: "success" | "reverted" = "success") => ({
 	getTransactionReceipt: async () => ({ status, logs, blockNumber: 120n }) as never,
-	getBlockNumber: async () => tip,
+	// A cached tip under-counts confirmations; the check must read the chain's.
+	getBlockNumber: async (args?: { cacheTime?: number }) => {
+		if (args?.cacheTime !== 0) throw new Error("the tip was read through the client's cache")
+		return tip
+	},
 })
 
 describe("prepareSplitDeposit", () => {

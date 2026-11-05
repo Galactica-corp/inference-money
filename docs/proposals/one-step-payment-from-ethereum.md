@@ -1,6 +1,6 @@
 # Proposal: pay a merchant directly from Ethereum, in one step
 
-Status: accepted (2026-11-05), in implementation. Affects the inference-money bridge and token (new claim functions), bridge-core, and
+Status: accepted (2026-11-05); implemented in this repository (bridge `claim_split`, `return_split`, `claim_change`, `return_change`; bridge-core `split.ts`), awaiting the testnet deploy and the aztec-x402 integration. Affects the inference-money bridge and token (new claim functions), bridge-core, and
 aztec-x402 (a new payment variant). Builds on the private-payment proposal (`private-payment-amounts.md`) for the
 payment reference.
 
@@ -65,6 +65,12 @@ collects into their own Aztec wallet whenever they want.
 - Bridge: two new claim functions. Token: two new minting functions. Existing functions are untouched.
 - A new kind of deposit message and an IOU supply invariant warrant a careful security review.
 - aztec-x402: a new payment variant; bridge-core: deposit building and the merchant's verification.
+
+**Found during implementation**
+- A merchant should accept split deposits only once its listing has landed: `return_split` may prove a merchant unlisted
+  at any anchor after the deposit, so a deposit sent before the listing could be returned after the merchant served it.
+- Collecting the change needs no message from the merchant: the IOU is a nullifier the buyer recomputes from its own
+  data, and its spent marker includes the change salt, so the merchant cannot see when the change is collected.
 
 ## Alternatives considered
 

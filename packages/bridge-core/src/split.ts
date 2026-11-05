@@ -201,7 +201,8 @@ export async function verifySplitDeposit(
 		throw new SplitProofRefusedError("not-found", `${proof.l1TxHash} holds ${deposits.length} deposits with these terms`)
 	const { depositor, amount, key, index } = deposits[0]!.args
 	if (amount < expected.price) throw new SplitProofRefusedError("underpaid", `deposited ${amount}, the price is ${expected.price}`)
-	const depth = (await pub.getBlockNumber()) - receipt.blockNumber + 1n
+	// Uncached: a client's cached tip would under-count the depth and refuse a deposit already confirmed.
+	const depth = (await pub.getBlockNumber({ cacheTime: 0 })) - receipt.blockNumber + 1n
 	if (depth < BigInt(opts.confirmations ?? SPLIT_CONFIRMATIONS)) throw new SplitProofRefusedError("unconfirmed", `${depth} confirmations`)
 	return { amount, depositor, leafIndex: index, messageHash: key, ...terms }
 }
