@@ -25,7 +25,7 @@ bash scripts/noir-deps.sh            # fetch + verify every Noir git dependency 
 bash scripts/compile.sh              # rebuild the contract artifacts (nargo + AVM transpile + path scrub)
 bash scripts/compile.sh --check      # fail unless the committed artifacts are exactly what the source builds
 bun run test:noir                    # TXE suites for token, token_bridge and keystone, each gated by its txe-manifest.txt
-bash scripts/check-sole-consumer.sh  # static guard: four consume sites and the bridge's rules (add --self-test to prove it bites)
+bash scripts/check-sole-consumer.sh  # static guard: six consume sites and the bridge's rules (add --self-test to prove it bites)
 bash scripts/check-stamp-constraint.sh # static guard: a stamped payment proves its stamp settled and caps at its deadline; a refund commitment is never stamped (--self-test)
 ```
 

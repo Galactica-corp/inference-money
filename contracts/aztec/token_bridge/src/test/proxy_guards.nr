@@ -97,3 +97,24 @@ unconstrained fn proxy_direct_burn_private_rejected() {
     add_private_authwit_from_call(env, rando, proxy, Token::at(token).burn_private(rando, 1, 0));
     env.call_private(rando, TokenMinterProxy::at(proxy).burn_private(rando, 1, 0));
 }
+
+/// The split-deposit forwards are the bridge's alone too: a direct call is refused before reaching the token.
+#[test(should_fail_with = "not the bridge")]
+unconstrained fn proxy_direct_split_mint_rejected() {
+    let (mut env, _admin, proxy, _token, _bridge) = utils::setup();
+    let rando = env.create_light_account();
+    env.call_private(rando, TokenMinterProxy::at(proxy).mint_split_to_private(rando, 1, 1, true));
+}
+
+#[test(should_fail_with = "not the bridge")]
+unconstrained fn proxy_direct_reserved_mint_rejected() {
+    let (mut env, _admin, proxy, _token, _bridge) = utils::setup();
+    let rando = env.create_light_account();
+    env.call_private(rando, TokenMinterProxy::at(proxy).mint_reserved_to_private(rando, 1));
+}
+
+#[test(should_fail_with = "not the bridge")]
+unconstrained fn proxy_owner_cannot_release_reserved_supply() {
+    let (env, admin, proxy, _token, _bridge) = utils::setup();
+    env.call_public(admin, TokenMinterProxy::at(proxy).release_reserved(1));
+}

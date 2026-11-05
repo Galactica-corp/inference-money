@@ -60,7 +60,7 @@ SEPOLIA_RPC_URL=… bun run test:evm:fork  # real Permit2, Circle USDC, Aztec re
 bun run test:noir                                     # TXE suites (token, token_bridge, keystone), manifest-gated
 bash contracts/aztec/scripts/noir-deps.sh             # fetch + verify the pinned Noir git deps (--self-test)
 bash contracts/aztec/scripts/compile.sh [--check]     # rebuild artifacts; --check: committed == source (class id + ABI)
-bash contracts/aztec/scripts/check-sole-consumer.sh   # static guard: the four consume sites and the bridge's rules (--self-test)
+bash contracts/aztec/scripts/check-sole-consumer.sh   # static guard: the six consume sites and the bridge's rules (--self-test)
 bash contracts/aztec/scripts/check-stamp-constraint.sh  # static guard: a stamped payment's settled check and deadline cap; the published side proven (--self-test)
 ```
 

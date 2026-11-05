@@ -6,9 +6,9 @@ import { sponsoredFpcArtifact, tokenArtifact, tokenBridgeArtifact, tokenMinterPr
 // The on-chain identities the deploy and every client register: a changed artifact must fail here before it ships.
 describe("L2 artifacts derive their pinned class ids", () => {
 	it.each([
-		["TokenBridge", tokenBridgeArtifact, "0x230bd9e62b0c89b52ea5221c288798d5b7b2bd83c20e5f7c28e8815aee8f8889"],
-		["TokenMinterProxy", tokenMinterProxyArtifact, "0x155a365113346e4c3fee2c7a90b25fd66ebcba0c6a7ad285d8fa77b3fa9902a0"],
-		["Token (merchant fork)", tokenArtifact, "0x0a59228837a019571af63ab2f43200ea1b32948dd0504a71e5b6fec617e2a045"],
+		["TokenBridge", tokenBridgeArtifact, "0x0acad864bf73a8fe1dad449b47d5c17bdf1cdf2e62aeaa05bf32c753e8a2f2d6"],
+		["TokenMinterProxy", tokenMinterProxyArtifact, "0x1d736ba69e4fa12e04e01a65e757103ef3522b23b573a712be0ce16628914961"],
+		["Token (merchant fork)", tokenArtifact, "0x0e9ea7df488bcf4c07b8575448a03622a27cec8f47caec68991ef119149a5ca5"],
 	] as const)("%s", async (_, artifact, classId) => {
 		expect((await getContractClassFromArtifact(artifact)).id.toString()).toBe(classId)
 	})
