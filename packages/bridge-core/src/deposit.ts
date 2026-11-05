@@ -26,6 +26,7 @@ import { assertReaderChain, assertSigningContext, NetworkMismatchError } from ".
 import { assertBridgeLive, type PauseSource } from "./pause"
 import { type DepositTypedData, type DepositWitness, depositPermitTypedData, PERMIT_DEADLINE_SECONDS, randomPermitNonce } from "./permit2"
 import { randomSecret } from "./random"
+import type { SplitPart } from "./split"
 import { type L1Ctx, MAX_L2_AMOUNT, type StageSink, sendChain, signerOf, withGasHeadroom } from "./types"
 
 export type DepositKind = "public" | "private"
@@ -53,6 +54,11 @@ export interface DepositDraft {
 	 */
 	submission?: { account: Address; chainId: number; fromBlock: bigint; fromBlockHash: Hex }
 	l1TxHash?: Hex
+	/**
+	 * A split deposit's terms (`prepareSplitDeposit`): `secretOrSalt` is then the split salt, `intent.recipient` the
+	 * merchant, and only the split calls consume it.
+	 */
+	split?: SplitPart
 }
 
 export interface ClaimTicket {
@@ -128,9 +134,14 @@ export async function assertDepositIntent(i: DepositIntent): Promise<void> {
 
 export async function prepareDeposit(i: DepositIntent, m: BridgeManifest, now: () => bigint): Promise<DepositDraft> {
 	await assertDepositIntent(i)
-	const isPrivate = i.kind === "private"
 	const secretOrSalt = randomSecret()
-	const secretHash = await computeSecretHash(isPrivate ? deriveClaimSecret(secretOrSalt, i.recipient) : secretOrSalt)
+	const secretHash = await computeSecretHash(i.kind === "private" ? deriveClaimSecret(secretOrSalt, i.recipient) : secretOrSalt)
+	return draftWith(i, secretOrSalt, secretHash, m, now)
+}
+
+/** The draft of a deposit whose secret (or salt) and secret hash are already drawn; nothing is signed yet. */
+export function draftWith(i: DepositIntent, secretOrSalt: Fr, secretHash: Fr, m: BridgeManifest, now: () => bigint): DepositDraft {
+	const isPrivate = i.kind === "private"
 	const witness: DepositWitness = {
 		aztecRecipient: isPrivate ? ZERO_WORD : (i.recipient.toString() as Hex),
 		secretHash: secretHash.toString() as Hex,
