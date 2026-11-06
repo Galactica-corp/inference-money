@@ -15,6 +15,7 @@ import { BindConsentRequiredError, claimBinding } from "./binding"
 import { deriveClaimSecret } from "./claim-secret"
 import { type ClaimTicket, reconcileDeposit } from "./deposit"
 import type { BridgeManifest } from "./manifest"
+import { splitClaimOf, splitMessageNullifier } from "./split"
 import type { L1Ctx, StageSink } from "./types"
 
 /**
@@ -67,7 +68,7 @@ export type L2Wait = typeof L2_DONE | typeof L2_PROPOSED
 export const tipOf = (wait: L2Wait): "proposed" | "checkpointed" => (wait.waitForStatus === TxStatus.PROPOSED ? "proposed" : "checkpointed")
 
 // aztec-nr's consume asserts (public, private) and the sequencer's duplicate-nullifier rejection.
-const ALREADY_CONSUMED = /already nullified|No non-nullified L1 to L2 message|existing nullifier|duplicate nullifier/i
+export const ALREADY_CONSUMED = /already nullified|No non-nullified L1 to L2 message|existing nullifier|duplicate nullifier/i
 // The message is not yet in the tree the wallet's PXE anchors to.
 const NOT_YET_CLAIMABLE = /Tried to consume nonexistent L1-to-L2 message|No L1 to L2 message found/i
 const FEE_PAYER_FAILED = /fee payer|insufficient fee|not enough balance for fee/i
@@ -115,7 +116,13 @@ async function consentedBind(t: ClaimTicket, wallet: Wallet, m: BridgeManifest, 
 	return bind
 }
 
+/** A split deposit's secret commits to its terms, so only the split calls consume it; the plain ones would never find it. */
+export function assertPlainDeposit(t: ClaimTicket): void {
+	if (t.draft.split) throw new Error("This is a split deposit: claim it with claimSplit, collect its change with claimChange.")
+}
+
 async function claimCall(t: ClaimTicket, wallet: Wallet, m: BridgeManifest, allowBind: boolean | undefined) {
+	assertPlainDeposit(t)
 	const bridge = Contract.at(AztecAddress.fromStringUnsafe(m.l2.bridge.address), tokenBridgeArtifact, wallet)
 	const { amount, recipient, kind } = t.draft.intent
 	const leaf = new Fr(t.leafIndex)
@@ -141,7 +148,11 @@ export interface WaitClaimableOptions {
 export type ClaimableNode = { getL1ToL2MessageMembershipWitness(block: "latest", message: Fr): Promise<unknown> }
 export type ClaimWait = "waiting-for-inclusion" | "waiting-for-wallet-sync"
 
-async function probeConsumable(t: ClaimTicket, node: ClaimableNode, simulate: () => Promise<unknown>): Promise<"ready" | ClaimWait> {
+async function probeConsumable(
+	t: Pick<ClaimTicket, "messageHash">,
+	node: ClaimableNode,
+	simulate: () => Promise<unknown>,
+): Promise<"ready" | ClaimWait> {
 	if ((await node.getL1ToL2MessageMembershipWitness("latest", Fr.fromHexString(t.messageHash))) === undefined)
 		return "waiting-for-inclusion"
 	try {
@@ -168,7 +179,7 @@ export class MessageNotConsumableError extends Error {
  * resolves too, so the claim or return that follows reports it. Any other simulation failure is thrown.
  */
 export async function waitConsumable(
-	t: ClaimTicket,
+	t: Pick<ClaimTicket, "messageHash">,
 	node: ClaimableNode,
 	simulate: () => Promise<unknown>,
 	on?: StageSink<ClaimWait>,
@@ -236,6 +247,7 @@ export type ClaimNode = NullifierNode & Pick<AztecNode, "getTxReceipt">
  * `compute_l1_to_l2_message_nullifier` (stdlib names it after the fee-juice contract), siloed by the bridge.
  */
 export async function messageNullifier(t: ClaimTicket, m: BridgeManifest): Promise<Fr> {
+	if (t.draft.split) return splitMessageNullifier(splitClaimOf(t), m)
 	const { kind, recipient } = t.draft.intent
 	const secret = kind === "private" ? deriveClaimSecret(t.draft.secretOrSalt, recipient) : t.draft.secretOrSalt
 	const inner = await computeFeeJuiceMessageNullifier(Fr.fromHexString(t.messageHash), secret)

@@ -8,6 +8,7 @@ import { MerkleTreeId } from "@aztec-labs/stdlib/trees"
 import type { Address } from "viem"
 import { tokenBridgeArtifact } from "./artifacts"
 import {
+	assertPlainDeposit,
 	type ClaimableNode,
 	type ClaimWait,
 	type FeeChoice,
@@ -57,6 +58,7 @@ export class ReturnRevertedError extends Error {
 }
 
 function returnCall(t: ClaimTicket, wallet: Wallet, m: BridgeManifest) {
+	assertPlainDeposit(t)
 	const bridge = Contract.at(AztecAddress.fromStringUnsafe(m.l2.bridge.address), tokenBridgeArtifact, wallet)
 	const { amount, recipient, kind } = t.draft.intent
 	const ret = kind === "private" ? bridge.methods.return_deposit_private! : bridge.methods.return_deposit_public!
