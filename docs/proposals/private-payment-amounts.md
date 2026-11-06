@@ -59,11 +59,6 @@ merchant no longer sends a transaction for every request.
   commitment flow can stay alongside during migration.
 - Needs a security review like any token change.
 
-**Found during implementation**
-- aztec.js returns a payment's offchain messages only after the node has accepted the transaction, so they cannot be
-  stored before the send. If the payer's process dies in that short window, the payment is spent and the merchant's
-  note cannot be delivered. The SDK hands the proof back at the earliest moment; the payer must persist it at once.
-
 ## Alternatives considered
 
 | Option | Why not |
@@ -82,6 +77,33 @@ merchant no longer sends a transaction for every request.
    raw message can only be fed in again within that window. Consolidating at least every 12 hours keeps every payment
    either still re-ingestible or already in an onchain note the merchant's keys recover; the wallet store backup covers
    the rest.
+
+## Concerns
+
+Found while implementing; none blocks the testnet deploy, each needs an answer before mainnet.
+
+1. **A payer can lose a payment in a short window.** aztec.js hands the payer a transaction's offchain messages only
+   after the node has accepted the transaction, so they cannot be stored before the send. If the payer's process dies
+   between the node accepting the payment and the SDK returning, the funds are spent and the merchant's note can never be
+   delivered: the merchant cannot serve, and the payer cannot recover it. The SDK returns the messages at the earliest
+   moment; the x402 client must persist them at once. A durable fix needs Aztec: a prove-then-send API that returns the
+   messages before sending, or a wallet that keeps the offchain messages it sent.
+2. **Messages expire after 26 hours.** A merchant's wallet drops an offchain message not processed within 26 hours of
+   the payer's transaction. An x402 merchant takes a payment in while serving the request, so this only bites after a
+   crash between storing a proof and taking it in, or when restoring a lost wallet store: a stored proof can be fed in
+   again only within 26 hours.
+3. **Merchants must consolidate and back up.** Until a merchant merges its notes (`consolidate`), the funds depend on
+   the stored messages and the wallet store; afterwards on its keys alone. Consolidating at least every 12 hours and
+   backing up the wallet store keeps every payment recoverable. An operator that skips both can lose received payments
+   with its database.
+4. **External Aztec wallets are untested.** A buyer paying from a wallet that is not embedded in the site needs that
+   wallet to hand the transaction's offchain messages back to the site. No external wallet has been checked yet; if one
+   does not, its users cannot use this payment method.
+5. **Proving time is not measured yet.** `pay_private` adds an event and a nullifier to a private transfer. Its proving
+   time in the browser, against today's `transfer_private_to_commitment`, still has to be measured with the showcase's
+   proving harness.
+6. **Unchanged leaks.** The merchant-list read caps the transaction's expiry like every merchant transfer (only a
+   shortened merchant delay makes it recognisable), and the fee payer is public (the sponsor keeps the payer out of it).
 
 ---
 
