@@ -8,7 +8,9 @@
 // - a note its owner's own call or nullifier key proves (change, a send or shield to oneself, a bridge mint) is
 //   delivered unconstrained under an address-derived tag, so it announces no handshake;
 // - `pay_private` pays a merchant privately under a payment reference, the recipient's note and event delivered
-//   offchain, so nothing published carries the amount or names the recipient.
+//   offchain, so nothing published carries the amount or names the recipient;
+// - split deposits: minter-only `mint_split_to_private` (mints part, counts the whole deposit in one supply write),
+//   `mint_reserved_to_private` and `release_reserved` (hand out or return what it reserved), and `prove_not_merchant`.
 pub mod hints;
 pub mod test;
 
@@ -38,11 +40,12 @@ pub contract Token {
     use arc403_interface::Arc403Authorizer;
     // merchant list
     use crate::hints::{
-        FIRST, is_merchant_at_anchor, MERCHANT_MAX_DELAY, MERCHANT_MIN_DELAY, merchant_side_hint,
+        FIRST, is_merchant_at_anchor, is_registered_at_anchor, MERCHANT_MAX_DELAY, MERCHANT_MIN_DELAY, merchant_side_hint,
         MerchantList, NEITHER, payment_side_hint, SECOND,
     };
     use aztec::{
         context::{NullifierExistenceRequest, PrivateContext},
+        history::nullifier::assert_nullifier_did_not_exist_by,
         oracle::{nullifiers::check_nullifier_exists, offchain_effect::emit_offchain_effect},
         protocol::{hash::compute_siloed_nullifier, traits::{Deserialize, Serialize}},
         state_vars::DelayedPublicMutable,
@@ -661,6 +664,46 @@ pub contract Token {
         self.emit(Transfer { from: AztecAddress::zero(), to: PRIVATE_ADDRESS_MAGIC_VALUE, amount });
     }
 
+    /// @notice Mints `amount` privately to `to` and raises the total supply by `supply_increase` in one write
+    /// @dev For a split deposit: the merchant's price is minted now, and the buyer's change (`supply_increase - amount`)
+    ///      is counted in the supply until `mint_reserved_to_private` hands it out or `release_reserved` returns it, so
+    ///      the one public write shows the deposit, never the price. Minter-only: the bridge keeps the books of what is
+    ///      reserved.
+    /// @param to The recipient of the minted amount
+    /// @param amount The amount minted now
+    /// @param supply_increase The total supply's increase, at least `amount`
+    /// @param self_send Whether `to`'s own call proves this tx; otherwise delivery is constrained
+    #[external("private")]
+    fn mint_split_to_private(to: AztecAddress, amount: u128, supply_increase: u128, self_send: bool) {
+        _validate_minter(self.msg_sender(), self.storage.minter.read());
+        assert(amount <= supply_increase, "Mint refused: the amount exceeds the supply increase");
+
+        self.internal._increase_private_balance(to, amount, self_send);
+        self.enqueue_self.increase_total_supply_internal(supply_increase);
+    }
+
+    /// @notice Mints `amount` privately to `to`, already counted in the total supply by `mint_split_to_private`
+    /// @dev Minter-only. The bridge calls it only for its caller collecting its own change, so `to`'s own call proves
+    ///      the tx and the note is self-delivered.
+    /// @param to The recipient, the caller of the bridge
+    /// @param amount The amount minted
+    #[external("private")]
+    fn mint_reserved_to_private(to: AztecAddress, amount: u128) {
+        _validate_minter(self.msg_sender(), self.storage.minter.read());
+
+        self.storage.private_balances.at(to).add(amount).deliver(self_delivery());
+    }
+
+    /// @notice Lowers the total supply by reserved change that leaves for L1 instead of being minted
+    /// @dev Minter-only: the bridge's `return_change` pays it out on L1.
+    /// @param amount The amount released
+    #[external("public")]
+    fn release_reserved(amount: u128) {
+        _validate_minter(self.msg_sender(), self.storage.minter.read());
+
+        self.internal._decrease_total_supply(amount);
+    }
+
     /** ==========================================================
      * ======================= BURNABLE ==========================
      * ======================================================== */
@@ -914,6 +957,35 @@ pub contract Token {
             self.internal._assert_merchant(account);
         }
         merchant
+    }
+
+    /// @notice Proves `account` is not a merchant at the anchor block: it has no merchant entry, or its entry is switched
+    ///         off
+    /// @dev Fails when that is not provable. The anchor is the prover's choice, so a caller must bound it from below
+    ///      (the bridge consumes an L1-to-L2 message in the same tx, whose inclusion the anchor must follow); entries are
+    ///      never removed, so a later anchor cannot prove an earlier merchant unlisted.
+    /// @param account The account to prove not a merchant
+    #[external("private")]
+    #[view]
+    fn prove_not_merchant(account: AztecAddress) {
+        // Safety: the hint only picks which proof is made below; a wrong pick is unprovable, never a pass.
+        let registered =
+            unsafe { is_registered_at_anchor(merchant_list(self.context, self.storage), account) };
+        if registered {
+            assert(
+                self.storage.merchant_off.at(account).get_current_value(),
+                "Not provable: the account is a merchant",
+            );
+        } else {
+            let entry = self.storage.merchants.at(account);
+            assert_nullifier_did_not_exist_by(
+                self.context.get_anchor_block_header(),
+                compute_siloed_nullifier(
+                    self.context.this_address(),
+                    entry.compute_initialization_inner_nullifier(),
+                ),
+            );
+        }
     }
 
     /** ==========================================================

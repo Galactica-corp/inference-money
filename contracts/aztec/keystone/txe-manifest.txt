@@ -19,3 +19,6 @@ merchant_request_effect_tag_is_derived_and_pinned
 merchant_stamp_separators_are_derived_and_pinned
 merchant_stamp_separators_are_distinct_from_every_known_one
 merchant_stamp_vectors_match_ts
+# Split deposits (keystone: separators and vectors).
+split_separators_are_derived_pinned_and_distinct
+split_vectors_match_ts

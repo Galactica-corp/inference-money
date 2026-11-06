@@ -6,7 +6,8 @@ mod test;
 // TokenMinterProxy, whose sole minter is this bridge. A user account is bound to the Ethereum address its first private
 // claim came from and withdraws only there; merchants (the token's list) claim publicly and exit anywhere but the portal,
 // whose payout must lower its own balance, which a transfer to itself never does. A deposit nobody may claim goes back
-// to its depositor. The owner can only pause claims, returns and exits.
+// to its depositor. A split deposit pays a merchant a price and leaves the rest as change its buyer collects, so a buyer
+// pays from L1 in one deposit. The owner can only pause claims, returns and exits.
 
 use aztec::macros::aztec;
 
@@ -15,15 +16,17 @@ pub contract TokenBridge {
 use crate::{config::Config, funding_address_note::{funding_note, FundingAddressNote}};
 
 use aztec::{
-macros::{events::event, functions::{external, initializer, only_self, view}, storage::storage},
+context::NullifierExistenceRequest,
+macros::{events::event, functions::{external, initializer, internal, only_self, view}, storage::storage},
 messages::delivery::MessageDelivery,
-protocol::address::{AztecAddress, EthAddress},
+oracle::nullifiers::check_nullifier_exists,
+protocol::{address::{AztecAddress, EthAddress}, hash::compute_siloed_nullifier},
 state_vars::{Owned, PrivateImmutable, PublicImmutable, PublicMutable, StateVariable},
 };
 
 use portal_messages::{mint_to_private_content_hash, mint_to_public_content_hash, withdraw_content_hash};
 
-use claim_secret_lib::derive_claim_secret;
+use claim_secret_lib::{derive_claim_secret, split_change_commitment, split_iou, split_iou_spent, split_secret};
 
 use token::Token;
 use token_minter_proxy::TokenMinterProxy;
@@ -267,5 +270,147 @@ self.storage.funding_address.at(sender).get_note().address == recipient,
 let content = withdraw_content_hash(recipient, amount, caller_on_l1);
 self.context.message_portal(config.portal, content);
 self.call(TokenMinterProxy::at(config.token_minter_proxy).burn_private(sender, amount, authwit_nonce));
+}
+
+// A split deposit's secret commits to the merchant, the price, the merchant's payment reference and the buyer's change
+// commitment, so its claim can only pay the price to that merchant and leave the rest as change for the account behind
+// the commitment. Relayable: the merchant claims it, and the buyer can if the merchant never does. INVARIANT: claim_split
+// and return_split are the only consumers of a split message, and both re-derive its secret from the terms
+// (scripts/check-sole-consumer.sh).
+#[external("private")]
+fn claim_split(
+amount: u128,
+depositor: EthAddress,
+message_leaf_index: Field,
+merchant: AztecAddress,
+price: u128,
+payment_ref: Field,
+change_commitment: Field,
+salt: Field,
+) {
+self.enqueue_self._assert_not_paused();
+assert(price > 0, "Price must be greater than zero");
+assert(price <= amount, "The price exceeds the deposit");
+let config = self.storage.config.read();
+assert(
+self.view(Token::at(config.token).try_prove_merchant(merchant)),
+"Split deposits pay listed merchants only",
+);
+let content_hash = mint_to_private_content_hash(amount, depositor);
+let secret = split_secret(merchant, price, payment_ref, change_commitment, salt);
+self.context.consume_l1_to_l2_message(
+content_hash,
+[secret],
+config.portal,
+message_leaf_index,
+);
+let change = amount - price;
+if change > 0 {
+self.context.push_nullifier_unsafe(split_iou(change_commitment, change, depositor, secret, message_leaf_index));
+}
+// The merchant's own claim proves the tx, so its note needs no constrained delivery, which would announce it.
+let self_send = self.msg_sender() == merchant;
+self.call(TokenMinterProxy::at(config.token_minter_proxy).mint_split_to_private(merchant, price, amount, self_send));
+}
+
+// Sends a split deposit back to its depositor when it cannot pay its merchant: the price exceeds the deposit, or the
+// merchant is proven not one at the anchor. Consuming the message proves its inclusion at the anchor, so the anchor
+// follows the deposit and a merchant listed before it cannot be proven unlisted. Mints nothing.
+#[external("private")]
+fn return_split(
+amount: u128,
+depositor: EthAddress,
+message_leaf_index: Field,
+merchant: AztecAddress,
+price: u128,
+payment_ref: Field,
+change_commitment: Field,
+salt: Field,
+) {
+self.enqueue_self._assert_not_paused();
+let config = self.storage.config.read();
+if price <= amount {
+self.view(Token::at(config.token).prove_not_merchant(merchant));
+}
+let content_hash = mint_to_private_content_hash(amount, depositor);
+let secret = split_secret(merchant, price, payment_ref, change_commitment, salt);
+self.context.consume_l1_to_l2_message(
+content_hash,
+[secret],
+config.portal,
+message_leaf_index,
+);
+self.context.message_portal(config.portal, withdraw_content_hash(depositor, amount, EthAddress::zero()));
+}
+
+// Collects a split deposit's change into the caller's private balance. Only the account behind the change commitment
+// can, and its funding address rules apply as for claim_private: the first collection binds it to the depositor, a
+// later one must match it.
+#[external("private")]
+fn claim_change(
+amount_change: u128,
+depositor: EthAddress,
+message_leaf_index: Field,
+secret: Field,
+change_salt: Field,
+bind: bool,
+) {
+self.enqueue_self._assert_not_paused();
+assert(amount_change > 0, "Amount must be greater than zero");
+let recipient = self.msg_sender();
+self.internal._spend_iou(recipient, amount_change, depositor, message_leaf_index, secret, change_salt);
+let funding = self.storage.funding_address.at(recipient);
+if bind {
+// Delivered on chain so a restored wallet rediscovers its binding.
+funding.initialize(FundingAddressNote { address: depositor }).deliver(MessageDelivery::onchain_unconstrained());
+} else {
+assert(funding.get_note().address == depositor, "Deposit is not from this account's funding address");
+}
+let config = self.storage.config.read();
+self.call(TokenMinterProxy::at(config.token_minter_proxy).mint_reserved_to_private(recipient, amount_change));
+}
+
+// Sends a split deposit's change back to its depositor on L1, for a buyer whose account is bound elsewhere. Whoever
+// holds the change's data may call it; the payout only ever goes to the depositor. Publishes the change amount.
+#[external("private")]
+fn return_change(
+buyer: AztecAddress,
+amount_change: u128,
+depositor: EthAddress,
+message_leaf_index: Field,
+secret: Field,
+change_salt: Field,
+) {
+self.enqueue_self._assert_not_paused();
+assert(amount_change > 0, "Amount must be greater than zero");
+self.internal._spend_iou(buyer, amount_change, depositor, message_leaf_index, secret, change_salt);
+let config = self.storage.config.read();
+self.context.message_portal(config.portal, withdraw_content_hash(depositor, amount_change, EthAddress::zero()));
+self.enqueue(TokenMinterProxy::at(config.token_minter_proxy).release_reserved(amount_change));
+}
+
+// Proves `owner`'s IOU for this change exists (a settled claim_split left it) and marks it collected, once.
+#[internal("private")]
+fn _spend_iou(
+owner: AztecAddress,
+amount_change: u128,
+depositor: EthAddress,
+message_leaf_index: Field,
+secret: Field,
+change_salt: Field,
+) {
+let change_commitment = split_change_commitment(owner, change_salt);
+let iou = split_iou(change_commitment, amount_change, depositor, secret, message_leaf_index);
+// Safety: advice for a readable refusal only; the existence request below is what the kernel checks.
+let owed = unsafe { check_nullifier_exists(iou) };
+assert(owed, "No such change to collect");
+self.context.assert_nullifier_exists(NullifierExistenceRequest::for_settled(
+compute_siloed_nullifier(self.context.this_address(), iou),
+));
+let spent = split_iou_spent(iou, change_salt);
+// Safety: advice for a readable refusal only; uniqueness is the kernel's to enforce.
+let collected = unsafe { check_nullifier_exists(spent) };
+assert(!collected, "The change is already collected");
+self.context.push_nullifier_unsafe(spent);
 }
 }
