@@ -7,10 +7,10 @@ contract change.
 
 ## Before you start
 
-- **SDK version.** The functions below are in `@galactica-net/inference-money-core` from the release after 0.3.0
-  (expected 0.4.0, built for Aztec 6.0.0). It ships only once the bridge is redeployed on testnet: every class id moved,
-  so the new token has a new address and the shipped testnet manifest changes with it. Until then, develop against
-  a local network and a workspace link to `packages/bridge-core`, never against the testnet manifest of 0.3.0.
+- **SDK version.** The functions below ship in `@galactica-net/inference-money-core` 0.4.0, built for Aztec 6.0.0, with
+  the testnet deployment that runs these contracts (`TESTNET_MANIFEST` from `…/deployments`). Every class id moved, so
+  the token has a new address: take it from the SDK, never from 0.3.0's manifest. Before 0.4.0 is on npm, use a
+  workspace link to `packages/bridge-core`.
 - **Pins.** aztec-x402 pins the SDK exactly, and every `@aztec-labs/*` package at the SDK's Aztec version (6.0.0 now,
   rc.3 in aztec-x402 today). Bump them together; mixed versions disagree about artifacts and addresses.
 - **Reference usage.** `packages/integration/test/payments-private.test.ts` and `split.test.ts` in inference-money run
