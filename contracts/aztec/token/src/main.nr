@@ -6,7 +6,9 @@
 // - the private transfers, request openings and payments refuse unless one side is a listed merchant or the request was
 //   opened for one, except a transfer into the sender's own private balance; each check runs before any balance moves;
 // - a note its owner's own call or nullifier key proves (change, a send or shield to oneself, a bridge mint) is
-//   delivered unconstrained under an address-derived tag, so it announces no handshake.
+//   delivered unconstrained under an address-derived tag, so it announces no handshake;
+// - `pay_private` pays a merchant privately under a payment reference, the recipient's note and event delivered
+//   offchain, so nothing published carries the amount or names the recipient.
 pub mod hints;
 pub mod test;
 
@@ -46,7 +48,7 @@ pub contract Token {
         state_vars::DelayedPublicMutable,
     };
     use merchant_stamp::{
-        pad, paid, REQUEST_OPENED_EFFECT, stamp, stamp_bucket, stamp_deadline, STAMP_LIVE_BUCKETS,
+        pad, paid, paid_ref, REQUEST_OPENED_EFFECT, stamp, stamp_bucket, stamp_deadline, STAMP_LIVE_BUCKETS,
     };
 
     // gas-optimized max notes for initial transfer call
@@ -64,6 +66,14 @@ pub contract Token {
         from: AztecAddress,
         to: AztecAddress,
         amount: u128,
+    }
+
+    // What a `pay_private` tells its recipient: the reference it paid and how much. Delivered offchain; the PXE
+    // accepts it only against the event commitment the payment's tx published, so neither field can be forged.
+    #[event]
+    pub struct PaymentReceived {
+        pub payment_ref: Field,
+        pub amount: u128,
     }
 
     // Every change to a merchant entry emits one of these three, so they are a complete feed of the list.
@@ -306,6 +316,35 @@ pub contract Token {
 
         // A send to oneself: this call just nullified the recipient's notes.
         self.internal._increase_private_balance(to, amount, from == to);
+    }
+
+    /// @notice Pays `to` privately under `payment_ref`: a private transfer whose recipient note and `PaymentReceived`
+    ///         event are delivered offchain, so the recipient learns which reference was paid and how much, and nothing
+    ///         published carries either
+    /// @dev One side must be a merchant, as for `transfer_private_to_private`. A reference takes one payment per
+    ///      recipient (`paid_ref`). The caller hands the tx's offchain messages to `to`, which feeds them to
+    ///      `offchain_receive`; undelivered, the note is lost to everyone.
+    /// @param from The address of the sender
+    /// @param to The address of the recipient
+    /// @param amount The amount of tokens to pay, never zero
+    /// @param payment_ref The reference `to` handed out for this payment
+    /// @param _nonce The nonce used for authwitness
+    #[authorize_once("from", "_nonce")]
+    #[external("private")]
+    fn pay_private(from: AztecAddress, to: AztecAddress, amount: u128, payment_ref: Field, _nonce: Field) {
+        assert(amount != 0, "Payment refused: the amount is zero");
+        // A payment to oneself would spend a reference the recipient can never tell from a merge.
+        assert(from != to, "Payment refused: the payer is the recipient");
+        let side = self.internal._prove_merchant_side(to, from, false);
+        assert(side != NEITHER, "Transfer refused: neither sender nor recipient is a merchant");
+        self.internal._push_paid_ref(to, payment_ref);
+
+        self.internal._call_auth_private(from, amount);
+
+        self.internal._decrease_private_balance(from, amount, INITIAL_TRANSFER_CALL_MAX_NOTES);
+
+        self.storage.private_balances.at(to).add(amount).deliver(MessageDelivery::offchain());
+        self.emit(PaymentReceived { payment_ref, amount }).deliver_to(to, MessageDelivery::offchain());
     }
 
     /// @notice Transfer tokens from a private balance to the recipient commitment, which must be already initialized.
@@ -1220,6 +1259,16 @@ pub contract Token {
         let already = unsafe { check_nullifier_exists(paid_nullifier) };
         assert(!already, "Payment refused: the request is already paid");
         self.context.push_nullifier_unsafe(paid_nullifier);
+    }
+
+    /// @notice Marks `payment_ref` paid to `to`: a reference takes one `pay_private` per recipient
+    #[internal("private")]
+    fn _push_paid_ref(to: AztecAddress, payment_ref: Field) {
+        let nullifier = paid_ref(to, payment_ref);
+        // Safety: advice for a readable refusal only; uniqueness is the kernel's to enforce.
+        let already = unsafe { check_nullifier_exists(nullifier) };
+        assert(!already, "Payment refused: the reference is already paid");
+        self.context.push_nullifier_unsafe(nullifier);
     }
 
     /// @notice Whether `commitment` holds a stamp still payable at this block's timestamp

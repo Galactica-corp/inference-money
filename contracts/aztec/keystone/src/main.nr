@@ -13,8 +13,8 @@ use aztec::protocol::hash::poseidon2_hash_bytes;
 use aztec::protocol::traits::{Deserialize, FromField};
 use claim_secret_lib::{derive_claim_secret, DOM_SEP__TOKEN_BRIDGE_PRIVATE_CLAIM_SECRET};
 use merchant_stamp::{
-    DOM_SEP__MERCHANT_REQUEST_PAID, DOM_SEP__MERCHANT_STAMP, DOM_SEP__MERCHANT_STAMP_PAD,
-    MERCHANT_SIDE_SLOT, pad, paid, REQUEST_OPENED_EFFECT, stamp, stamp_bucket, STAMP_BUCKET_SLOT,
+    DOM_SEP__MERCHANT_REF_PAID, DOM_SEP__MERCHANT_REQUEST_PAID, DOM_SEP__MERCHANT_STAMP, DOM_SEP__MERCHANT_STAMP_PAD,
+    MERCHANT_SIDE_SLOT, pad, paid, paid_ref, REQUEST_OPENED_EFFECT, stamp, stamp_bucket, STAMP_BUCKET_SLOT,
     stamp_deadline, stamp_unmarked_until,
 };
 use portal_messages::{mint_to_private_content_hash, mint_to_public_content_hash, withdraw_content_hash};
@@ -181,6 +181,9 @@ fn merchant_stamp_separators_are_derived_and_pinned() {
     let derived_paid =
         poseidon2_hash_bytes("dom_sep__merchant_token_request_paid".as_bytes()) as u32;
     assert(DOM_SEP__MERCHANT_REQUEST_PAID == derived_paid);
+    let derived_ref_paid = poseidon2_hash_bytes("dom_sep__merchant_token_ref_paid".as_bytes()) as u32;
+    assert(DOM_SEP__MERCHANT_REF_PAID == derived_ref_paid);
+    assert(DOM_SEP__MERCHANT_REF_PAID == 4001138992);
     assert(DOM_SEP__MERCHANT_STAMP == 1404036670);
     assert(DOM_SEP__MERCHANT_STAMP_PAD == 3491815610);
     assert(DOM_SEP__MERCHANT_REQUEST_PAID == 3533394975);
@@ -191,6 +194,9 @@ fn merchant_stamp_separators_are_distinct_from_every_known_one() {
     assert(DOM_SEP__MERCHANT_STAMP != DOM_SEP__MERCHANT_STAMP_PAD);
     assert(DOM_SEP__MERCHANT_STAMP != DOM_SEP__MERCHANT_REQUEST_PAID);
     assert(DOM_SEP__MERCHANT_STAMP_PAD != DOM_SEP__MERCHANT_REQUEST_PAID);
+    assert(DOM_SEP__MERCHANT_REF_PAID != DOM_SEP__MERCHANT_STAMP);
+    assert(DOM_SEP__MERCHANT_REF_PAID != DOM_SEP__MERCHANT_STAMP_PAD);
+    assert(DOM_SEP__MERCHANT_REF_PAID != DOM_SEP__MERCHANT_REQUEST_PAID);
     // After the protocol's: aztec-nr's crate-private ones (authwit and tx nullifiers, initialization nullifier,
     // single-use claim, partial-note commitment and completion tag, constrained-message nullifier, ECDH subkey and
     // mask, note randomness), then the claim secret's and the FPC fuel's.
@@ -276,6 +282,7 @@ fn merchant_stamp_separators_are_distinct_from_every_known_one() {
         assert(DOM_SEP__MERCHANT_STAMP != other);
         assert(DOM_SEP__MERCHANT_STAMP_PAD != other);
         assert(DOM_SEP__MERCHANT_REQUEST_PAID != other);
+        assert(DOM_SEP__MERCHANT_REF_PAID != other);
     }
 }
 
@@ -289,6 +296,14 @@ fn merchant_stamp_vectors_match_ts() {
     );
     assert(pad(0x1234) == 0x23662d79d573c0597e92623a6bfc4d11dcb41fd3c0d34b54bff4eadaafdc3c9b);
     assert(paid(0x1234) == 0x10eaeca867df48fca9c59f06812fe5a5dcd008d5ef5dedb4ee3c4955c086b1af);
+    assert(
+        paid_ref(AztecAddress::from_field(0), 0)
+            == 0x137ffc4aa5d99bec8def2f15df0916cf4008642a87a04cfe93c5115c097e42e3,
+    );
+    assert(
+        paid_ref(AztecAddress::from_field(0x1234), 0x5eed)
+            == 0x0502a4dd9739d00939202ac3d254c480d9d73ebe93707d82b0a6f0f1628267a3,
+    );
     // The last second of bucket 494000, and what the clients compute from it.
     assert(stamp_bucket(1778403599) == 494000);
     assert(stamp_bucket(1778403600) == 494001);
