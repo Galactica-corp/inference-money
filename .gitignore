@@ -40,3 +40,6 @@ test-results/
 
 # The publishable build of packages/bridge-core (docs/publishing.md).
 packages/bridge-core/publish/
+
+# Claude Code's per-user settings; the shared .claude/settings.json, if any, stays tracked.
+.claude/settings.local.json
