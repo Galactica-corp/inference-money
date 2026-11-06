@@ -20,6 +20,8 @@ import { Capsule } from "@aztec-labs/stdlib/tx"
 export const DOM_SEP__MERCHANT_STAMP = 1404036670
 export const DOM_SEP__MERCHANT_STAMP_PAD = 3491815610
 export const DOM_SEP__MERCHANT_REQUEST_PAID = 3533394975
+/** `poseidon2_hash_bytes("dom_sep__merchant_token_ref_paid")` as u32: the separator of `paidRef`. */
+export const DOM_SEP__MERCHANT_REF_PAID = 4001138992
 
 /** `poseidon2_hash_bytes("merchant_token_side_hint_capsule_slot")`: where a tx tells the token which side to prove. */
 export const MERCHANT_SIDE_SLOT = new Fr(0x0bfc6bf5b3874bc783b148cc9a19595a0ec8267dbf92d1ecd82ca70f441668efn)
@@ -56,6 +58,9 @@ export const stamp = (commitment: Fr, bucket: bigint): Fr =>
 	poseidon2HashWithSeparator([commitment, new Fr(bucket)], DOM_SEP__MERCHANT_STAMP)
 export const pad = (commitment: Fr): Fr => poseidon2HashWithSeparator([commitment], DOM_SEP__MERCHANT_STAMP_PAD)
 export const paid = (commitment: Fr): Fr => poseidon2HashWithSeparator([commitment], DOM_SEP__MERCHANT_REQUEST_PAID)
+/** The marker a `pay_private` into `merchant` under `paymentRef` pushes, unsiloed: a reference takes one payment there. */
+export const paidRef = (merchant: AztecAddress, paymentRef: Fr): Fr =>
+	poseidon2HashWithSeparator([merchant.toField(), paymentRef], DOM_SEP__MERCHANT_REF_PAID)
 
 /** A request's stamp as a payer finds it at some block: its bucket, and the times that bound paying through it. */
 export interface RequestStamp {

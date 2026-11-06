@@ -11,10 +11,14 @@ use aztec::protocol::address::{AztecAddress, EthAddress};
 use aztec::protocol::constants as protocol;
 use aztec::protocol::hash::poseidon2_hash_bytes;
 use aztec::protocol::traits::{Deserialize, FromField};
-use claim_secret_lib::{derive_claim_secret, DOM_SEP__TOKEN_BRIDGE_PRIVATE_CLAIM_SECRET};
+use claim_secret_lib::{
+    derive_claim_secret, DOM_SEP__TOKEN_BRIDGE_PRIVATE_CLAIM_SECRET, DOM_SEP__TOKEN_BRIDGE_SPLIT_CHANGE,
+    DOM_SEP__TOKEN_BRIDGE_SPLIT_CLAIM, DOM_SEP__TOKEN_BRIDGE_SPLIT_IOU, DOM_SEP__TOKEN_BRIDGE_SPLIT_IOU_SPENT,
+    split_change_commitment, split_iou, split_iou_spent, split_secret,
+};
 use merchant_stamp::{
-    DOM_SEP__MERCHANT_REQUEST_PAID, DOM_SEP__MERCHANT_STAMP, DOM_SEP__MERCHANT_STAMP_PAD,
-    MERCHANT_SIDE_SLOT, pad, paid, REQUEST_OPENED_EFFECT, stamp, stamp_bucket, STAMP_BUCKET_SLOT,
+    DOM_SEP__MERCHANT_REF_PAID, DOM_SEP__MERCHANT_REQUEST_PAID, DOM_SEP__MERCHANT_STAMP, DOM_SEP__MERCHANT_STAMP_PAD,
+    MERCHANT_SIDE_SLOT, pad, paid, paid_ref, REQUEST_OPENED_EFFECT, stamp, stamp_bucket, STAMP_BUCKET_SLOT,
     stamp_deadline, stamp_unmarked_until,
 };
 use portal_messages::{mint_to_private_content_hash, mint_to_public_content_hash, withdraw_content_hash};
@@ -181,6 +185,9 @@ fn merchant_stamp_separators_are_derived_and_pinned() {
     let derived_paid =
         poseidon2_hash_bytes("dom_sep__merchant_token_request_paid".as_bytes()) as u32;
     assert(DOM_SEP__MERCHANT_REQUEST_PAID == derived_paid);
+    let derived_ref_paid = poseidon2_hash_bytes("dom_sep__merchant_token_ref_paid".as_bytes()) as u32;
+    assert(DOM_SEP__MERCHANT_REF_PAID == derived_ref_paid);
+    assert(DOM_SEP__MERCHANT_REF_PAID == 4001138992);
     assert(DOM_SEP__MERCHANT_STAMP == 1404036670);
     assert(DOM_SEP__MERCHANT_STAMP_PAD == 3491815610);
     assert(DOM_SEP__MERCHANT_REQUEST_PAID == 3533394975);
@@ -191,6 +198,9 @@ fn merchant_stamp_separators_are_distinct_from_every_known_one() {
     assert(DOM_SEP__MERCHANT_STAMP != DOM_SEP__MERCHANT_STAMP_PAD);
     assert(DOM_SEP__MERCHANT_STAMP != DOM_SEP__MERCHANT_REQUEST_PAID);
     assert(DOM_SEP__MERCHANT_STAMP_PAD != DOM_SEP__MERCHANT_REQUEST_PAID);
+    assert(DOM_SEP__MERCHANT_REF_PAID != DOM_SEP__MERCHANT_STAMP);
+    assert(DOM_SEP__MERCHANT_REF_PAID != DOM_SEP__MERCHANT_STAMP_PAD);
+    assert(DOM_SEP__MERCHANT_REF_PAID != DOM_SEP__MERCHANT_REQUEST_PAID);
     // After the protocol's: aztec-nr's crate-private ones (authwit and tx nullifiers, initialization nullifier,
     // single-use claim, partial-note commitment and completion tag, constrained-message nullifier, ECDH subkey and
     // mask, note randomness), then the claim secret's and the FPC fuel's.
@@ -276,6 +286,16 @@ fn merchant_stamp_separators_are_distinct_from_every_known_one() {
         assert(DOM_SEP__MERCHANT_STAMP != other);
         assert(DOM_SEP__MERCHANT_STAMP_PAD != other);
         assert(DOM_SEP__MERCHANT_REQUEST_PAID != other);
+        assert(DOM_SEP__MERCHANT_REF_PAID != other);
+        for split in SPLIT_SEPARATORS {
+            assert(split != other);
+        }
+    }
+    for split in SPLIT_SEPARATORS {
+        assert(split != DOM_SEP__MERCHANT_STAMP);
+        assert(split != DOM_SEP__MERCHANT_STAMP_PAD);
+        assert(split != DOM_SEP__MERCHANT_REQUEST_PAID);
+        assert(split != DOM_SEP__MERCHANT_REF_PAID);
     }
 }
 
@@ -289,6 +309,14 @@ fn merchant_stamp_vectors_match_ts() {
     );
     assert(pad(0x1234) == 0x23662d79d573c0597e92623a6bfc4d11dcb41fd3c0d34b54bff4eadaafdc3c9b);
     assert(paid(0x1234) == 0x10eaeca867df48fca9c59f06812fe5a5dcd008d5ef5dedb4ee3c4955c086b1af);
+    assert(
+        paid_ref(AztecAddress::from_field(0), 0)
+            == 0x137ffc4aa5d99bec8def2f15df0916cf4008642a87a04cfe93c5115c097e42e3,
+    );
+    assert(
+        paid_ref(AztecAddress::from_field(0x1234), 0x5eed)
+            == 0x0502a4dd9739d00939202ac3d254c480d9d73ebe93707d82b0a6f0f1628267a3,
+    );
     // The last second of bucket 494000, and what the clients compute from it.
     assert(stamp_bucket(1778403599) == 494000);
     assert(stamp_bucket(1778403600) == 494001);
@@ -325,3 +353,62 @@ fn merchant_request_effect_tag_is_derived_and_pinned() {
     );
     assert(REQUEST_OPENED_EFFECT != OFFCHAIN_MESSAGE_IDENTIFIER);
 }
+
+// Split deposits: a split secret must never be a plain claim secret (the claim secret's separator is in the list
+// above), and no IOU or spent marker may be any other nullifier the bridge or the token pushes.
+global SPLIT_SEPARATORS: [u32; 4] = [
+    DOM_SEP__TOKEN_BRIDGE_SPLIT_CLAIM,
+    DOM_SEP__TOKEN_BRIDGE_SPLIT_CHANGE,
+    DOM_SEP__TOKEN_BRIDGE_SPLIT_IOU,
+    DOM_SEP__TOKEN_BRIDGE_SPLIT_IOU_SPENT,
+];
+
+#[test]
+fn split_separators_are_derived_pinned_and_distinct() {
+    assert(
+        DOM_SEP__TOKEN_BRIDGE_SPLIT_CLAIM
+            == poseidon2_hash_bytes("dom_sep__token_bridge_split_claim".as_bytes()) as u32,
+    );
+    assert(
+        DOM_SEP__TOKEN_BRIDGE_SPLIT_CHANGE
+            == poseidon2_hash_bytes("dom_sep__token_bridge_split_change".as_bytes()) as u32,
+    );
+    assert(
+        DOM_SEP__TOKEN_BRIDGE_SPLIT_IOU
+            == poseidon2_hash_bytes("dom_sep__token_bridge_split_iou".as_bytes()) as u32,
+    );
+    assert(
+        DOM_SEP__TOKEN_BRIDGE_SPLIT_IOU_SPENT
+            == poseidon2_hash_bytes("dom_sep__token_bridge_split_iou_spent".as_bytes()) as u32,
+    );
+    assert(DOM_SEP__TOKEN_BRIDGE_SPLIT_CLAIM == 2878369513);
+    assert(DOM_SEP__TOKEN_BRIDGE_SPLIT_CHANGE == 1854012931);
+    assert(DOM_SEP__TOKEN_BRIDGE_SPLIT_IOU == 2366609694);
+    assert(DOM_SEP__TOKEN_BRIDGE_SPLIT_IOU_SPENT == 3143065046);
+    for i in 0..4 {
+        for j in 0..4 {
+            if i != j {
+                assert(SPLIT_SEPARATORS[i] != SPLIT_SEPARATORS[j]);
+            }
+        }
+        assert(SPLIT_SEPARATORS[i] != DOM_SEP__TOKEN_BRIDGE_PRIVATE_CLAIM_SECRET);
+    }
+}
+
+// The same vectors as packages/bridge-core/src/split-secret.test.ts.
+#[test]
+fn split_vectors_match_ts() {
+    let change_commitment = split_change_commitment(AztecAddress::from_field(0xb0b), 0xc4a);
+    assert(change_commitment == 0x05638567cae588d4788786ca6618f8a0b7defdb2a79d36192f285bc71dd1156c);
+    let secret = split_secret(AztecAddress::from_field(0x1234), 370_000, 0x5eed, change_commitment, 0x5a17);
+    assert(secret == 0x0be589ab30a5cf8caa2bf22214569a74cbeb6f2e3c24eb6f7d2387c7904430b5);
+    assert(
+        compute_secret_hash([secret]) == 0x1af4aba403e86583e7c58bfa4547816624a1e6e62f4528477326260f88e17f7e,
+    );
+    let iou = split_iou(change_commitment, 9_630_000, DEPOSITOR, secret, 7);
+    assert(iou == 0x2af308710636feef23eee13508e0c464cc0cfdaa8b6f892c33eceb5e6cb9688d);
+    assert(
+        split_iou_spent(iou, 0xc4a) == 0x26edfaa45f414c967cff5ba9203bb7dcc3b1067c18b282829fd85c1c1508bf77,
+    );
+}
+

@@ -1,6 +1,6 @@
 import { Fr } from "@aztec-labs/aztec.js/fields"
 import type { Hex } from "viem"
-import { TESTNET } from "./networks"
+import { MAINNET, TESTNET } from "./networks"
 
 /**
  * The keyed-run variables. A command gets them through its environment alone (env-exec's approved process, or a
@@ -61,9 +61,10 @@ export function scrubbedEnv(env: NodeJS.ProcessEnv = process.env): NodeJS.Proces
 	return Object.fromEntries(Object.entries(env).filter(([k]) => !SECRET_NAME.test(k)))
 }
 
+const COMMITTED_ENDPOINTS = [TESTNET, MAINNET].flatMap((n) => [n.defaultL1RpcUrl, n.nodeUrl])
+
 /** A URL part inside a committed public endpoint (`aztec-testnet`) is public text: it matches the source pinning it. */
-const inPublicEndpoint = (part: string): boolean =>
-	[TESTNET.defaultL1RpcUrl, TESTNET.nodeUrl].some((e) => e.toLowerCase().includes(part.toLowerCase()))
+const inPublicEndpoint = (part: string): boolean => COMMITTED_ENDPOINTS.some((e) => e.toLowerCase().includes(part.toLowerCase()))
 
 /**
  * An RPC URL as libraries may print it: as given, normalized, and without its userinfo (viem strips it). Plus its
@@ -96,7 +97,7 @@ function normalUrl(value: string): string | undefined {
 }
 
 /** The endpoints `networks.ts` commits are public: as needles they would match the source that pins them, failing every scan. */
-const PUBLIC_ENDPOINTS = new Set([TESTNET.defaultL1RpcUrl, TESTNET.nodeUrl].map(normalUrl))
+const PUBLIC_ENDPOINTS = new Set(COMMITTED_ENDPOINTS.map(normalUrl))
 const isPublicEndpoint = (value: string): boolean => PUBLIC_ENDPOINTS.has(normalUrl(value))
 
 /**

@@ -23,7 +23,7 @@ const COMMANDS = {
 	"demo status": { args: ["manifest"] },
 	"demo reset": { args: ["manifest"] },
 	"demo fund": { args: ["manifest"] },
-	probe: { args: ["testnet"] },
+	probe: { args: ["testnet|mainnet"] },
 	scan: { args: ["secrets"] },
 } as const satisfies Record<string, { args: readonly string[]; flags?: readonly string[] }>
 

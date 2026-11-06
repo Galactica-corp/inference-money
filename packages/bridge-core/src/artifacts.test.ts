@@ -6,9 +6,9 @@ import { sponsoredFpcArtifact, tokenArtifact, tokenBridgeArtifact, tokenMinterPr
 // The on-chain identities the deploy and every client register: a changed artifact must fail here before it ships.
 describe("L2 artifacts derive their pinned class ids", () => {
 	it.each([
-		["TokenBridge", tokenBridgeArtifact, "0x264966763e6cc1feb7a859bc81f10858596098810eca5d153ed0439f08d3c197"],
-		["TokenMinterProxy", tokenMinterProxyArtifact, "0x07892e36eb9f2753917094690bdb426e1932fd411de8bd637647de76ebd5bcb4"],
-		["Token (merchant fork)", tokenArtifact, "0x10382a046e96cf99cd8d0b2c3d0018639ca437d75584f7d5b4c17290248cc954"],
+		["TokenBridge", tokenBridgeArtifact, "0x0acad864bf73a8fe1dad449b47d5c17bdf1cdf2e62aeaa05bf32c753e8a2f2d6"],
+		["TokenMinterProxy", tokenMinterProxyArtifact, "0x1d736ba69e4fa12e04e01a65e757103ef3522b23b573a712be0ce16628914961"],
+		["Token (merchant fork)", tokenArtifact, "0x0e9ea7df488bcf4c07b8575448a03622a27cec8f47caec68991ef119149a5ca5"],
 	] as const)("%s", async (_, artifact, classId) => {
 		expect((await getContractClassFromArtifact(artifact)).id.toString()).toBe(classId)
 	})
@@ -16,7 +16,7 @@ describe("L2 artifacts derive their pinned class ids", () => {
 	// The address the testnet publishes and a local network funds at genesis.
 	it("SponsoredFPC derives the canonical sponsor at salt 0", async () => {
 		const instance = await getContractInstanceFromInstantiationParams(sponsoredFpcArtifact, { salt: Fr.ZERO })
-		expect(instance.currentContractClassId.toString()).toBe("0x0d6670f2e8fdfcddc0436f10a43f9b06e5e5ee8797c0b0540e39d35881632437")
-		expect(instance.address.toString()).toBe("0x2adfb70e860909f0db8268b3fec80bce52a94559963444f5c0341816b8412130")
+		expect(instance.currentContractClassId.toString()).toBe("0x233391319da4f9877f724afd66d93a2d0dbb4a288f41e99093dbb30f41ee3335")
+		expect(instance.address.toString()).toBe("0x2d8fff82a3b0c15d0a89169e7d8d043e079ab94d52031f1de1e4972ebad169d3")
 	})
 })

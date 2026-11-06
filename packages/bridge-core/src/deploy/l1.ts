@@ -16,6 +16,7 @@ import {
 	type TransactionSerializable,
 	type WalletClient,
 } from "viem"
+import { type ReadBackOptions, readBack } from "../l1-receipt"
 import { withGasHeadroom } from "../types"
 import type { EvmArtifact } from "./evm"
 
@@ -68,7 +69,13 @@ export interface Deployed {
  * would), so neither the RPC's echoed hash nor its receipt's address can bind the deploy to another contract. The RPC
  * is still trusted for inclusion.
  */
-export async function deployEvm(l1: L1Signer, name: string, a: EvmArtifact, args: unknown[] = []): Promise<Deployed> {
+export async function deployEvm(
+	l1: L1Signer,
+	name: string,
+	a: EvmArtifact,
+	args: unknown[] = [],
+	opts: { readBack?: ReadBackOptions } = {},
+): Promise<Deployed> {
 	const { account, chain, publicClient, walletClient } = l1
 	if (account.type !== "local") throw new Error(`${name} deploy needs a local account: its tx is signed in process`)
 	const nonce = await publicClient.getTransactionCount({ address: account.address, blockTag: "pending" })
@@ -85,6 +92,14 @@ export async function deployEvm(l1: L1Signer, name: string, a: EvmArtifact, args
 	if (!receipt.contractAddress || !isAddressEqual(receipt.contractAddress, address)) {
 		throw new Error(`${name} deploy: the receipt names ${receipt.contractAddress} for tx ${tx}, not ${address}`)
 	}
+	// A load-balanced RPC can answer the next call from a backend behind the receipt's block, where a constructor or an
+	// estimate that checks this contract's code (the router's checks the portal's) finds none and reverts.
+	const code = await readBack(
+		() => publicClient.getCode({ address }),
+		(c) => c !== undefined && c !== "0x",
+		opts.readBack,
+	)
+	if (code === undefined || code === "0x") throw new Error(`${name} deploy: the RPC shows no code at ${address} after its receipt`)
 	return { address, block: receipt.blockNumber, tx }
 }
 

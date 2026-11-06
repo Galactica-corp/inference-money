@@ -16,7 +16,12 @@ const ADDED_FUNCTIONS = [
 	"get_merchant_roles",
 	"get_merchant_status",
 	"is_merchant",
+	"mint_reserved_to_private",
+	"mint_split_to_private",
+	"pay_private",
 	"propose_merchant_admin",
+	"prove_not_merchant",
+	"release_reserved",
 	"schedule_merchant_guardian",
 	"schedule_merchant_off",
 	"set_merchant_delay",
@@ -32,6 +37,7 @@ const ADDED_EVENTS = [
 	"Token::MerchantDelaySet",
 	"Token::MerchantGuardianScheduled",
 	"Token::MerchantOffScheduled",
+	"Token::PaymentReceived",
 ]
 // The class registry packs public bytecode 31 bytes per field plus a length field, and refuses more than 3000
 // (MAX_PACKED_PUBLIC_BYTECODE_SIZE_IN_FIELDS). Upstream packs to 707; the ceiling leaves the fork headroom for fixes.

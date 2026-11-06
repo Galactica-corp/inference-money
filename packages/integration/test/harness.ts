@@ -1,12 +1,13 @@
 import { rmSync } from "node:fs"
 import type { AztecAddress } from "@aztec-labs/aztec.js/addresses"
 import { Fr } from "@aztec-labs/aztec.js/fields"
-import { type AztecNode, createAztecNodeClient } from "@aztec-labs/aztec.js/node"
+import type { AztecNode } from "@aztec-labs/aztec.js/node"
 import { type AztecNodeDebug, createAztecNodeDebugClient } from "@aztec-labs/stdlib/interfaces/client"
 import type { Tx } from "@aztec-labs/stdlib/tx"
 import type { EmbeddedWallet } from "@aztec-labs/wallets/embedded"
 import {
 	type BridgeManifest,
+	createNodeClient,
 	memoryPaymentStore,
 	type OutboxReader,
 	outboxReader,
@@ -172,7 +173,7 @@ async function open(log: (m: string) => void): Promise<Harness> {
 	const { manifest, path: manifestPath } = await deployLocal(runId, { log })
 	cleanup.push(enterOwnedTmpDir())
 	const net = resolveEndpoints(runId)
-	const node = createAztecNodeClient(net.nodeUrl)
+	const node = createNodeClient(net.nodeUrl)
 	const sent: SentTx[] = []
 	const sends = new SendJournal(recordingNode(holdingNode(node), sent))
 	const gate = new PaymentGate(sends.node, memoryPaymentStore())

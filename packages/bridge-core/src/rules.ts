@@ -9,6 +9,9 @@ export const TOKEN_REFUSALS = {
 	expired: "Payment refused: the request's stamp has expired",
 	alreadyPaid: "Payment refused: the request is already paid",
 	zeroPayment: "Payment refused: the amount is zero",
+	paymentToSelf: "Payment refused: the payer is the recipient",
+	referencePaid: "Payment refused: the reference is already paid",
+	stillMerchant: "Not provable: the account is a merchant",
 	notAdmin: "Only the merchant admin",
 	notAdminOrGuardian: "Only the merchant admin or guardian",
 	notAdminLowersDelay: "Only the merchant admin lowers a delay",
@@ -34,6 +37,11 @@ export const BRIDGE_REFUSALS = {
 	exitDestination: "Withdrawals from a user account go only to its funding address",
 	exitToPortal: "Recipient cannot be the portal",
 	withdrawAddressWidth: "A withdraw names only 20-byte Ethereum addresses",
+	splitToUser: "Split deposits pay listed merchants only",
+	priceAboveDeposit: "The price exceeds the deposit",
+	zeroPrice: "Price must be greater than zero",
+	noChange: "No such change to collect",
+	changeCollected: "The change is already collected",
 } as const
 
 export type BridgeRule = keyof typeof BRIDGE_REFUSALS

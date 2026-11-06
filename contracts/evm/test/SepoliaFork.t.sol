@@ -23,9 +23,9 @@ import {Honest1271Delegate, Inert, PermissiveWallet, RevertingDelegate, WrongMag
 /// (`networks.test.ts` asserts it) and the node info the testnet probe checks.
 contract SepoliaForkTest is Test {
     address internal constant REGISTRY = 0xA0BFb1B494FB49041e5c6e8c2C1BE09cD171c6Ba;
-    address internal constant INBOX = 0xb3B95295823AD313Edc9e498EFF7b672B3C6b209;
-    address internal constant OUTBOX = 0x25519d3c79E39143aCCf358BA07D200b534fA400;
-    uint256 internal constant ROLLUP_VERSION = 3_409_706_519;
+    address internal constant INBOX = 0x7cdC32Dd7d008870A95f1837Ffd7229ef676EF8A;
+    address internal constant OUTBOX = 0xA5A0f7a7BDAf280964a1922A68C83462E5F6E15b;
+    uint256 internal constant ROLLUP_VERSION = 679_261_766;
     address internal constant USDC = 0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238;
     address internal constant PERMIT2 = 0x000000000022D473030F116dDEE9F6B43aC78BA3;
     bytes32 internal constant L2_BRIDGE = bytes32(uint256(0xB41D6E));

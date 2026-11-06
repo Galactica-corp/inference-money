@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs"
-import { createAztecNodeClient } from "@aztec-labs/aztec.js/node"
+import { createNodeClient } from "@galactica-net/inference-money-core"
 import { parseTour, tourMismatches } from "@galactica-net/inference-money-demo"
 import { readDemoFile } from "@galactica-net/inference-money-demo/files"
 import { createPublicClient, http, type PublicClient } from "viem"
@@ -39,7 +39,7 @@ export async function verifyManifest(ref: ManifestRef, flags: VerifyFlags): Prom
 	flags.log(`verifying ${ref.path} through node ${new URL(nodeUrl).origin}`)
 	const l1 = createPublicClient({ transport: http(l1RpcUrl) }) as PublicClient
 	const { guardian, allowPending } = flags
-	const checks = await verifyDeployment(ref.m, buildFresh(), l1, createAztecNodeClient(nodeUrl), "complete", {
+	const checks = await verifyDeployment(ref.m, buildFresh(), l1, createNodeClient(nodeUrl), "complete", {
 		guardian,
 		allowPending,
 		demo: readDemoFile(ref),

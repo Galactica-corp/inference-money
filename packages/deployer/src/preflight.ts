@@ -1,7 +1,8 @@
 import { AztecAddress } from "@aztec-labs/aztec.js/addresses"
-import { createAztecNodeClient } from "@aztec-labs/aztec.js/node"
+import type { AztecNode } from "@aztec-labs/aztec.js/node"
 import { getFeeJuiceBalance } from "@aztec-labs/aztec.js/utils"
 import { ManaUsageEstimate } from "@aztec-labs/stdlib/gas"
+import { createNodeClient } from "@galactica-net/inference-money-core"
 import { type Address, createPublicClient, getAddress, http, isAddressEqual, type PublicClient, parseAbi } from "viem"
 import { ESTIMATED_GAS_PER_TX, feeBudget, TESTNET_DEPLOY_TXS, TESTNET_SPONSORED_TXS } from "./budget"
 import type { NetworkPins } from "./networks"
@@ -41,11 +42,15 @@ export function checkNodeIdentity(info: NodeIdentity, pins: NetworkPins): Check[
 		check("inbox", eq(l1.inboxAddress.toString(), pins.inbox), l1.inboxAddress.toString()),
 		check("outbox", eq(l1.outboxAddress.toString(), pins.outbox), l1.outboxAddress.toString()),
 		check("fee juice portal", eq(l1.feeJuicePortalAddress.toString(), pins.feeJuicePortal), l1.feeJuicePortalAddress.toString()),
-		check(
-			"fee asset handler",
-			l1.feeAssetHandlerAddress !== undefined && eq(l1.feeAssetHandlerAddress.toString(), pins.feeAssetHandler),
-			String(l1.feeAssetHandlerAddress),
-		),
+		...(pins.feeAssetHandler === undefined
+			? []
+			: [
+					check(
+						"fee asset handler",
+						l1.feeAssetHandlerAddress !== undefined && eq(l1.feeAssetHandlerAddress.toString(), pins.feeAssetHandler),
+						String(l1.feeAssetHandlerAddress),
+					),
+				]),
 	]
 }
 
@@ -124,39 +129,43 @@ async function readL1Wiring(l1: PublicClient, pins: NetworkPins): Promise<L1Wiri
 }
 
 async function readAssets(l1: PublicClient, pins: NetworkPins) {
-	const [usdcDecimals, usdcVersion, code, faucetMint] = await Promise.all([
+	const [usdcDecimals, usdcVersion, code] = await Promise.all([
 		l1.readContract({ address: pins.usdc, abi: L1_ABI, functionName: "decimals" }),
 		l1.readContract({ address: pins.usdc, abi: L1_ABI, functionName: "version" }),
 		l1.getCode({ address: pins.permit2 }),
-		l1.readContract({ address: pins.feeAssetHandler, abi: L1_ABI, functionName: "mintAmount" }),
 	])
-	return { usdcDecimals, usdcVersion, permit2CodeBytes: code ? (code.length - 2) / 2 : 0, faucetMint }
+	return { usdcDecimals, usdcVersion, permit2CodeBytes: code ? (code.length - 2) / 2 : 0 }
 }
 
-/** Keyless, read-only: every identity and funding fact a testnet deploy relies on. */
-export async function probeNetwork(pins: NetworkPins, l1RpcUrl: string): Promise<Check[]> {
-	const node = createAztecNodeClient(pins.nodeUrl)
-	const l1 = createPublicClient({ transport: http(l1RpcUrl) }) as PublicClient
-	const fpc = AztecAddress.fromStringUnsafe(pins.sponsoredFpc)
-	const [info, wiring, assets, fpcInstance, balance, predicted] = await Promise.all([
-		node.getNodeInfo(),
-		readL1Wiring(l1, pins),
-		readAssets(l1, pins),
+/** The testnet fee path: Fee Juice from the L1 faucet for the deploy, the SponsoredFPC for the private legs. */
+async function readFeePath(node: AztecNode, l1: PublicClient, faucet: Address, sponsoredFpc: string): Promise<Check[]> {
+	const fpc = AztecAddress.fromStringUnsafe(sponsoredFpc)
+	const [faucetMint, fpcInstance, balance, predicted] = await Promise.all([
+		l1.readContract({ address: faucet, abi: L1_ABI, functionName: "mintAmount" }),
 		node.getContract(fpc),
 		getFeeJuiceBalance(fpc, node),
 		node.getPredictedMinFees(ManaUsageEstimate.Limit),
 	])
 	const budget = (txs: readonly string[]) => feeBudget({ txCount: txs.length, gasPerTx: ESTIMATED_GAS_PER_TX, predicted, headroom: 3n })
-	return [
-		...checkNodeIdentity(info, pins),
-		...checkL1Wiring(wiring, pins),
-		...checkAssets(assets, pins),
-		...checkFeePath({
-			faucetMint: assets.faucetMint,
-			deployBudget: budget(TESTNET_DEPLOY_TXS),
-			sponsoredBudget: budget(TESTNET_SPONSORED_TXS),
-			sponsorPublished: fpcInstance !== undefined,
-			sponsorBalance: balance,
-		}),
-	]
+	return checkFeePath({
+		faucetMint,
+		deployBudget: budget(TESTNET_DEPLOY_TXS),
+		sponsoredBudget: budget(TESTNET_SPONSORED_TXS),
+		sponsorPublished: fpcInstance !== undefined,
+		sponsorBalance: balance,
+	})
+}
+
+/** Keyless, read-only: every identity and funding fact a deploy relies on; mainnet pins no fee path to check. */
+export async function probeNetwork(pins: NetworkPins, l1RpcUrl: string): Promise<Check[]> {
+	const node = createNodeClient(pins.nodeUrl)
+	const l1 = createPublicClient({ transport: http(l1RpcUrl) }) as PublicClient
+	const { feeAssetHandler, sponsoredFpc } = pins
+	const [info, wiring, assets, feePath] = await Promise.all([
+		node.getNodeInfo(),
+		readL1Wiring(l1, pins),
+		readAssets(l1, pins),
+		feeAssetHandler && sponsoredFpc ? readFeePath(node, l1, feeAssetHandler, sponsoredFpc) : [],
+	])
+	return [...checkNodeIdentity(info, pins), ...checkL1Wiring(wiring, pins), ...checkAssets(assets, pins), ...feePath]
 }

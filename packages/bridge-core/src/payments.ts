@@ -173,7 +173,7 @@ export function openedCommitment(effects: readonly OffchainEffect[], token: Azte
 export type PaymentFee = { paymentMethod: FeePaymentMethod } | Extract<FeeChoice, "account-public">
 
 // An untyped caller can omit the fee, which the wallet would read as the account paying.
-function sendFee(fee: PaymentFee): { paymentMethod: FeePaymentMethod } | undefined {
+export function sendFee(fee: PaymentFee): { paymentMethod: FeePaymentMethod } | undefined {
 	if (fee === "account-public") return undefined
 	if (!fee?.paymentMethod) throw new Error('Name the fee payer: a sponsor\'s payment method, or "account-public".')
 	return fee
@@ -259,9 +259,8 @@ export async function transferPrivate(
 
 interface Expected {
 	owner: string
-	token: AztecAddress
-	commitment: Fr
-	siloedTag: Fr
+	/** Whether a tx is this attempt's payment: the gate records it as `sent` before the node receives it. */
+	matches: (tx: Tx) => Promise<boolean>
 	/** A private payment into a stamped request: refused unless it commits the standard expiry. */
 	unmarked: boolean
 }
@@ -282,7 +281,7 @@ function publicPay(): Promise<Fr> {
  * Whether `tx` pays into `e`'s request: privately, its completion log carries the request's siloed tag, which only the
  * token can emit; publicly, it calls the token's `transfer_public_to_commitment(from, commitment, amount, nonce)`.
  */
-async function pays(tx: Tx, e: Expected): Promise<boolean> {
+async function pays(tx: Tx, e: { token: AztecAddress; commitment: Fr; siloedTag: Fr }): Promise<boolean> {
 	if (tx.data.getNonEmptyPrivateLogs().some((log) => log.fields[0].equals(e.siloedTag))) return true
 	const selector = await publicPay()
 	return tx
@@ -446,12 +445,24 @@ export class PaymentGate {
 		unmarked = false,
 	): Promise<TxHash> {
 		const siloedTag = await siloedCompletionTag(token, commitment)
+		return this.sendingMatching(key, owner, (tx) => pays(tx, { token, commitment, siloedTag }), send, unmarked)
+	}
+
+	/** {@link PaymentGate.sending} for any payment a tx can be recognised by: `matches` picks the attempt's tx out. */
+	async sendingMatching<T extends { txHash: TxHash } | TxHash>(
+		key: string,
+		owner: string,
+		matches: (tx: Tx) => Promise<boolean>,
+		send: () => Promise<T>,
+		unmarked = false,
+	): Promise<T> {
 		if (this.expected.has(key)) throw new PaymentRefusedError("in-flight")
-		this.expected.set(key, { owner, token, commitment, siloedTag, unmarked })
+		this.expected.set(key, { owner, matches, unmarked })
 		try {
-			const txHash = await send()
+			const sent = await send()
+			const txHash = sent instanceof TxHash ? sent : sent.txHash
 			if (!this.recorded.has(owner)) await this.recordMissed(key, owner, txHash)
-			return txHash
+			return sent
 		} finally {
 			this.recorded.delete(owner)
 			if (this.expected.get(key)?.owner === owner) this.expected.delete(key)
@@ -460,7 +471,7 @@ export class PaymentGate {
 
 	private async recordThenSend(target: AztecNode, tx: Tx): Promise<void> {
 		for (const [key, e] of this.expected) {
-			if (!(await pays(tx, e))) continue
+			if (!(await e.matches(tx))) continue
 			if (e.unmarked && shortLived(tx)) await this.refuseStale(key, e.owner)
 			await this.recordSent(key, e.owner, tx.getTxHash().toString(), tx.data.expirationTimestamp)
 		}

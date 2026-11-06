@@ -2,7 +2,7 @@ import { rmSync } from "node:fs"
 import { join } from "node:path"
 import { AztecAddress } from "@aztec-labs/aztec.js/addresses"
 import { FeeJuicePaymentMethodWithClaim } from "@aztec-labs/aztec.js/fee"
-import type { createAztecNodeClient } from "@aztec-labs/aztec.js/node"
+import type { AztecNode } from "@aztec-labs/aztec.js/node"
 import { type BridgeManifest, readBack, sponsoredFpcArtifact, sponsorInstance } from "@galactica-net/inference-money-core"
 import { deployBridge, type L1Signer, type L2Fees, l1Signer, proposeAdmin } from "@galactica-net/inference-money-core/deploy"
 import { REPO_ROOT } from "@galactica-net/inference-money-local-network"
@@ -55,11 +55,7 @@ export function adminAddressFrom(env: NodeJS.ProcessEnv = process.env): AztecAdd
  * The deployer account's first tx claims Fee Juice minted from the testnet faucet and bridged to it; every later tx
  * pays from that balance.
  */
-function selfFundedFees(
-	l1: ReturnType<typeof testnetL1>,
-	node: ReturnType<typeof createAztecNodeClient>,
-	log: (m: string) => void,
-): L2Fees {
+function selfFundedFees(l1: ReturnType<typeof testnetL1>, node: AztecNode, log: (m: string) => void): L2Fees {
 	return {
 		accountDeploy: async (account: AztecAddress) => {
 			const claim = await bridgeFeeJuice({
