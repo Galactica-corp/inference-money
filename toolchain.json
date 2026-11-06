@@ -10,6 +10,7 @@
 	"halmos": "0.3.3",
 	"slither": "0.11.6",
 	"medusa": "1.5.1",
+	"python": "3.12",
 	"cryticCompile": "0.4.2",
 	"solc": "0.8.28",
 	"prestoServer": "1.1.3"
