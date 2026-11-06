@@ -1,0 +1,466 @@
+{
+	"version": 1,
+	"network": {
+		"l1ChainId": 11155111,
+		"rollupVersion": 679261766
+	},
+	"contracts": {
+		"portal": "0x66d540F379fAC7533e73532ba75183A52761566b",
+		"router": "0x5cB0bA1A94A9b182C0Bfb64Ff01E7C0504689b2A",
+		"token": "0x2609810ea3dbc6b7da45970fcda8c60b2f33cf5d030cf7758075e1e14eb3ef44",
+		"bridge": "0x1a73c5e76dc7ee1faf3a9a84367734822db3c18d75e29ec1ad88a41c6339bc93"
+	},
+	"steps": [
+		{
+			"id": "deposit",
+			"actor": "A_demo",
+			"action": "deposit",
+			"to": "alice",
+			"amount": "10000000",
+			"verdict": "settled",
+			"l1": {
+				"txHash": "0x94375a55dbeb7040d0ba754e8bff413ef719ac8083172b4269d12cccfc840595",
+				"block": 12076453
+			},
+			"world": [
+				{
+					"chain": "ethereum",
+					"label": "depositor",
+					"value": "0x1631D85aE25386B3dd1D3801fB2f730b6bB1B2Aa",
+					"visibility": "readable"
+				},
+				{
+					"chain": "ethereum",
+					"label": "amount",
+					"value": "10000000",
+					"visibility": "readable"
+				},
+				{
+					"chain": "ethereum",
+					"label": "kind",
+					"value": "private",
+					"visibility": "readable"
+				},
+				{
+					"chain": "ethereum",
+					"label": "secret hash",
+					"value": "0x1736d1bcefa158fe78688c2a91a806a0a401648e443fd99a342a0cc2b315a7a2",
+					"visibility": "readable"
+				},
+				{
+					"chain": "ethereum",
+					"label": "message index",
+					"value": "986",
+					"visibility": "readable"
+				}
+			]
+		},
+		{
+			"id": "claim",
+			"actor": "alice",
+			"action": "claim",
+			"to": "alice",
+			"amount": "10000000",
+			"verdict": "settled",
+			"l2": {
+				"txHash": "0x02a6a42523cf04a2cd62684e71fbcaae01c02b2b7a1e95036bf6e0a13ffc4b08",
+				"block": 20776,
+				"expiration": 1794049572
+			},
+			"world": [
+				{
+					"chain": "aztec",
+					"label": "fee payer",
+					"value": "0x2d8fff82a3b0c15d0a89169e7d8d043e079ab94d52031f1de1e4972ebad169d3",
+					"visibility": "readable"
+				},
+				{
+					"chain": "aztec",
+					"label": "expires at",
+					"value": "1794049572",
+					"visibility": "readable"
+				},
+				{
+					"chain": "aztec",
+					"label": "fee",
+					"value": "917948896871800000",
+					"visibility": "readable"
+				},
+				{
+					"chain": "aztec",
+					"label": "nullifiers",
+					"value": "2",
+					"visibility": "readable"
+				},
+				{
+					"chain": "aztec",
+					"label": "new notes",
+					"value": "1",
+					"visibility": "readable"
+				},
+				{
+					"chain": "aztec",
+					"label": "encrypted logs",
+					"value": "1",
+					"visibility": "readable"
+				},
+				{
+					"chain": "aztec",
+					"label": "USDC total supply",
+					"value": "32020000",
+					"visibility": "readable"
+				},
+				{
+					"chain": "aztec",
+					"label": "other public writes",
+					"value": "1",
+					"visibility": "readable"
+				},
+				{
+					"chain": "aztec",
+					"label": "public logs",
+					"value": "1",
+					"visibility": "readable"
+				},
+				{
+					"chain": "aztec",
+					"label": "recipient",
+					"visibility": "hidden"
+				}
+			]
+		},
+		{
+			"id": "request",
+			"actor": "galactica",
+			"action": "request",
+			"to": "galactica",
+			"amount": "10000000",
+			"verdict": "settled",
+			"l2": {
+				"txHash": "0x09418e585b3507cc1d08ec262c1dcbd87873bf63b97d85fe4c9b401e92eefa52",
+				"block": 20777,
+				"expiration": 1794049644
+			},
+			"world": [
+				{
+					"chain": "aztec",
+					"label": "fee payer",
+					"value": "0x2d8fff82a3b0c15d0a89169e7d8d043e079ab94d52031f1de1e4972ebad169d3",
+					"visibility": "readable"
+				},
+				{
+					"chain": "aztec",
+					"label": "expires at",
+					"value": "1794049644",
+					"visibility": "readable"
+				},
+				{
+					"chain": "aztec",
+					"label": "fee",
+					"value": "613125098100000000",
+					"visibility": "readable"
+				},
+				{
+					"chain": "aztec",
+					"label": "nullifiers",
+					"value": "3",
+					"visibility": "readable"
+				},
+				{
+					"chain": "aztec",
+					"label": "new notes",
+					"value": "0",
+					"visibility": "readable"
+				},
+				{
+					"chain": "aztec",
+					"label": "encrypted logs",
+					"value": "1",
+					"visibility": "readable"
+				},
+				{
+					"chain": "aztec",
+					"label": "other public writes",
+					"value": "1",
+					"visibility": "readable"
+				},
+				{
+					"chain": "aztec",
+					"label": "recipient",
+					"visibility": "hidden"
+				},
+				{
+					"chain": "aztec",
+					"label": "payer",
+					"visibility": "hidden"
+				}
+			]
+		},
+		{
+			"id": "pay",
+			"actor": "alice",
+			"action": "pay",
+			"to": "galactica",
+			"amount": "10000000",
+			"verdict": "settled",
+			"l2": {
+				"txHash": "0x28780346213f000cf3ab674e0d1fb850c1ea68ad8b7b9ac92cd833e7898add4a",
+				"block": 20778,
+				"expiration": 1794049716
+			},
+			"world": [
+				{
+					"chain": "aztec",
+					"label": "fee payer",
+					"value": "0x2d8fff82a3b0c15d0a89169e7d8d043e079ab94d52031f1de1e4972ebad169d3",
+					"visibility": "readable"
+				},
+				{
+					"chain": "aztec",
+					"label": "expires at",
+					"value": "1794049716",
+					"visibility": "readable"
+				},
+				{
+					"chain": "aztec",
+					"label": "fee",
+					"value": "624625099940000000",
+					"visibility": "readable"
+				},
+				{
+					"chain": "aztec",
+					"label": "nullifiers",
+					"value": "3",
+					"visibility": "readable"
+				},
+				{
+					"chain": "aztec",
+					"label": "new notes",
+					"value": "1",
+					"visibility": "readable"
+				},
+				{
+					"chain": "aztec",
+					"label": "encrypted logs",
+					"value": "0",
+					"visibility": "readable"
+				},
+				{
+					"chain": "aztec",
+					"label": "amount",
+					"value": "10000000",
+					"visibility": "readable"
+				},
+				{
+					"chain": "aztec",
+					"label": "other public writes",
+					"value": "1",
+					"visibility": "readable"
+				},
+				{
+					"chain": "aztec",
+					"label": "payer",
+					"visibility": "hidden"
+				}
+			]
+		},
+		{
+			"id": "refund",
+			"actor": "galactica",
+			"action": "refund",
+			"to": "alice",
+			"amount": "3000000",
+			"verdict": "settled",
+			"l2": {
+				"txHash": "0x2c15c4851d5132a4a50ee2bcbb127143a275a29e47e452507513d9ed7b5e3eb2",
+				"block": 20779,
+				"expiration": 1794049788
+			},
+			"world": [
+				{
+					"chain": "aztec",
+					"label": "fee payer",
+					"value": "0x2d8fff82a3b0c15d0a89169e7d8d043e079ab94d52031f1de1e4972ebad169d3",
+					"visibility": "readable"
+				},
+				{
+					"chain": "aztec",
+					"label": "expires at",
+					"value": "1794049788",
+					"visibility": "readable"
+				},
+				{
+					"chain": "aztec",
+					"label": "fee",
+					"value": "677000108320000000",
+					"visibility": "readable"
+				},
+				{
+					"chain": "aztec",
+					"label": "nullifiers",
+					"value": "4",
+					"visibility": "readable"
+				},
+				{
+					"chain": "aztec",
+					"label": "new notes",
+					"value": "3",
+					"visibility": "readable"
+				},
+				{
+					"chain": "aztec",
+					"label": "encrypted logs",
+					"value": "4",
+					"visibility": "readable"
+				},
+				{
+					"chain": "aztec",
+					"label": "other public writes",
+					"value": "1",
+					"visibility": "readable"
+				},
+				{
+					"chain": "aztec",
+					"label": "sender",
+					"visibility": "hidden"
+				},
+				{
+					"chain": "aztec",
+					"label": "recipient",
+					"visibility": "hidden"
+				},
+				{
+					"chain": "aztec",
+					"label": "amount",
+					"visibility": "hidden"
+				}
+			]
+		},
+		{
+			"id": "transfer-refused",
+			"actor": "alice",
+			"action": "transfer",
+			"to": "bob",
+			"amount": "1000000",
+			"verdict": "refused",
+			"rule": "transfer",
+			"world": []
+		},
+		{
+			"id": "exit-refused",
+			"actor": "alice",
+			"action": "exit",
+			"to": "B_demo",
+			"amount": "1000000",
+			"verdict": "refused",
+			"rule": "exitDestination",
+			"world": []
+		},
+		{
+			"id": "exit",
+			"actor": "alice",
+			"action": "exit",
+			"to": "A_demo",
+			"amount": "3000000",
+			"verdict": "settled",
+			"l2": {
+				"txHash": "0x1dc03c68554e0ed314d48afb7fc61225c575da566debbe948ad605855e65f409",
+				"block": 20780,
+				"expiration": 1794049860
+			},
+			"world": [
+				{
+					"chain": "aztec",
+					"label": "fee payer",
+					"value": "0x2d8fff82a3b0c15d0a89169e7d8d043e079ab94d52031f1de1e4972ebad169d3",
+					"visibility": "readable"
+				},
+				{
+					"chain": "aztec",
+					"label": "expires at",
+					"value": "1794049860",
+					"visibility": "readable"
+				},
+				{
+					"chain": "aztec",
+					"label": "fee",
+					"value": "963301404128200000",
+					"visibility": "readable"
+				},
+				{
+					"chain": "aztec",
+					"label": "nullifiers",
+					"value": "3",
+					"visibility": "readable"
+				},
+				{
+					"chain": "aztec",
+					"label": "new notes",
+					"value": "1",
+					"visibility": "readable"
+				},
+				{
+					"chain": "aztec",
+					"label": "encrypted logs",
+					"value": "1",
+					"visibility": "readable"
+				},
+				{
+					"chain": "aztec",
+					"label": "USDC total supply",
+					"value": "29020000",
+					"visibility": "readable"
+				},
+				{
+					"chain": "aztec",
+					"label": "other public writes",
+					"value": "1",
+					"visibility": "readable"
+				},
+				{
+					"chain": "aztec",
+					"label": "public logs",
+					"value": "1",
+					"visibility": "readable"
+				},
+				{
+					"chain": "aztec",
+					"label": "messages to Ethereum",
+					"value": "1",
+					"visibility": "readable"
+				},
+				{
+					"chain": "aztec",
+					"label": "sender",
+					"visibility": "hidden"
+				}
+			]
+		},
+		{
+			"id": "withdraw",
+			"actor": "A_demo",
+			"action": "withdraw",
+			"to": "A_demo",
+			"amount": "3000000",
+			"verdict": "settled",
+			"l1": {
+				"txHash": "0x420f8e4a9362ecff6e0da2edf9535369029120f1ff8edd40050752d9c79f7e1b",
+				"block": 12076559
+			},
+			"world": [
+				{
+					"chain": "ethereum",
+					"label": "recipient",
+					"value": "0x1631D85aE25386B3dd1D3801fB2f730b6bB1B2Aa",
+					"visibility": "readable"
+				},
+				{
+					"chain": "ethereum",
+					"label": "amount",
+					"value": "3000000",
+					"visibility": "readable"
+				}
+			]
+		}
+	]
+}
