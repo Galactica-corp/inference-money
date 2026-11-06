@@ -342,7 +342,8 @@ self_test() {
   }
 
   # mutant <name> <expected reason> <main|lib> <from> <to> [nth]: the real crate with ONE literal substitution (of the
-  # nth occurrence, default the first), which must apply and must be rejected for the expected reason.
+  # nth occurrence, default the first; any run of whitespace in <from> matches any other, so the source's layout
+  # never matters), which must apply and must be rejected for the expected reason.
   mutant() {
     local name="$1" want="$2" dir="$tmp/$1" target reason
     count=$((count + 1))
@@ -353,7 +354,8 @@ self_test() {
     target="$dir/src/main.nr"
     [ "$3" = lib ] && target="$dir/lib/lib.nr"
     if ! FROM="$4" TO="$5" NTH="${6:-1}" perl -0pi -e \
-      'my $c = 0; s/\Q$ENV{FROM}\E/++$c == $ENV{NTH} ? $ENV{TO} : $&/ge; die "no match\n" if $c < $ENV{NTH}' \
+      'my $c = 0; my $re = join "\\s+", map { quotemeta } split /\s+/, $ENV{FROM}, -1;
+       s/$re/++$c == $ENV{NTH} ? $ENV{TO} : $&/ge; die "no match\n" if $c < $ENV{NTH}' \
       "$target" 2>/dev/null; then
       echo "SELF-TEST FAIL: '$name' mutation did not apply" >&2
       fails=1
@@ -386,7 +388,7 @@ fn exit_to_l1_public('
     "let secret = derive_claim_secret(claim_salt, self.msg_sender());"
   mutant extra_element "with the derived secret" main "content_hash,
 [secret]," "content_hash,
-[claim_salt, secret],"
+[claim_salt, secret]," 2
   mutant public_redeems_private "claim_public does not hash mint_to_public" main \
     "mint_to_public_content_hash(to, amount, depositor)" "mint_to_private_content_hash(amount, depositor)"
   mutant foreign_sender "claim_public does not consume its public content hash from config.portal" main \
@@ -394,7 +396,7 @@ fn exit_to_l1_public('
   mutant private_foreign_sender "claim_private does not consume its private content hash with the derived secret" \
     main "[secret],
 config.portal," "[secret],
-sender,"
+sender," 2
   mutant mint_to_sender "claim_private does not mint to the committed recipient" main \
     "mint_to_private(recipient, amount)" "mint_to_private(self.msg_sender(), amount)"
   mutant seventh_site "found 7" main "$exits" \
@@ -523,7 +525,7 @@ secret_in: Field,
   mutant split_foreign_sender "claim_split does not consume its private content hash with the split secret" main \
     "[secret],
 config.portal," "[secret],
-merchant_portal," 3
+merchant_portal," 5
   mutant split_unlisted "claim_split does not require a listed merchant" main "assert(
 self.view(Token::at(config.token).try_prove_merchant(merchant))," "assert(
 true,"
