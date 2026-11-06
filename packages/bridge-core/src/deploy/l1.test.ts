@@ -21,7 +21,8 @@ const ARTIFACT: EvmArtifact = { abi: [], bytecode: "0x6080604052", deployedBytec
 const OTHER: Hex = `0x${"ee".repeat(32)}`
 
 /** An L1 endpoint that answers like anvil, except where `lie` says otherwise. */
-function fakeL1(lie: { echo?: Hex; receiptTx?: Hex; created?: Address; fillChainId?: number } = {}) {
+function fakeL1(lie: { echo?: Hex; receiptTx?: Hex; created?: Address; fillChainId?: number; staleCodeReads?: number } = {}) {
+	let codeReads = 0
 	const calls: string[] = []
 	const sent: Hex[] = []
 	const created = getContractAddress({ from: account.address, nonce: BigInt(NONCE) })
@@ -43,6 +44,7 @@ function fakeL1(lie: { echo?: Hex; receiptTx?: Hex; created?: Address; fillChain
 			sent.push(raw as Hex)
 			return lie.echo ?? keccak256(raw as Hex)
 		},
+		eth_getCode: () => (codeReads++ < (lie.staleCodeReads ?? 0) ? "0x" : ARTIFACT.bytecode),
 		eth_getTransactionReceipt: ([hash]) => ({
 			transactionHash: lie.receiptTx ?? hash,
 			contractAddress: lie.created ?? created,
@@ -108,5 +110,18 @@ describe("deployEvm", () => {
 	it("refuses a receipt naming another contract address", async () => {
 		const { l1 } = fakeL1({ created: "0x00000000000000000000000000000000000000cc" })
 		await expect(deployEvm(l1, "Thing", ARTIFACT)).rejects.toThrow("the receipt names")
+	})
+
+	it("returns only once the RPC shows the contract's code, which a lagging backend may not yet", async () => {
+		const { l1, calls, created } = fakeL1({ staleCodeReads: 2 })
+		const deployed = await deployEvm(l1, "Thing", ARTIFACT, [], { readBack: { waitMs: async () => {} } })
+		expect(deployed.address).toBe(created)
+		expect(calls.filter((c) => c === "eth_getCode")).toHaveLength(3)
+	})
+
+	it("fails when the RPC never shows the contract's code", async () => {
+		const { l1 } = fakeL1({ staleCodeReads: 99 })
+		const deploy = deployEvm(l1, "Thing", ARTIFACT, [], { readBack: { attempts: 3, waitMs: async () => {} } })
+		await expect(deploy).rejects.toThrow("shows no code")
 	})
 })
