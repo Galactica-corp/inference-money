@@ -4,7 +4,15 @@ import { getFeeJuiceBalance } from "@aztec-labs/aztec.js/utils"
 import { ManaUsageEstimate } from "@aztec-labs/stdlib/gas"
 import { createNodeClient } from "@galactica-net/inference-money-core"
 import { type Address, createPublicClient, getAddress, http, isAddressEqual, type PublicClient, parseAbi } from "viem"
-import { ESTIMATED_GAS_PER_TX, feeBudget, TESTNET_DEPLOY_TXS, TESTNET_SPONSORED_TXS } from "./budget"
+import {
+	ESTIMATED_GAS_PER_TX,
+	feeBudget,
+	type MainnetFunding,
+	mainnetFunding,
+	TESTNET_DEPLOY_TXS,
+	TESTNET_SPONSORED_TXS,
+	units18,
+} from "./budget"
 import type { NetworkPins } from "./networks"
 
 export interface Check {
@@ -156,16 +164,74 @@ async function readFeePath(node: AztecNode, l1: PublicClient, faucet: Address, s
 	})
 }
 
-/** Keyless, read-only: every identity and funding fact a deploy relies on; mainnet pins no fee path to check. */
-export async function probeNetwork(pins: NetworkPins, l1RpcUrl: string): Promise<Check[]> {
+/** What a mainnet deploy must bridge and spend now, from the node's predicted fees and the L1 gas price. */
+export async function readMainnetFunding(node: AztecNode, l1: PublicClient): Promise<MainnetFunding> {
+	const [predicted, gasPrice] = await Promise.all([node.getPredictedMinFees(ManaUsageEstimate.Limit), l1.getGasPrice()])
+	return mainnetFunding(predicted, gasPrice)
+}
+
+export interface FunderBalances {
+	feeAsset: bigint
+	eth: bigint
+}
+
+/** The funder's L1 balances against what the deploy bridges (deployer + admin) and spends in gas. */
+export function checkFunding(f: MainnetFunding, b: FunderBalances | undefined): Check[] {
+	const needed = f.deployer + f.admin
+	const need = check(
+		"funding needed (informational)",
+		true,
+		`${units18(needed)} AZTEC (deployer ${units18(f.deployer)}, admin ${units18(f.admin)}) + ${units18(f.eth)} ETH`,
+	)
+	if (!b) return [need]
+	return [
+		need,
+		check("funder AZTEC ≥ Fee Juice to bridge", b.feeAsset >= needed, `${units18(b.feeAsset)} AZTEC`),
+		check("funder ETH ≥ L1 gas bound", b.eth >= f.eth, `${units18(b.eth)} ETH`),
+	]
+}
+
+const ERC20_BALANCE = parseAbi(["function balanceOf(address) view returns (uint256)", "function UNDERLYING() view returns (address)"])
+
+/** Mainnet's fee path: the pinned fee asset behind the portal, and a funder that can pay for the deploy. */
+async function readHeldFeePath(
+	node: AztecNode,
+	l1: PublicClient,
+	pins: NetworkPins,
+	feeAsset: Address,
+	funder?: Address,
+): Promise<Check[]> {
+	const [underlying, funding, balances] = await Promise.all([
+		l1.readContract({ address: pins.feeJuicePortal, abi: ERC20_BALANCE, functionName: "UNDERLYING" }),
+		readMainnetFunding(node, l1),
+		funder
+			? Promise.all([
+					l1.readContract({ address: feeAsset, abi: ERC20_BALANCE, functionName: "balanceOf", args: [funder] }),
+					l1.getBalance({ address: funder }),
+				]).then(([asset, eth]) => ({ feeAsset: asset, eth }))
+			: undefined,
+	])
+	return [check("fee asset == portal UNDERLYING", eq(underlying, feeAsset), underlying), ...checkFunding(funding, balances)]
+}
+
+export interface ProbeOptions {
+	/** The L1 address that will fund a mainnet deploy: its AZTEC and ETH are checked against the budget. */
+	funder?: Address
+}
+
+/**
+ * Keyless, read-only: every identity and funding fact a deploy relies on. Testnet: the faucet and the sponsor.
+ * Mainnet: the pinned fee asset, the funding a deploy needs now, and with `funder` whether that address holds it.
+ */
+export async function probeNetwork(pins: NetworkPins, l1RpcUrl: string, opts: ProbeOptions = {}): Promise<Check[]> {
 	const node = createNodeClient(pins.nodeUrl)
 	const l1 = createPublicClient({ transport: http(l1RpcUrl) }) as PublicClient
-	const { feeAssetHandler, sponsoredFpc } = pins
-	const [info, wiring, assets, feePath] = await Promise.all([
-		node.getNodeInfo(),
-		readL1Wiring(l1, pins),
-		readAssets(l1, pins),
-		feeAssetHandler && sponsoredFpc ? readFeePath(node, l1, feeAssetHandler, sponsoredFpc) : [],
-	])
-	return [...checkNodeIdentity(info, pins), ...checkL1Wiring(wiring, pins), ...checkAssets(assets, pins), ...feePath]
+	const { feeAssetHandler, sponsoredFpc, feeAsset } = pins
+	const feePath = (): Promise<Check[]> => {
+		if (feeAssetHandler && sponsoredFpc) return readFeePath(node, l1, feeAssetHandler, sponsoredFpc)
+		if (feeAsset) return readHeldFeePath(node, l1, pins, feeAsset, opts.funder)
+		return Promise.resolve([])
+	}
+	const [info, wiring, assets, fees] = await Promise.all([node.getNodeInfo(), readL1Wiring(l1, pins), readAssets(l1, pins), feePath()])
+	return [...checkNodeIdentity(info, pins), ...checkL1Wiring(wiring, pins), ...checkAssets(assets, pins), ...fees]
 }

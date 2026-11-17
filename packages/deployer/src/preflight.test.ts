@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test"
 import { TESTNET } from "./networks"
-import { checkFeePath, checkL1Wiring, checkNodeIdentity } from "./preflight"
+import { checkFeePath, checkFunding, checkL1Wiring, checkNodeIdentity } from "./preflight"
 
 const addr = (s: string) => ({ toString: () => s })
 const IDENTITY = {
@@ -42,5 +42,17 @@ describe("probe checks", () => {
 		const fee = { faucetMint: 1000n, deployBudget: 100n, sponsoredBudget: 500n, sponsorPublished: true, sponsorBalance: 0n }
 		expect(failed(checkFeePath(fee))).toEqual([])
 		expect(failed(checkFeePath({ ...fee, faucetMint: 10n }))).toEqual(["fee faucet mint ≥ deploy budget"])
+	})
+})
+
+describe("mainnet funding checks", () => {
+	const FUNDING = { deployer: 80n * 10n ** 18n, admin: 90n * 10n ** 18n, eth: 3n * 10n ** 15n }
+
+	it("states what to fund keylessly, and with a funder, fails short AZTEC or short ETH", () => {
+		expect(checkFunding(FUNDING, undefined)).toMatchObject([{ ok: true, detail: expect.stringMatching(/^170\.0000 AZTEC/) }])
+		const enough = { feeAsset: 170n * 10n ** 18n, eth: FUNDING.eth }
+		expect(failed(checkFunding(FUNDING, enough))).toEqual([])
+		expect(failed(checkFunding(FUNDING, { ...enough, feeAsset: enough.feeAsset - 1n }))).toEqual(["funder AZTEC ≥ Fee Juice to bridge"])
+		expect(failed(checkFunding(FUNDING, { ...enough, eth: FUNDING.eth - 1n }))).toEqual(["funder ETH ≥ L1 gas bound"])
 	})
 })

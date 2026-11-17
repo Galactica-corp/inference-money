@@ -66,3 +66,59 @@ export function feeBudget(p: { txCount: number; gasPerTx: Gas; predicted: readon
 	const perTx = BigInt(p.gasPerTx.daGas) * worstDa + BigInt(p.gasPerTx.l2Gas) * worstL2
 	return perTx * BigInt(p.txCount) * p.headroom
 }
+
+/**
+ * The L2 txs a mainnet deploy sends from the deployer's own Fee Juice: AuthRegistry is already published there
+ * (checked 2026-11-17), so two standard contracts, plus the public claim that funds the admin.
+ */
+export const MAINNET_DEPLOY_TXS = [
+	"deploy deployer account",
+	"publish PublicChecks class",
+	"publish PublicChecks instance",
+	"publish HandshakeRegistry class",
+	"publish HandshakeRegistry instance",
+	"deploy token_minter_proxy",
+	"deploy Token",
+	"deploy token_bridge",
+	"proxy.set_token + proxy.set_bridge",
+	"propose both admin roles",
+	"claim the admin's Fee Juice",
+] as const
+
+/** Admin txs a mainnet deploy pre-funds, so an emergency pause never waits on a top-up. */
+export const MAINNET_ADMIN_RESERVE_TXS = 20
+
+/** The admin's own txs on mainnet: its account deploy and the accept, then the reserve. */
+export const MAINNET_ADMIN_TXS = ["deploy admin account", "accept both admin roles"] as const
+
+/** Fee Juice is not withdrawable from L2, so a mainnet deploy bridges a bound, not a balance: 2× today's worst fee. */
+export const MAINNET_HEADROOM = 2n
+
+/**
+ * A bound on the L1 gas a mainnet deploy and its sweep spend: the portal and router creates, `initialize`, an approve
+ * and a deposit for each of the two Fee Juice bridges, and the sweep's two transfers.
+ */
+export const MAINNET_L1_GAS = 8_000_000n
+
+export interface MainnetFunding {
+	/** Fee Juice (= fee asset units) bridged to the deployer. */
+	deployer: bigint
+	/** Fee Juice bridged to the admin's address and claimed for it: its own txs with headroom, then the reserve. */
+	admin: bigint
+	/** ETH the L1 key needs at `gasPrice` for {@link MAINNET_L1_GAS}, times 3 for a fee spike mid-run. */
+	eth: bigint
+}
+
+/** What a mainnet deploy bridges and spends, from the node's predicted fees and the L1 gas price. */
+export function mainnetFunding(predicted: readonly FeesPerGas[], gasPrice: bigint): MainnetFunding {
+	const bound = (txCount: number, headroom: bigint) => feeBudget({ txCount, gasPerTx: ESTIMATED_GAS_PER_TX, predicted, headroom })
+	return {
+		deployer: bound(MAINNET_DEPLOY_TXS.length, MAINNET_HEADROOM),
+		// The reserve is margin already: its txs are counted once.
+		admin: bound(MAINNET_ADMIN_TXS.length, MAINNET_HEADROOM) + bound(MAINNET_ADMIN_RESERVE_TXS, 1n),
+		eth: MAINNET_L1_GAS * gasPrice * 3n,
+	}
+}
+
+/** 18-decimal units as a short decimal string. */
+export const units18 = (v: bigint): string => (Number(v / 10n ** 14n) / 1e4).toFixed(4)

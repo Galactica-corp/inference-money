@@ -29,7 +29,7 @@ export const PROTOCOL_VERSION = 2
 export const bridgeManifestSchema = z
 	.strictObject({
 		protocolVersion: z.literal(PROTOCOL_VERSION),
-		network: z.enum(["local", "testnet"]),
+		network: z.enum(["local", "testnet", "mainnet"]),
 		/** The commit the deploy ran from: its CLI can still finish this deployment's tickets after the formats move on. */
 		sourceCommit: z.string().regex(/^[0-9a-f]{40}$/, "expected a 40-hex commit"),
 		l1: z.strictObject({

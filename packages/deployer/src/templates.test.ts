@@ -50,4 +50,13 @@ describe("keyed-run templates", () => {
 		expect([...fund.keys()].sort()).toEqual(["SEPOLIA_RPC_URL", "TESTNET_L1_PRIVATE_KEY"])
 		expect(deploy.get("TESTNET_ADMIN_ADDRESS")?.value.startsWith("op://")).toBe(false)
 	})
+
+	it("give the mainnet admin an item of its own, holding its secret alone: mainnet deploy keys live in the disposable bundle", () => {
+		const mainnetAdmin = template("mainnet-admin.env.example")
+		expect([...mainnetAdmin.keys()]).toEqual(["MAINNET_ADMIN_SECRET"])
+		expect(mainnetAdmin.get("MAINNET_ADMIN_SECRET")).toEqual({
+			value: "op://Keyed-Runs/InferenceMoney-Mainnet-Admin/MAINNET_ADMIN_SECRET",
+			directive: "generate fr",
+		})
+	})
 })

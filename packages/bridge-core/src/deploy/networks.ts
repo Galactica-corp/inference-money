@@ -16,6 +16,8 @@ export interface NetworkPins {
 	usdcEip712Version: string
 	permit2: Address
 	feeJuicePortal: Address
+	/** The portal's underlying fee asset, bridged as Fee Juice; pinned where a deploy must hold it (mainnet). */
+	feeAsset?: Address
 	/** The fee asset's L1 faucet; testnet only. */
 	feeAssetHandler?: Address
 	/** The canonical SponsoredFPC; testnet only. */
@@ -47,7 +49,10 @@ export const TESTNET = {
 	explorer: { l1Tx: "https://sepolia.etherscan.io/tx/", l2Tx: "https://testnet.aztecscan.xyz/tx-effects/" },
 } satisfies NetworkPins
 
-/** Pinned for the probe only: mainnet has neither a SponsoredFPC nor a fee faucet, so nothing deploys here yet. */
+/**
+ * Mainnet has neither a SponsoredFPC nor a fee faucet: a deploy bridges AZTEC its L1 key already holds, and every
+ * private flow needs a fee payer of the integrator's own.
+ */
 export const MAINNET = {
 	name: "mainnet",
 	nodeUrl: "https://aztec-mainnet.drpc.org",
@@ -63,6 +68,8 @@ export const MAINNET = {
 	usdcEip712Version: "2",
 	permit2: "0x000000000022D473030F116dDEE9F6B43aC78BA3",
 	feeJuicePortal: "0x534361be805ca30bdb6404ec5e6cdaffb3e9f3b3",
+	// AZTEC, the portal's UNDERLYING(); the probe re-reads it from the portal.
+	feeAsset: "0xA27EC0006e59f245217Ff08CD52A7E8b169E62D2",
 	explorer: { l1Tx: "https://etherscan.io/tx/", l2Tx: "https://aztecscan.xyz/tx-effects/" },
 } satisfies NetworkPins
 

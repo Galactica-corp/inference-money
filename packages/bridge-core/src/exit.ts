@@ -12,7 +12,7 @@ import type { Tx } from "@aztec-labs/stdlib/tx"
 import { type Address, type Hex, isAddressEqual, zeroAddress } from "viem"
 import { tokenArtifact, tokenBridgeArtifact } from "./artifacts"
 import { assertExitDestination } from "./binding"
-import { type FeeChoice, feeFor, L2_DONE, type L2Wait, type SponsorUnavailableError, sponsorFailure, tipOf } from "./claim"
+import { type FeeChoice, feeFor, isSponsoredFee, L2_DONE, type L2Wait, type SponsorUnavailableError, sponsorFailure, tipOf } from "./claim"
 import { withdrawContentHash } from "./content-hash"
 import type { BridgeManifest } from "./manifest"
 import type { OutboxReader } from "./outbox"
@@ -210,7 +210,7 @@ export async function exitToL1(
 	} catch (err) {
 		const sent = [...watch.seen]
 		if (sent[0]) throw new ExitUnconfirmedError(sent[0].txHash, e.recipientL1, e.amount, { cause: err }, sent)
-		throw (fee && sponsorFailure(err, "withdrawal")) || err
+		throw (isSponsoredFee(fee) && sponsorFailure(err, "withdrawal")) || err
 	} finally {
 		watch.stop()
 	}

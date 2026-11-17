@@ -6,9 +6,9 @@ Every operation is one `bun run bridge <command>`. `<manifest>` is a path, or `l
 
 | Command | Keys (testnet) | Effect |
 |---|---|---|
-| `deploy local\|testnet [--merchant-delay <s>]` | L1 key, deployer secret, `SEPOLIA_RPC_URL`; plain `TESTNET_ADMIN_ADDRESS` | Deploys L1 then L2, wires them, proposes both admin roles to the admin, verifies, writes the manifest. Local accepts as the fixed local admin in the same run |
-| `admin address` | admin secret | Prints the admin account's address, for the deploy template |
-| `admin accept <manifest>` | admin secret | Deploys the admin account through the sponsor if needed, accepts the bridge's ownership and the merchant admin role, records `l2.admin` |
+| `deploy local\|testnet\|mainnet [--merchant-delay <s>]` | L1 key, deployer secret, the network's RPC; plain `<NETWORK>_ADMIN_ADDRESS` | Deploys L1 then L2, wires them, proposes both admin roles to the admin, verifies, writes the manifest. Local accepts as the fixed local admin in the same run; mainnet also bridges and claims the admin's Fee Juice (see Mainnet) |
+| `admin address testnet\|mainnet` | that network's admin secret | Prints the admin account's address, for the deploy |
+| `admin accept <manifest>` | admin secret | Deploys the admin account if needed (through the sponsor, or on mainnet from its own Fee Juice), accepts the bridge's ownership and the merchant admin role, records `l2.admin` |
 | `admin propose <manifest> <address>` | admin secret | Proposes both roles to a new admin, which takes them with its own `admin accept` |
 | `merchants add <manifest> <account…>` | admin secret | Lists merchants, at once, four per tx |
 | `merchants off\|on <manifest> <account>` | admin secret | Schedules a switch-off, or back on; it lands after the entry's delay |
@@ -22,12 +22,12 @@ Every operation is one `bun run bridge <command>`. `<manifest>` is a path, or `l
 | `smoke <manifest> [--record <file>]` | none | The acceptance run with the demo cast (see Demo) |
 | `demo setup [--rotate] \| status \| reset <manifest>` | none | The demo cast (see Demo) |
 | `demo fund <manifest>` | L1 key, `SEPOLIA_RPC_URL` | Tops the cast's Ethereum accounts up, then the sponsor's Fee Juice |
-| `disposable init \| exec <command…> \| destroy <manifest>` | the disposable file | The fallback when the owner is away (see below) |
+| `disposable init testnet\|mainnet [--admin <a> --refund <a>] \| exec <network> <command…> \| sweep mainnet \| destroy <manifest>` | the disposable file | The fallback when the owner is away (see below); mainnet's deploy keys (see Mainnet) |
 | `manifest-path local` | none | This `RUN_ID`'s manifest path |
-| `probe` | none | `testnet` or `mainnet`: the network's pins, L1 wiring and assets, and on testnet the fee budget, before a deploy |
+| `probe testnet\|mainnet [--funder <L1 address>]` | none | The network's pins, L1 wiring and assets before a deploy; on testnet the fee budget, on mainnet the funding a deploy needs now and, with `--funder`, whether that address holds it |
 | `scan` | the run's own | Whether any of the run's secrets reached the checkout or the caches, and any wallet store left on disk: yes or no, never where. `walletDirs` above 0 is a leftover store holding an account secret: delete `~/.cache/inference-money/wallet-tmp/` once no command runs |
 
-Local commands skip proving unless `BRIDGE_PROVE=1`; testnet always proves.
+Local commands skip proving unless `BRIDGE_PROVE=1`; testnet and mainnet always prove.
 
 ## Keyed runs
 
@@ -42,21 +42,38 @@ A keyed command runs in a process whose environment the owner fills, one approva
 |---|---|
 | `deployments/testnet-deploy.env.example` | L1 key (imported), deployer secret (generated), `SEPOLIA_RPC_URL`; plain `TESTNET_ADMIN_ADDRESS` |
 | `deployments/testnet-admin.env.example` | admin secret (generated) |
+| `deployments/mainnet-admin.env.example` | mainnet admin secret (generated), its own item `Keyed-Runs/InferenceMoney-Mainnet-Admin` |
 | `deployments/testnet-fund.env.example` | L1 key, `SEPOLIA_RPC_URL` |
 
-`SEPOLIA_RPC_URL` is your own endpoint, or the committed public default (`networks.ts`), which the scan and the redaction treat as public.
+`SEPOLIA_RPC_URL` (mainnet: `ETHEREUM_RPC_URL`) is your own endpoint, or the committed public default (`networks.ts`), which the scan and the redaction treat as public. Each network has its own variable names (`TESTNET_*`, `MAINNET_*`), so a key held for one never acts on the other.
 
 The deploy run never sees the admin secret, and the admin run never sees the L1 key. The deploy keys lose every role once the admin accepts; `verify` fails if one keeps any. What a deploy key wrote before that stays: `verify` fails on a guardian it was not told to expect, and prints one line per listed merchant, to compare with the accounts you added. The register is append-only, so a deployment with a merchant you did not add is redeployed, not repaired.
 
 **Testnet, in order:**
-1. `admin address` (commit the printed address into the deploy template).
+1. `admin address testnet` (commit the printed address into the deploy template).
 2. Keyed: `probe` + `deploy testnet` + `demo fund`. One run, one L1 key, which must already hold Sepolia ETH for the deploy's and the run's own gas plus 0.04 for the cast, and 50.02 Circle Sepolia USDC: `demo fund` transfers what the cast's Ethereum accounts lack, and nothing checks first. Its Fee Juice claim is sent by the sponsor claimer, an account derived from the deployment alone that is no cast member, holds no USDC, and is deployed through the sponsor if absent.
 3. Keyed: `admin accept`.
 4. Keyless: `demo setup`. It binds galactica and supplier to their own Ethereum accounts, then stops at the listing.
 5. Keyed: `merchants add <galactica> <supplier>` (their addresses: step 4's stop prints them).
 6. Keyless: `demo setup` again, then `smoke --record deployments/testnet-tour.json`.
 
-**The disposable fallback**, for testnet only, when the owner is away: `disposable init` draws an L1 key, a deployer secret and an interim admin secret into `~/.cache/inference-money/disposable/testnet.env` (0600, outside every checkout, never overwritten) and prints only their addresses; the owner funds the L1 one at the faucets. `disposable exec <command…>` runs one bridge command from the keyed worktree, redacted, then scans; the child's environment holds only the values that command needs (`deploy`: the L1 key, the deployer secret and the admin address; `demo fund`: the L1 key; the admin, merchant-changing and `pause` commands: the admin secret; anything else: none). It refuses a file that is not 0600 and this user's. A bundle makes one deployment: its `deploy testnet` writes a marker beside the keys before starting and the bridge into it on success, and a second deploy is refused. A deploy that fails or dies first leaves the marker empty, and both a redeploy and `destroy` refuse until you establish what it created. An `admin accept` under it records `l2.interimAdmin`, and `verify` warns while that holds. The switch, once the owner is back: the keyed `admin address`; `disposable exec admin propose deployments/testnet.json <owner admin>`; the keyed `admin accept`; `verify`; `disposable destroy deployments/testnet.json`, which deletes the file only for the deployment the bundle recorded, and only once reads at the `finalized` tag, through the pinned testnet node it trusts, show the manifest's admin, an account those keys don't control, holding both roles with nothing pending; they are separate reads, not necessarily of one block. The file is readable by any same-user process until then; that is accepted for test funds only.
+**The disposable fallback**, for testnet when the owner is away: `disposable init testnet` draws an L1 key, a deployer secret and an interim admin secret into `~/.cache/inference-money/disposable/testnet.env` (0600, outside every checkout, never overwritten) and prints only their addresses; the owner funds the L1 one at the faucets. `disposable exec testnet <command…>` runs one bridge command from the keyed worktree, redacted, then scans; the child's environment holds only the values that command needs (`deploy`: the L1 key, the deployer secret and the admin address; `demo fund`: the L1 key; the admin, merchant-changing and `pause` commands: the admin secret; anything else: none). It refuses a file that is not 0600 and this user's. A bundle makes one deployment: its `deploy testnet` writes a marker beside the keys before starting and the bridge into it on success, and a second deploy is refused. A deploy that fails or dies first leaves the marker empty, and both a redeploy and `destroy` refuse until you establish what it created. An `admin accept` under it records `l2.interimAdmin`, and `verify` warns while that holds. The switch, once the owner is back: the keyed `admin address testnet`; `disposable exec testnet admin propose deployments/testnet.json <owner admin>`; the keyed `admin accept`; `verify`; `disposable destroy deployments/testnet.json`, which deletes the file only for the deployment the bundle recorded, and only once reads at the `finalized` tag, through the pinned testnet node it trusts, show the manifest's admin, an account those keys don't control, holding both roles with nothing pending; they are separate reads, not necessarily of one block. The file is readable by any same-user process until then; that is accepted for test funds only.
+
+## Mainnet
+
+Mainnet has no SponsoredFPC and no fee faucet. Its L2 fees are Fee Juice bridged from AZTEC (`MAINNET.feeAsset`, the FeeJuicePortal's `UNDERLYING()`), which the deploy key must already hold; Fee Juice never leaves L2, so the deploy bridges a budget, not a balance (`budget.ts`: the deploy's txs at twice today's worst fee, the admin's two txs likewise plus a reserve of 20 admin txs, so an emergency `pause` never waits on a top-up). The admin pays its own txs from that reserve; admin txs name it publicly either way. The manifest names no sponsor, `verify` warns on that and fails an admin with no Fee Juice, and integrators bring their own fee payer (`docs/integration.md`, Who pays the fee).
+
+The deploy keys are a disposable bundle (owner-authorized for mainnet): the L1 key and the deployer secret only. No admin key is drawn; the deploy proposes straight to the owner's admin. **In order:**
+
+1. Owner, keyed (`deployments/mainnet-admin.env.example`): `admin address mainnet`. Hand over the printed address and an L1 refund address of yours.
+2. `disposable init mainnet --admin <admin> --refund <refund>` writes `~/.cache/inference-money/disposable/mainnet.env` (0600) and prints the bundle's L1 address and the funding it needs now (AZTEC and ETH).
+3. Owner: fund that L1 address. `probe mainnet --funder <L1 address>` passes once it holds enough.
+4. From the keyed worktree: `disposable exec mainnet deploy mainnet`. It refuses before spending unless the key covers the budget, then bridges the admin's Fee Juice first (its claim kept in `~/.cache/inference-money/fee-claims/` until it lands), deploys, proposes, verifies with the handover pending, writes `deployments/mainnet.json`, and claims the admin's Fee Juice from the deployer. If that last claim fails, the manifest stands and `admin accept` consumes the kept claim itself.
+5. Owner, keyed: `admin accept deployments/mainnet.json`, chained with the scan.
+6. `verify deployments/mainnet.json`: strict, one warning (no sponsor). Then from `sourceCommit` against endpoints of your own.
+7. `disposable sweep mainnet` sends the L1 key's AZTEC, then its ETH less the transfer fee, to the refund address; `disposable destroy deployments/mainnet.json` deletes the bundle only once the finalized handover holds and the key is swept (dust under 0.001 ETH). The deployer's leftover Fee Juice stays on L2.
+
+Demo commands (`demo *`, `smoke`) refuse mainnet: the cast's keys are public. Merchants are added by the admin's keyed run, each once it has bound its treasury (Merchants).
 
 ## Verifying a deployment
 
@@ -72,7 +89,7 @@ It checks the L1 bytecode against a fresh build and each L1 contract's creation 
 
 The delay policy reads the setting, the guardian slot and every listed merchant at one block. The setting must equal the manifest's `l2.merchantDelay`, which the deploy records (86400 unless `--merchant-delay` set another) and `merchants delay` rewrites; a manifest without it gets an "unpinned" warning. The guardian slot and every merchant must be scheduled to the setting. The guardian slot's own delay change in flight, which follows every decrease of the setting, prints as an `ok` line with its time: only public functions read that slot, so it caps no tx. A merchant's change in flight fails, since it marks that merchant's txs until it lands: a switch or a delay change. A cancel, or a switch back on before the switch-off lands, schedules the current value, which marks nothing, so it passes. `--allow-pending` turns each failure into a warning with its time, except a delay change to anything but the manifest's delay. Use it while a `merchants delay`, `off` or `on` settles; a strict `verify` passes once they land.
 
-**The sponsor is load-bearing.** Every Aztec tx names its fee payer in public, and the sponsor is the only payer that keeps an account out of its private claims, exits, returns and payments; the alternative, `"account-public"`, names the account beside its deposit, its funding address or its payee. On testnet the sponsor is a shared faucet anyone can drain: while it cannot pay, private flows wait, and bridge-core never falls back to the account on its own. A deployment off testnet needs a fee strategy first (an operator-run sponsor, a USDC-paid fee contract, a relayer): that choice is Galactica's, and the manifest has no network value for one until it is made.
+**The sponsor is load-bearing.** Every Aztec tx names its fee payer in public, and the sponsor is the only payer that keeps an account out of its private claims, exits, returns and payments; the alternative, `"account-public"`, names the account beside its deposit, its funding address or its payee. On testnet the sponsor is a shared faucet anyone can drain: while it cannot pay, private flows wait, and bridge-core never falls back to the account on its own. Mainnet has none: an integrator passes its own `{ paymentMethod }` (an FPC it runs, a relayer) or `"account-public"`. A Galactica-run sponsor (an operator FPC, a USDC-paid fee contract) is Galactica's decision, and the manifest names none until it is made.
 
 **Old deployments.** A manifest names its `protocolVersion` and `sourceCommit`, and every stored ticket names its protocol version. Finish an old deployment's claims and withdrawals with the CLI of its `sourceCommit`: a newer one refuses its artifacts and names that commit.
 
