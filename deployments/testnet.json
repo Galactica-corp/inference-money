@@ -21,8 +21,7 @@
 		"rollupVersion": 679261766,
 		"nodeUrl": "https://aztec-testnet.drpc.org",
 		"sponsoredFpc": "0x2d8fff82a3b0c15d0a89169e7d8d043e079ab94d52031f1de1e4972ebad169d3",
-		"admin": "0x14531a1fd139dde3c1cb9ffaf68e2c906078b23d6a241abcbdcd03440b1837aa",
-		"interimAdmin": true,
+		"admin": "0x2180d27530688f7ad9fa5be633e2e8a5edc4a00e319b5093224a6707b3830f71",
 		"merchantDelay": 86400,
 		"proxy": {
 			"address": "0x12c57aff727877490ca49d420de5229996e8cb194fc70399173f57e64512a031",
