@@ -14,16 +14,8 @@ import {TokenPortal} from "../src/TokenPortal.sol";
 import {ISignatureTransfer} from "../src/interfaces/ISignatureTransfer.sol";
 import {ITokenPortal} from "../src/interfaces/ITokenPortal.sol";
 import {RouterWithoutSignerCheck} from "./mocks/Mutants.sol";
-import {Permit2Digest} from "./mocks/Permit2Digest.sol";
+import {IPermit2Errors, Permit2Digest} from "./mocks/Permit2Digest.sol";
 import {Honest1271Delegate, Inert, PermissiveWallet, RevertingDelegate, WrongMagicDelegate} from "./mocks/Wallets.sol";
-
-/// Permit2's own errors (Uniswap/permit2 SignatureTransfer + SignatureVerification).
-interface IPermit2Errors {
-    error InvalidContractSignature();
-    error InvalidNonce();
-    error InvalidSigner();
-    error SignatureExpired(uint256 signatureDeadline);
-}
 
 /// Forks Sepolia and drives the REAL Permit2, Circle USDC, Aztec testnet registry and Inbox through a freshly
 /// deployed portal + router. Skips only when SEPOLIA_RPC_URL is unset; `bun run test:evm:fork` refuses to run
@@ -31,9 +23,9 @@ interface IPermit2Errors {
 /// (`networks.test.ts` asserts it) and the node info the testnet probe checks.
 contract SepoliaForkTest is Test {
     address internal constant REGISTRY = 0xA0BFb1B494FB49041e5c6e8c2C1BE09cD171c6Ba;
-    address internal constant INBOX = 0x816ce1861ec258F99279E75a3EE6B5Dfc9571E30;
-    address internal constant OUTBOX = 0xb9daE0F8c5dD6524c1015fFE6494d9fD0623DF0d;
-    uint256 internal constant ROLLUP_VERSION = 2_914_217_885;
+    address internal constant INBOX = 0x7cdC32Dd7d008870A95f1837Ffd7229ef676EF8A;
+    address internal constant OUTBOX = 0xA5A0f7a7BDAf280964a1922A68C83462E5F6E15b;
+    uint256 internal constant ROLLUP_VERSION = 679_261_766;
     address internal constant USDC = 0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238;
     address internal constant PERMIT2 = 0x000000000022D473030F116dDEE9F6B43aC78BA3;
     bytes32 internal constant L2_BRIDGE = bytes32(uint256(0xB41D6E));
@@ -55,13 +47,16 @@ contract SepoliaForkTest is Test {
             return;
         }
         vm.createSelectFork(rpc);
+        // A load-balanced public endpoint can serve reads from a backend a block or two behind its head, so the fork
+        // pins a block well past that lag.
+        vm.rollFork(block.number - 8);
         user = vm.addr(userPk);
         require(user.code.length == 0, "signer must be a plain EOA on this fork");
 
         // The deploy order: the router names the portal before the portal's initialize checks that binding.
         portal = new TokenPortal();
         router = new Permit2DepositRouter(ISignatureTransfer(PERMIT2), ITokenPortal(address(portal)), IERC20(USDC));
-        portal.initialize(REGISTRY, USDC, L2_BRIDGE, address(router));
+        portal.initialize(REGISTRY, USDC, L2_BRIDGE, address(router), ROLLUP_VERSION);
         deal(USDC, user, 100e6);
         vm.prank(user);
         IERC20(USDC).approve(PERMIT2, type(uint256).max);
@@ -208,7 +203,7 @@ contract SepoliaForkTest is Test {
         TokenPortal portal2 = new TokenPortal();
         RouterWithoutSignerCheck mutant =
             new RouterWithoutSignerCheck(ISignatureTransfer(PERMIT2), ITokenPortal(address(portal2)), IERC20(USDC));
-        portal2.initialize(REGISTRY, USDC, L2_BRIDGE, address(mutant));
+        portal2.initialize(REGISTRY, USDC, L2_BRIDGE, address(mutant), ROLLUP_VERSION);
         bytes memory foreignForMutant = _signWith(0xB0B, mutant, bytes32(0), true, 4, deadline);
         vm.prank(user);
         mutant.deposit(AMOUNT, bytes32(0), SECRET_HASH, true, 4, deadline, foreignForMutant);

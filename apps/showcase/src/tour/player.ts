@@ -1,5 +1,5 @@
-import { BRIDGE_REFUSALS, TOKEN_REFUSALS } from "@inference-money/bridge-core/rules"
-import type { Tour, TourStep, WorldItem } from "@inference-money/demo/tour"
+import { BRIDGE_REFUSALS, TOKEN_REFUSALS } from "@galactica-net/inference-money-core/rules"
+import type { Tour, TourStep, WorldItem } from "@galactica-net/inference-money-demo/tour"
 import { type Holder, SCENES, type Scene } from "./scenes"
 
 export type { Holder }

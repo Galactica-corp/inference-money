@@ -1,4 +1,4 @@
-import type { BridgeManifest } from "@inference-money/bridge-core"
+import type { BridgeManifest } from "@galactica-net/inference-money-core"
 import { z } from "zod"
 import { ACTORS } from "./actors"
 

@@ -18,8 +18,8 @@ contracts/evm/out/
 contracts/evm/cache/
 contracts/evm/broadcast/
 
-# Medusa campaign output (corpus, logs, crytic-compile export) and auditor scratch; the fizz suite, its config and
-# its written report are committed.
+# Medusa campaign output (corpus, logs, crytic-compile export, artifact hash) and auditor scratch; the fizz suite and
+# its config are committed.
 contracts/evm/fizz_data/corpus_medusa/
 contracts/evm/fizz_data/logs_medusa/
 contracts/evm/fizz_data/crytic-export/
@@ -28,6 +28,7 @@ contracts/evm/fizz_data/last-campaign.log
 contracts/evm/out-fuzz/
 contracts/evm/cache-fuzz/
 contracts/evm/crytic-export/
+contracts/evm/.medusa-artifact-hash
 contracts/evm/x-ray/
 .solidity-auditor/
 .aztec-auditor/
@@ -36,3 +37,9 @@ contracts/evm/x-ray/
 playwright-report/
 test-results/
 .playwright-mcp/
+
+# The publishable build of packages/bridge-core (docs/publishing.md).
+packages/bridge-core/publish/
+
+# Claude Code's per-user settings; the shared .claude/settings.json, if any, stays tracked.
+.claude/settings.local.json

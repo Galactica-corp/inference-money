@@ -87,6 +87,27 @@ pub contract TokenMinterProxy {
     }
 
     #[external("private")]
+    fn mint_split_to_private(recipient: AztecAddress, amount: u128, supply_increase: u128, self_send: bool) {
+        self.enqueue_self.assert_bridge(self.msg_sender());
+        let token = Token::at(self.storage.token.read());
+        self.call(token.mint_split_to_private(recipient, amount, supply_increase, self_send));
+    }
+
+    #[external("private")]
+    fn mint_reserved_to_private(recipient: AztecAddress, amount: u128) {
+        self.enqueue_self.assert_bridge(self.msg_sender());
+        let token = Token::at(self.storage.token.read());
+        self.call(token.mint_reserved_to_private(recipient, amount));
+    }
+
+    #[external("public")]
+    fn release_reserved(amount: u128) {
+        assert(self.storage.bridge.read().eq(self.msg_sender()), "not the bridge");
+        let token = Token::at(self.storage.token.read());
+        self.call(token.release_reserved(amount));
+    }
+
+    #[external("private")]
     fn burn_private(user_address: AztecAddress, amount: u128, authwit_nonce: Field) {
         self.enqueue_self.assert_bridge(self.msg_sender());
         let token = Token::at(self.storage.token.read());

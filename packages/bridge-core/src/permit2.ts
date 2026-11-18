@@ -4,6 +4,7 @@
  * literals as contracts/evm/test/WitnessHash.t.sol.
  */
 import { type Address, encodeAbiParameters, type Hex, keccak256, toHex } from "viem"
+import { type ReadBackOptions, readBack } from "./l1-receipt"
 
 export const DEPOSIT_WITNESS_TYPE = "DepositWitness(bytes32 aztecRecipient,bytes32 secretHash,bool isPrivate)"
 export const DEPOSIT_WITNESS_TYPEHASH = keccak256(toHex(DEPOSIT_WITNESS_TYPE))
@@ -82,8 +83,8 @@ export function randomPermitNonce(): bigint {
 export type Permit2ApprovalStatus = "sufficient" | "approving" | "waiting" | "approved"
 
 /**
- * Reads the Permit2 allowance, approves the maximum when short, and re-reads after the receipt: an approve that
- * "succeeds" against the wrong token or spender still fails closed. Transport-agnostic (wallet, script or fake).
+ * Approves the maximum only while the allowance is short, then reads it back ({@link readBack}): an approve that
+ * "succeeds" against the wrong token or spender still fails closed.
  */
 export async function ensurePermit2Allowance(deps: {
 	allowance: () => Promise<bigint>
@@ -91,6 +92,7 @@ export async function ensurePermit2Allowance(deps: {
 	waitReceipt: (txHash: Hex) => Promise<{ status?: string }>
 	needed: bigint
 	onStatus?: (status: Permit2ApprovalStatus, txHash?: Hex) => void
+	readBack?: ReadBackOptions
 }): Promise<{ approved: boolean; txHash?: Hex }> {
 	if ((await deps.allowance()) >= deps.needed) {
 		deps.onStatus?.("sufficient")
@@ -103,7 +105,7 @@ export async function ensurePermit2Allowance(deps: {
 	if (receipt.status !== undefined && receipt.status !== "success") {
 		throw new Error(`The Permit2 approval ${txHash} reverted; nothing can be deposited.`)
 	}
-	if ((await deps.allowance()) < deps.needed) {
+	if ((await readBack(deps.allowance, (a) => a >= deps.needed, deps.readBack)) < deps.needed) {
 		throw new Error(`The Permit2 allowance is still short after approval ${txHash}: wrong token or spender.`)
 	}
 	deps.onStatus?.("approved", txHash)

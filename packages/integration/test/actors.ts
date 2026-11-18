@@ -21,9 +21,9 @@ import {
 	tokenBridgeArtifact,
 	waitClaimable,
 	waitReturnable,
-} from "@inference-money/bridge-core"
-import { approvePermit2, l1Signer } from "@inference-money/deployer"
-import { L1_CHAIN_ID } from "@inference-money/local-network"
+} from "@galactica-net/inference-money-core"
+import { approvePermit2, l1Signer } from "@galactica-net/inference-money-deployer"
+import { L1_CHAIN_ID } from "@galactica-net/inference-money-local-network"
 import { type Address, erc20Abi, getAbiItem, parseAbi } from "viem"
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts"
 import { harness, newAccount } from "./harness"

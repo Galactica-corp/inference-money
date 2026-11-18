@@ -8,8 +8,8 @@ import {
 	isExitWithdrawn,
 	locateWithdrawal,
 	outboxReader,
-} from "@inference-money/bridge-core"
-import { demoL1, l1CtxOf, withdrawWorld } from "@inference-money/demo"
+} from "@galactica-net/inference-money-core"
+import { demoL1, l1CtxOf, withdrawWorld } from "@galactica-net/inference-money-demo"
 import { type Address, isAddressEqual } from "viem"
 import type { PendingExit } from "@/demo/tickets"
 import { oneAtATime } from "@/lib/one-at-a-time"

@@ -26,12 +26,14 @@ jobs:
       - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
         id: filter
         with:
-          # The ABI pins read the forge build, and the class-id pins read the committed L2 artifacts.
+          # The ABI pins read the forge build, and the class-id pins read the committed L2 artifacts, which must
+          # also derive the shipped testnet manifest.
           filters: |
             relevant:
               - 'packages/bridge-core/**'
               - 'contracts/evm/**'
               - 'contracts/aztec/*/target/**'
+              - 'deployments/testnet.json'
               - 'toolchain.json'
               - 'package.json'
               - 'bun.lock'
@@ -60,6 +62,8 @@ jobs:
       - run: bun run --cwd packages/bridge-core typecheck
       # Builds contracts/evm first, so the ABI pins always compare against fresh forge output.
       - run: bun run --cwd packages/bridge-core test
+      # The package as npm would ship it: only built files, every subpath export loading under Node.
+      - run: bun run release:pack
 
   status:
     name: bridge-core-status

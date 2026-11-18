@@ -14,7 +14,7 @@ import {
 	Side,
 	sideCapsule,
 	TOKEN_REFUSALS,
-} from "@inference-money/bridge-core"
+} from "@galactica-net/inference-money-core"
 import { funded, l1Actor, l2Actor, l2Balances, sentDuring, USDC } from "./actors"
 import { harness, INTEGRATION, sendTogether } from "./harness"
 import { as, listMerchant, merchantList, sponsored, token, tokenAddress } from "./token"

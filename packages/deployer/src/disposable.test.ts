@@ -4,10 +4,10 @@ import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 import { Writable } from "node:stream"
 import { Fr } from "@aztec-labs/aztec.js/fields"
+import type { Roles } from "@galactica-net/inference-money-core/deploy"
 import type { Hex } from "viem"
 import { MANIFEST } from "../../bridge-core/src/test/fixtures"
 import { assertOwnerOnly, disposableDestroy, disposableExec, disposableInit } from "./disposable"
-import type { Roles } from "./token-reads"
 
 const someone = new Fr(0x5eedn)
 const NOBODY = {

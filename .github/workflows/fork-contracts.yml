@@ -1,0 +1,100 @@
+name: Contracts fork (nightly)
+
+# The Sepolia fork suite (the real Permit2, Circle USDC, the Aztec registry and Inbox) through a public RPC, off the PR
+# path: its result also depends on that endpoint. A failed leg comments on one open issue (or opens it) and turns the
+# run red. A schedule fires from the default branch only, so the suite checks out each branch that carries contracts.
+on:
+  schedule:
+    - cron: "47 4 * * *"
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: The branch to test
+        required: true
+        default: main
+        type: choice
+        options:
+          - main
+          - dev
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fork-contracts
+  cancel-in-progress: false
+
+jobs:
+  fork:
+    name: fork suite (${{ matrix.ref }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        ref: ${{ fromJSON(inputs.ref && format('["{0}"]', inputs.ref) || '["main", "dev"]') }}
+    # Each leg writes only its own output name, so the matrix's outputs combine instead of overwriting each other.
+    outputs:
+      passed_main: ${{ steps.result.outputs.passed_main }}
+      passed_dev: ${{ steps.result.outputs.passed_dev }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ matrix.ref }}
+      - uses: ./.github/actions/setup-toolchains
+        with:
+          foundry: "true"
+      - id: suite
+        continue-on-error: true
+        env:
+          SEPOLIA_RPC_URL: https://ethereum-sepolia-rpc.publicnode.com
+        run: bun run test:evm:fork
+      - id: result
+        if: steps.suite.outcome == 'success'
+        env:
+          REF: ${{ matrix.ref }}
+        run: echo "passed_${REF}=true" >>"$GITHUB_OUTPUT"
+
+  # The only job that writes: no checkout and no repository code, and every value reaches the script through env.
+  report:
+    name: report
+    needs: fork
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      issues: write
+    steps:
+      # A ref without its passed_<ref> output failed, whatever stopped it (setup, the suite, a timeout).
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          REFS: ${{ inputs.ref || 'main dev' }}
+          PASSED_MAIN: ${{ needs.fork.outputs.passed_main }}
+          PASSED_DEV: ${{ needs.fork.outputs.passed_dev }}
+        run: |
+          failed=""
+          for ref in $REFS; do
+            case "$ref" in
+              main) passed=$PASSED_MAIN ;;
+              dev) passed=$PASSED_DEV ;;
+              *) passed="" ;;
+            esac
+            [ "$passed" = true ] || failed="$failed $ref"
+          done
+          if [ -z "$failed" ]; then
+            echo "The fork suite passed on: $REFS"
+            exit 0
+          fi
+          title="Nightly Sepolia fork suite failed"
+          body="The Sepolia fork suite failed on:$failed. Run: $RUN_URL"
+          number=$(gh issue list --repo "$REPO" --state open --search "\"$title\" in:title" --json number,title \
+            --jq "map(select(.title == \"$title\")) | first | .number // empty")
+          if [ -n "$number" ]; then
+            gh issue comment "$number" --repo "$REPO" --body "$body"
+          else
+            gh issue create --repo "$REPO" --title "$title" --body "$body"
+          fi
+          echo "::error::The Sepolia fork suite failed on:$failed"
+          exit 1

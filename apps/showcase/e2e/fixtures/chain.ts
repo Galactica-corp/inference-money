@@ -3,7 +3,7 @@
  * node's receipts. Everything here is Node-side and never goes through the page.
  */
 import { readFileSync } from "node:fs"
-import { ethereumKey } from "@inference-money/demo/keys"
+import { ethereumKey } from "@galactica-net/inference-money-demo/keys"
 import { type Address, createPublicClient, createWalletClient, decodeFunctionData, type Hex, http, parseAbi, parseAbiItem } from "viem"
 import { privateKeyToAccount } from "viem/accounts"
 

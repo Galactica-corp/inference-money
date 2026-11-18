@@ -36,7 +36,7 @@ runs:
       id: pins
       shell: bash
       run: |
-        for key in bun cryticCompile foundry halmos medusa nargo node slither; do
+        for key in bun cryticCompile foundry halmos medusa nargo node python slither; do
           echo "$key=$(jq -er --arg k "$key" '.[$k]' toolchain.json)" >> "$GITHUB_OUTPUT"
         done
 
@@ -58,6 +58,14 @@ runs:
       uses: foundry-rs/foundry-toolchain@908c540300062bd5a7e473851cdb4282204cee09 # v1.9.1
       with:
         version: v${{ steps.pins.outputs.foundry }}
+
+    # The halmos, Slither and crytic-compile venvs install hash-locked wheels, which exist only for the CPython versions
+    # their locks were resolved for: the runner image's own python3 moves with the image (ubuntu-26.04 ships one that
+    # safe-pysha3 1.0.5 has no wheel for), so the venvs are built on toolchain.json's `python`.
+    - if: inputs.halmos == 'true' || inputs.slither == 'true' || inputs.medusa == 'true'
+      uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+      with:
+        python-version: ${{ steps.pins.outputs.python }}
 
     # The proof gate trusts halmos's output, so its whole tree installs from a hash lock, wheels only (an sdist build
     # would fetch unpinned build dependencies). A `halmos` bump without a matching halmos-<version>.requirements.txt

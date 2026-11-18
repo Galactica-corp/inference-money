@@ -1,4 +1,4 @@
-import type { TOUR_ACTORS, TourStepId } from "@inference-money/demo/tour"
+import type { TOUR_ACTORS, TourStepId } from "@galactica-net/inference-money-demo/tour"
 
 /** A balance the stage shows: a cast member's, A_demo's or B_demo's, or the portal's escrow. */
 export type Holder = (typeof TOUR_ACTORS)[number] | "portal"

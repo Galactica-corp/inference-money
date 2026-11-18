@@ -25,8 +25,8 @@ Base (is StringUtils, Clamp, Deployer, Math)
 
 ## Related Paths Outside This Directory
 
-- `../../fizz_data/`: extracted ABI inventory, entry-point selection, protocol-understanding notes and the report
-  (committed); corpora, logs and coverage outputs (ignored)
+- `../../fizz_data/`: Medusa's corpora, logs and coverage outputs (ignored). The nightly (`fuzz-contracts.yml`) uploads
+  each run's coverage report as `medusa-coverage-<ref>`; the suite's original generation notes are in git history
 - `../../medusa.json`: Medusa config
 - `../../PROPERTIES.md`: every property, with its guarantee and source
 
@@ -47,7 +47,10 @@ into `out-fuzz/`, away from the default profile's `out/`.
 
 - Real `TokenPortal` and `Permit2DepositRouter`, deployed and initialized in the project's own order
   (`test/mocks/RouterFixture.sol`); Aztec's real `Outbox` behind the project's `FakeRollup` (`mocks/RealOutboxStack.sol`);
-  the project's `CapturingInbox`, `MockPermit2` (no signature check) and `FakeRegistry`.
+  the project's `CapturingInbox` and `FakeRegistry`.
+- The real Permit2: its runtime deployed byte for byte at a fresh address (`test/mocks/Permit2Runtime.sol`, rendered
+  from the deployer's keccak-pinned copy by `scripts/permit2-runtime.ts`); Medusa mis-executes etched code. Router legs sign the digest the harness derives from
+  Permit2's spec (`Base._specPermitDigest`), each with a nonce its signer has not spent (`_freshNonce`).
 - `mocks/ModalUsdc.sol`: the project's `MockUsdc` plus switchable fee-on-transfer, sender surcharge, blacklist and one
   re-entrant transfer hook.
 - `handlers/AztecL2Handler.sol`: the Aztec side reduced to accounting (claim, return, exit, epoch proofs into the real

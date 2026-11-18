@@ -9,7 +9,7 @@
  */
 import { mkdirSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
-import { claimServicePorts, REPO_ROOT, releasePorts, runIdFor } from "@inference-money/local-network"
+import { claimServicePorts, REPO_ROOT, releasePorts, runIdFor } from "@galactica-net/inference-money-local-network"
 
 async function main([command, ...args]: string[]): Promise<void> {
 	if (command === "release" && args[0]) return releasePorts(args[0])

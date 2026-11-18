@@ -3,7 +3,6 @@ import { mkdtempSync, rmSync, statSync } from "node:fs"
 import { homedir } from "node:os"
 import { join } from "node:path"
 import { handlePath, type NetHandle, readHandle, resolveEndpoints, runIdFor, writeHandle } from "./handle"
-import { withBlockHeartbeat } from "./heartbeat"
 
 describe("run identity and endpoints", () => {
 	it("namespaces RUN_ID by checkout and refuses unsafe tags", () => {
@@ -47,20 +46,5 @@ describe("run identity and endpoints", () => {
 		} finally {
 			rmSync(root, { recursive: true, force: true })
 		}
-	})
-})
-
-describe("withBlockHeartbeat", () => {
-	it("forces blocks while the operation runs and stops with it, even when a beat fails", async () => {
-		let beats = 0
-		const force = async () => {
-			if (++beats === 2) throw new Error("tx rejected")
-		}
-		const result = await withBlockHeartbeat(force, () => new Promise((r) => setTimeout(() => r("done"), 55)), 10)
-		expect(result).toBe("done")
-		const after = beats
-		expect(after).toBeGreaterThanOrEqual(3)
-		await new Promise((r) => setTimeout(r, 40))
-		expect(beats).toBe(after)
 	})
 })

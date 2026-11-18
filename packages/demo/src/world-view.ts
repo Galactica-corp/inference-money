@@ -1,7 +1,7 @@
 import { AztecAddress } from "@aztec-labs/aztec.js/addresses"
 import type { Fr } from "@aztec-labs/aztec.js/fields"
 import { computePublicDataTreeLeafSlot } from "@aztec-labs/stdlib/hash"
-import { type BridgeManifest, type ClaimTicket, tokenArtifact } from "@inference-money/bridge-core"
+import { type BridgeManifest, type ClaimTicket, tokenArtifact } from "@galactica-net/inference-money-core"
 import type { WorldItem } from "./tour"
 
 /** The parts of a mined tx effect anyone can read from a node. */
@@ -101,11 +101,14 @@ export const withdrawWorld = (recipient: string, amount: bigint): WorldItem[] =>
 		["amount", amount.toString()],
 	])
 
-/** What each kind of Aztec tx carries that nobody but its parties can read. */
+/**
+ * What each kind of Aztec tx keeps from everyone but its parties, neither readable nor inferable: a payment's public
+ * amount usually names its merchant, whose x402 prices are public.
+ */
 export const HIDDEN: Record<"claim" | "request" | "pay" | "transfer" | "exit", readonly string[]> = {
 	claim: ["recipient"],
 	request: ["recipient", "payer"],
-	pay: ["payer", "recipient"],
+	pay: ["payer"],
 	transfer: ["sender", "recipient", "amount"],
 	exit: ["sender"],
 }

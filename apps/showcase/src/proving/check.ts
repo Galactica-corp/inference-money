@@ -9,7 +9,7 @@ import {
 	sponsoredPayment,
 	syncMerchantList,
 	transferPrivate,
-} from "@inference-money/bridge-core"
+} from "@galactica-net/inference-money-core"
 import type { DemoWallet } from "@/demo/wallet"
 
 export type ProvedAction = "transfer" | "open" | "pay"

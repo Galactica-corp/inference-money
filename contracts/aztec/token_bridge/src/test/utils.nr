@@ -8,7 +8,7 @@ use aztec::{
 };
 use token::Token;
 use token_minter_proxy::TokenMinterProxy;
-use claim_secret_lib::derive_claim_secret;
+use claim_secret_lib::{derive_claim_secret, split_change_commitment, split_secret};
 use portal_messages::{mint_to_private_content_hash, mint_to_public_content_hash};
 
 /// The L1 portal identity the bridge binds at construction; arbitrary but must match the
@@ -154,4 +154,102 @@ pub unconstrained fn fund_private(
 pub unconstrained fn fund_public(env: TestEnvironment, to: AztecAddress, amount: u128, secret: Field, bridge: AztecAddress) {
     let leaf = send_mint_to_public_message(env, to, amount, secret, bridge);
     env.call_public(to, TokenBridge::at(bridge).claim_public(to, amount, secret, leaf, DEPOSITOR));
+}
+
+/// The terms a split deposit's secret commits to. `buyer` and `change_salt` stay with the buyer; the merchant learns
+/// only `change_commitment`.
+pub struct Split {
+    pub amount: u128,
+    pub depositor: EthAddress,
+    pub merchant: AztecAddress,
+    pub price: u128,
+    pub payment_ref: Field,
+    pub buyer: AztecAddress,
+    pub change_salt: Field,
+    pub salt: Field,
+}
+
+impl Split {
+    pub fn change_commitment(self) -> Field {
+        split_change_commitment(self.buyer, self.change_salt)
+    }
+
+    pub fn secret(self) -> Field {
+        split_secret(self.merchant, self.price, self.payment_ref, self.change_commitment(), self.salt)
+    }
+}
+
+/// Injects the split deposit's `mint_to_private` message, as the router commits it, and returns its leaf index.
+pub unconstrained fn send_split_message(env: TestEnvironment, split: Split, bridge: AztecAddress) -> Field {
+    let content = mint_to_private_content_hash(split.amount, split.depositor);
+    let secret_hash = aztec::hash::compute_secret_hash([split.secret()]);
+    env.send_l1_to_l2_message_from_secret_hash(content, secret_hash, PORTAL, bridge)
+}
+
+pub unconstrained fn claim_split(
+    env: TestEnvironment,
+    caller: AztecAddress,
+    split: Split,
+    leaf: Field,
+    bridge: AztecAddress,
+) {
+    env.call_private(
+        caller,
+        TokenBridge::at(bridge).claim_split(
+            split.amount,
+            split.depositor,
+            leaf,
+            split.merchant,
+            split.price,
+            split.payment_ref,
+            split.change_commitment(),
+            split.salt,
+        ),
+    );
+}
+
+pub unconstrained fn return_split(
+    env: TestEnvironment,
+    caller: AztecAddress,
+    split: Split,
+    leaf: Field,
+    bridge: AztecAddress,
+) {
+    env.call_private(
+        caller,
+        TokenBridge::at(bridge).return_split(
+            split.amount,
+            split.depositor,
+            leaf,
+            split.merchant,
+            split.price,
+            split.payment_ref,
+            split.change_commitment(),
+            split.salt,
+        ),
+    );
+}
+
+/// The buyer collects its change, binding on its first claim of any kind.
+pub unconstrained fn claim_change(env: TestEnvironment, split: Split, leaf: Field, bridge: AztecAddress) {
+    let bind = unbound(env, split.buyer, bridge);
+    env.call_private(
+        split.buyer,
+        TokenBridge::at(bridge).claim_change(
+            split.amount - split.price,
+            split.depositor,
+            leaf,
+            split.secret(),
+            split.change_salt,
+            bind,
+        ),
+    );
+}
+
+pub unconstrained fn private_balance(env: TestEnvironment, token: AztecAddress, account: AztecAddress) -> u128 {
+    env.execute_utility(Token::at(token).balance_of_private(account))
+}
+
+pub unconstrained fn total_supply(env: TestEnvironment, token: AztecAddress) -> u128 {
+    env.view_public(Token::at(token).total_supply())
 }

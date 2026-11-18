@@ -49,6 +49,14 @@ jobs:
             medusa-corpus-${{ matrix.ref }}-
             medusa-corpus-
       - run: bun run test:evm:fuzz
+      # The suite's coverage record: each run's report, kept as an artifact rather than a committed figure.
+      - if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: medusa-coverage-${{ matrix.ref }}
+          path: contracts/evm/fizz_data/corpus_medusa/coverage/
+          retention-days: 14
+          if-no-files-found: ignore
       - if: failure()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:

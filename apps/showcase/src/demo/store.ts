@@ -1,4 +1,4 @@
-import type { PaymentRecord, PaymentStore } from "@inference-money/bridge-core"
+import type { PaymentRecord, PaymentStore } from "@galactica-net/inference-money-core"
 
 /** String values under one prefix. Storage can be absent or throw (private windows, quota, blocked site data). */
 export interface KeyValue {

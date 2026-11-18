@@ -1,4 +1,4 @@
-import type { Tour } from "@inference-money/demo/tour"
+import type { Tour } from "@galactica-net/inference-money-demo/tour"
 import { useEffect, useMemo, useState } from "react"
 import { addMoves, type Explorer, type FeedRow, type Moves, type PlayedScene, playTour } from "./player"
 

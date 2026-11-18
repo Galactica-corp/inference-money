@@ -1,7 +1,7 @@
-import { parseManifest } from "@inference-money/bridge-core/manifest"
-import { ethereumKey } from "@inference-money/demo/keys"
-import { parseTour } from "@inference-money/demo/tour"
-import { TESTNET } from "@inference-money/deployer/networks"
+import { parseManifest } from "@galactica-net/inference-money-core/manifest"
+import { ethereumKey } from "@galactica-net/inference-money-demo/keys"
+import { parseTour } from "@galactica-net/inference-money-demo/tour"
+import { TESTNET } from "@galactica-net/inference-money-deployer/networks"
 import { createPublicClient, erc20Abi, type Hex, http, isAddressEqual } from "viem"
 import { privateKeyToAddress } from "viem/accounts"
 import { PRESTO_DEFAULT, servedHeaders } from "../../build/target"
@@ -24,7 +24,15 @@ test("[A29] serves the testnet build as built: its manifest, its tour, its heade
 }) => {
 	const response = await page.goto("/#recorded")
 	const headers = response?.headers() ?? {}
-	const built = servedHeaders({ manifest, usersTag: "", l1RpcUrl: TESTNET.defaultL1RpcUrl, proofs: "real", presto: PRESTO_DEFAULT, tour })
+	const built = servedHeaders({
+		manifest,
+		usersTag: "",
+		merchantsSalt: "",
+		l1RpcUrl: TESTNET.defaultL1RpcUrl,
+		proofs: "real",
+		presto: PRESTO_DEFAULT,
+		tour,
+	})
 	for (const [name, value] of Object.entries(built)) expect(headers[name.toLowerCase()], name).toBe(value)
 	expect(await page.evaluate(() => crossOriginIsolated), "the page is cross-origin isolated").toBe(true)
 	await expect(page.getByTestId(TESTIDS.network)).toHaveText("Aztec testnet · real proofs")

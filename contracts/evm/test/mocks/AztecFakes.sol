@@ -45,10 +45,13 @@ contract CapturingOutbox {
     }
 }
 
+uint256 constant FAKE_ROLLUP_VERSION = 4242;
+
 contract FakeRollup {
-    uint256 public constant VERSION = 4242;
+    uint256 public constant VERSION = FAKE_ROLLUP_VERSION;
     address public immutable inbox;
     address public immutable outbox;
+    uint256 internal version = FAKE_ROLLUP_VERSION;
 
     constructor(address inbox_, address outbox_) {
         inbox = inbox_;
@@ -63,8 +66,13 @@ contract FakeRollup {
         return outbox;
     }
 
-    function getVersion() external pure returns (uint256) {
-        return VERSION;
+    function getVersion() external view returns (uint256) {
+        return version;
+    }
+
+    /// Another rollup generation: a registry that switches to this rollup moves the canonical version.
+    function setVersion(uint256 version_) external {
+        version = version_;
     }
 }
 

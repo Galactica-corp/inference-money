@@ -1,7 +1,7 @@
-import type { BridgeManifest } from "@inference-money/bridge-core"
-import { approvePermit2, DEMO_L1_TARGET, demoL1, MERCHANTS, USERS, usdcOf } from "@inference-money/demo"
+import type { BridgeManifest } from "@galactica-net/inference-money-core"
+import { type L1Signer, l1Chain, writeEvm } from "@galactica-net/inference-money-core/deploy"
+import { approvePermit2, DEMO_L1_TARGET, demoL1, MERCHANTS, USERS, usdcOf } from "@galactica-net/inference-money-demo"
 import { type Address, createTestClient, erc20Abi, http, parseAbi } from "viem"
-import { type L1Signer, l1Chain, writeEvm } from "./l1"
 
 const MOCK_USDC_ABI = parseAbi(["function mint(address to, uint256 amount)"])
 

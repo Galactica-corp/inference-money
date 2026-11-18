@@ -9,8 +9,12 @@ export const TOKEN_REFUSALS = {
 	expired: "Payment refused: the request's stamp has expired",
 	alreadyPaid: "Payment refused: the request is already paid",
 	zeroPayment: "Payment refused: the amount is zero",
+	paymentToSelf: "Payment refused: the payer is the recipient",
+	referencePaid: "Payment refused: the reference is already paid",
+	stillMerchant: "Not provable: the account is a merchant",
 	notAdmin: "Only the merchant admin",
 	notAdminOrGuardian: "Only the merchant admin or guardian",
+	notAdminLowersDelay: "Only the merchant admin lowers a delay",
 	notPendingAdmin: "Only the pending merchant admin",
 	noPendingChange: "No pending change",
 	alreadyAdded: "Merchant already added",
@@ -33,6 +37,11 @@ export const BRIDGE_REFUSALS = {
 	exitDestination: "Withdrawals from a user account go only to its funding address",
 	exitToPortal: "Recipient cannot be the portal",
 	withdrawAddressWidth: "A withdraw names only 20-byte Ethereum addresses",
+	splitToUser: "Split deposits pay listed merchants only",
+	priceAboveDeposit: "The price exceeds the deposit",
+	zeroPrice: "Price must be greater than zero",
+	noChange: "No such change to collect",
+	changeCollected: "The change is already collected",
 } as const
 
 export type BridgeRule = keyof typeof BRIDGE_REFUSALS
@@ -43,7 +52,7 @@ export function bridgeRefusalOf(error: unknown): BridgeRule | undefined {
 	return (Object.entries(BRIDGE_REFUSALS) as [BridgeRule, string][]).find(([, text]) => message.includes(text))?.[0]
 }
 
-// Longest first: "Only the merchant admin" is a prefix of two other refusals.
+// Longest first: "Only the merchant admin" begins two longer refusals.
 const BY_LENGTH = (Object.entries(TOKEN_REFUSALS) as [TokenRule, string][]).sort(([, a], [, b]) => b.length - a.length)
 
 /** The token rule an error's message carries (a simulation failure or a revert), or undefined. */

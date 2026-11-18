@@ -22,9 +22,11 @@ import {
 } from "viem"
 import { privateKeyToAccount } from "viem/accounts"
 import { PERMIT2_DEPOSIT_ROUTER_ABI } from "./abi"
+import { MessageNotConsumableError, withRebuiltTicket } from "./claim"
 import { claimSecretHash } from "./claim-secret"
 import {
 	assertPublicRecipient,
+	type ClaimTicket,
 	confirmDeposit,
 	type DepositDraft,
 	KeyHolderRequiredError,
@@ -57,7 +59,10 @@ beforeAll(async () => {
 	recipient = await AztecAddress.random()
 })
 
-function depositLog(d: DepositDraft, o: { address?: Address; blockNumber?: bigint; depositor?: Address; index?: bigint } = {}): Log {
+function depositLog(
+	d: DepositDraft,
+	o: { address?: Address; blockNumber?: bigint; depositor?: Address; index?: bigint; key?: Hex } = {},
+): Log {
 	const topics = encodeEventTopics({
 		abi: PERMIT2_DEPOSIT_ROUTER_ABI,
 		eventName: "Deposit",
@@ -65,7 +70,7 @@ function depositLog(d: DepositDraft, o: { address?: Address; blockNumber?: bigin
 	})
 	const data = encodeAbiParameters(
 		[{ type: "bytes32" }, { type: "uint256" }, { type: "uint256" }, { type: "bytes32" }, { type: "bool" }],
-		[pad("0x4e7"), o.index ?? 42n, d.intent.amount, d.witness.secretHash, d.witness.isPrivate],
+		[o.key ?? pad("0x4e7"), o.index ?? 42n, d.intent.amount, d.witness.secretHash, d.witness.isPrivate],
 	)
 	return {
 		address: o.address ?? M.l1.router,
@@ -93,6 +98,10 @@ function chain(account: Address = ACCOUNT) {
 		logs: [] as Log[],
 		failGetLogs: false,
 		onGetLogs: undefined as (() => void) | undefined,
+		/** Permit2's nonce bitmap words by position, as the reader reports them; every read is recorded. */
+		nonceWords: new Map<bigint, bigint>(),
+		failNonceRead: false,
+		nonceReads: [] as unknown[],
 		chainId: M.l1.chainId,
 		readerChainId: M.l1.chainId,
 		sentOnChain: undefined as number | undefined,
@@ -134,6 +143,11 @@ function chain(account: Address = ACCOUNT) {
 				logs: inRange,
 				args: { depositor: q.args.depositor },
 			})
+		},
+		readContract: async (q: { args: readonly [Address, bigint] }) => {
+			s.nonceReads.push(q)
+			if (s.failNonceRead) throw new Error("missing trie node")
+			return s.nonceWords.get(q.args[1]) ?? 0n
 		},
 	} as unknown as PublicClient
 	const walletClient = {
@@ -246,6 +260,22 @@ describe("submitDeposit", () => {
 		await expect(submitDeposit(lost, l1, M, LIVE)).rejects.toThrow("disconnected")
 		expect(lost.submission).toBeDefined()
 		expect(lost.l1TxHash).toBeUndefined()
+	})
+
+	it("a refusal-shaped send error frees the draft only from a wallet that asks its user, never from a local key", async () => {
+		const key = privateKeyToAccount(keccak256(toHex("local signer")))
+		const refusal = Object.assign(new Error("User rejected the request."), { code: 4001 })
+		for (const [account, freed] of [
+			[key, false],
+			[{ address: key.address, type: "json-rpc" }, true],
+		] as const) {
+			const { s, l1 } = chain(key.address)
+			Object.assign(l1.walletClient, { account })
+			s.sendError = refusal
+			const d = await draft()
+			await expect(submitDeposit(d, l1, M, LIVE)).rejects.toThrow("rejected")
+			expect(d.submission === undefined, account.type).toBe(freed)
+		}
 	})
 
 	it("a wallet that cannot sign (unsupported method, disconnect) leaves the draft unsent and retryable", async () => {
@@ -397,6 +427,29 @@ describe("reconcileDeposit", () => {
 		expect(s.sends).toBe(1)
 	})
 
+	it("an empty scan past the deadline is pending while Permit2 shows the permit's nonce spent at the finalized block", async () => {
+		const { s, l1 } = chain()
+		const d = await draft()
+		d.typedData.message.nonce = (5n << 8n) | 255n
+		s.sendError = new Error("wallet response lost")
+		await submitDeposit(d, l1, M, LIVE).catch(() => {})
+		s.finalized = { number: 140n, timestamp: d.typedData.message.deadline + 1n }
+		s.nonceWords.set(5n, 1n << 255n)
+		expect(await reconcileDeposit(d, l1, M)).toBe("pending")
+		expect(s.nonceReads).toEqual([
+			expect.objectContaining({ address: M.l1.permit2, functionName: "nonceBitmap", args: [ACCOUNT, 5n], blockNumber: 140n }),
+		])
+		for (const [word, bits] of [
+			[5n, 1n << 254n],
+			[6n, 1n << 255n],
+		] as const) {
+			s.nonceWords = new Map([[word, bits]])
+			expect(await reconcileDeposit(d, l1, M), `word ${word}`).toBe("not-deposited")
+		}
+		s.failNonceRead = true
+		expect(await reconcileDeposit(d, l1, M)).toBe("pending")
+	})
+
 	it("a tip read that lags the finalized block still scans through it before any verdict", async () => {
 		const { s, l1 } = chain()
 		const d = await draft()
@@ -437,6 +490,91 @@ describe("reconcileDeposit", () => {
 	it("a draft never submitted is not-deposited without touching the chain", async () => {
 		const d = await draft()
 		expect(await reconcileDeposit(d, chain().l1, M)).toBe("not-deposited")
+	})
+})
+
+describe("withRebuiltTicket", () => {
+	const MISSING = [new MessageNotConsumableError(), new Error("Tried to consume nonexistent L1-to-L2 message")]
+
+	/**
+	 * A ticket from the first receipt (leaf 42, key 0x4e7), then L1 as `reorg` leaves it; `use` fails on that ticket,
+	 * and on any other only when `again`.
+	 */
+	async function claimAfter(reorg: (s: ReturnType<typeof chain>["s"], d: DepositDraft) => void, first: Error, again = false) {
+		const { s, l1 } = chain()
+		const d = await draft()
+		await submitDeposit(d, l1, M, LIVE)
+		const t = ticketFromReceiptLogs(d, [depositLog(d)], M)
+		reorg(s, d)
+		const events: string[] = []
+		const keep = (r: ClaimTicket) => events.push(`keep ${r.leafIndex} ${r.messageHash}`)
+		const use = async (r: ClaimTicket) => {
+			events.push(`use ${r.leafIndex} ${r.messageHash}`)
+			if (r === t || again) throw first
+			return "claimed"
+		}
+		const outcome = await withRebuiltTicket(t, l1, M, keep, use).catch((e: unknown) => e)
+		return { outcome, events }
+	}
+	const remined = (o: { index?: bigint; key?: Hex }) => (s: ReturnType<typeof chain>["s"], d: DepositDraft) =>
+		s.receipts.set(TX, { status: "success", logs: [depositLog(d, o)] })
+	const KEY = pad("0x4e7")
+
+	it("on a missing message, claims once more with the ticket L1 shows now, stored first, when its leaf or key moved", async () => {
+		const moved = pad("0x4e8")
+		for (const first of MISSING) {
+			for (const [o, leaf, key] of [
+				[{ index: 43n }, 43n, KEY],
+				[{ key: moved }, 42n, moved],
+			] as const) {
+				expect(await claimAfter(remined(o), first)).toEqual({
+					outcome: "claimed",
+					events: [`use 42 ${KEY}`, `keep ${leaf} ${key}`, `use ${leaf} ${key}`],
+				})
+			}
+		}
+	})
+
+	it("throws the first failure when L1 shows the same ticket, none yet, or none at all, and never claims a third time", async () => {
+		const [first] = MISSING
+		const stays = [
+			["the same leaf and key", remined({})],
+			["pending", (s: ReturnType<typeof chain>["s"]) => s.receipts.delete(TX)],
+			[
+				"not-deposited",
+				(s: ReturnType<typeof chain>["s"], d: DepositDraft) => {
+					s.receipts.delete(TX)
+					s.finalized = { number: 140n, timestamp: d.typedData.message.deadline + 1n }
+				},
+			],
+		] as const
+		for (const [why, reorg] of stays)
+			expect(await claimAfter(reorg, first as Error), why).toEqual({ outcome: first, events: [`use 42 ${KEY}`] })
+		const again = await claimAfter(remined({ index: 43n }), first as Error, true)
+		expect(again.events).toEqual([`use 42 ${KEY}`, `keep 43 ${KEY}`, `use 43 ${KEY}`])
+		expect(again.outcome).toBe(first)
+	})
+
+	it("claims nothing more when storing the rebuilt ticket fails, and reads L1 on no other failure", async () => {
+		const { s, l1 } = chain()
+		const d = await draft()
+		await submitDeposit(d, l1, M, LIVE)
+		const t = ticketFromReceiptLogs(d, [depositLog(d)], M)
+		s.receipts.set(TX, { status: "success", logs: [depositLog(d, { index: 43n })] })
+		const uses: bigint[] = []
+		const failing = async (r: ClaimTicket) => {
+			uses.push(r.leafIndex)
+			throw new MessageNotConsumableError()
+		}
+		const full = () => {
+			throw new Error("storage full")
+		}
+		await expect(withRebuiltTicket(t, l1, M, full, failing)).rejects.toThrow("storage full")
+		expect(uses).toEqual([42n])
+		// A reader on another chain throws from any reconcile, so the plain failure surfacing proves none ran.
+		s.readerChainId = 1
+		const other = new Error("Balance too low")
+		await expect(withRebuiltTicket(t, l1, M, full, () => Promise.reject(other))).rejects.toBe(other)
 	})
 })
 

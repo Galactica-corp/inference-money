@@ -1,6 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 pragma solidity >=0.8.27;
 
+/// Permit2's own errors (Uniswap/permit2 SignatureTransfer + SignatureVerification).
+interface IPermit2Errors {
+    error InvalidContractSignature();
+    error InvalidNonce();
+    error InvalidSigner();
+    error SignatureExpired(uint256 signatureDeadline);
+}
+
 /// Re-derives the EIP-712 digest Permit2 verifies in `permitWitnessTransferFrom`, from its public spec: the domain
 /// has no version field, and the witness type string is appended to the struct's type stub.
 library Permit2Digest {

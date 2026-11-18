@@ -2,8 +2,8 @@
 import { readdirSync, readFileSync } from "node:fs"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
-import { parseManifest } from "@inference-money/bridge-core/manifest"
-import { parseTour, tourMismatches } from "@inference-money/demo"
+import { parseManifest } from "@galactica-net/inference-money-core/manifest"
+import { parseTour, tourMismatches } from "@galactica-net/inference-money-demo"
 import { describe, expect, it } from "vitest"
 import { EMBEDDED_MANIFEST, EMBEDDED_TOUR, TESTNET_MANIFEST } from "./target"
 

@@ -1,5 +1,5 @@
 import { describe, expect, it, mock } from "bun:test"
-import type { ClaimTicket } from "@inference-money/bridge-core"
+import type { ClaimTicket } from "@galactica-net/inference-money-core"
 import { keepUntilFinal, type ReclaimSteps } from "./claim-finality"
 
 describe("keepUntilFinal", () => {
@@ -23,7 +23,7 @@ describe("keepUntilFinal", () => {
 		expect(finality.mock.calls.map(([t]) => t)).toEqual([first, moved])
 	})
 
-	it("gives the secret up only once the deposit is proven never to have reached L1", async () => {
+	it("stops, the ticket left to its caller, only once the L1 reader calls the deposit never sent", async () => {
 		const run = keepUntilFinal(first, steps({ finality: async () => "dropped", reconcile: async () => "not-deposited" }))
 		await expect(run).rejects.toThrow("never reached L1")
 	})

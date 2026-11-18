@@ -1,5 +1,5 @@
-import { BRIDGE_REFUSALS, TOKEN_REFUSALS } from "@inference-money/bridge-core"
-import { SMOKE_AMOUNTS as A } from "@inference-money/demo"
+import { BRIDGE_REFUSALS, TOKEN_REFUSALS } from "@galactica-net/inference-money-core"
+import { SMOKE_AMOUNTS as A } from "@galactica-net/inference-money-demo"
 import { describe, expect, it } from "vitest"
 import { TOUR } from "@/config/network"
 import { addMoves, playTour } from "./player"

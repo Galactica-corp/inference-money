@@ -10,6 +10,7 @@ import {
 	type DepositDraft,
 	decodeClaimTicket,
 	decodeDepositDraft,
+	depositsOpen,
 	ExitRevertedError,
 	encodeTicket,
 	exitToL1,
@@ -17,13 +18,15 @@ import {
 	isClaimConsumed,
 	L2_PROPOSED,
 	type ListOptions,
+	ListRefusal,
 	openRequest,
 	payReplacingStale,
 	payRequest,
+	randomSecret,
 	reconcileDeposit,
 	syncMerchantList,
 	TOKEN_REFUSALS,
-} from "@inference-money/bridge-core"
+} from "@galactica-net/inference-money-core"
 import {
 	aztecWorld,
 	castClaim,
@@ -44,14 +47,14 @@ import {
 	totalSupplySlot,
 	type User,
 	usdcOf,
-} from "@inference-money/demo"
+} from "@galactica-net/inference-money-demo"
 import type { PendingDeposit, PendingExit, Tickets } from "@/demo/tickets"
 import type { DemoWallet } from "@/demo/wallet"
 import { type Explorer, type FeedRow, PUBLIC_TEXT, rowOf } from "@/tour/player"
 import { HOLDER_NAME } from "@/ui/cards"
 import { usdc2 } from "@/ui/format"
 import type { Stage } from "@/ui/Verdict"
-import type { LiveAction, ValidDraft } from "./draft"
+import { DEPOSITS_CLOSED, type LiveAction, type ValidDraft } from "./draft"
 import { classify, type Outcome } from "./outcome"
 
 export interface LiveCtx {
@@ -127,6 +130,8 @@ async function deposit(ctx: LiveCtx, d: ValidDraft, report: Report): Promise<Out
 	const user = d.actor as User
 	const amount = d.amount as bigint
 	const signer = demoL1(ctx.l1RpcUrl, ctx.m, user)
+	// The page's notice is opening-time state: a rollup switch since then must stop the deposit before it signs.
+	if (!(await depositsOpen(signer.publicClient, ctx.m))) return { kind: "failed", detail: DEPOSITS_CLOSED }
 	const short = await shortfall(signer, ctx.m, amount)
 	if (short) return user === "alice" ? replay(ctx, "deposit", short) : { kind: "failed", detail: short }
 	const pending = { id: crypto.randomUUID(), user, since: Date.now() }
@@ -150,12 +155,12 @@ const NOTHING_TO_CLAIM = "There is nothing to claim: deposit first."
 const ALREADY_CONSUMED = "That deposit was already taken on Aztec, by an earlier claim or a return, so nothing was minted now."
 
 /**
- * Whether `p`'s claim still holds at the proposed tip, where this page claims; its record goes once the claim is final.
- * One no longer there was pruned, which makes the deposit claimable again.
+ * Whether `p`'s claim still holds at the proposed tip, where this page claims. One no longer there was pruned, which
+ * makes the deposit claimable again; one the node calls finalized is marked final, and kept.
  */
 async function stillClaimed(ctx: LiveCtx, p: PendingDeposit, t: ClaimTicket): Promise<boolean> {
 	if (await isClaimConsumed(t, ctx.demo.node, ctx.m, "finalized")) {
-		ctx.tickets.dropDeposit(p.id)
+		ctx.tickets.putDeposit({ ...p, final: true })
 		return true
 	}
 	return isClaimConsumed(t, ctx.demo.node, ctx.m, "proposed")
@@ -163,12 +168,17 @@ async function stillClaimed(ctx: LiveCtx, p: PendingDeposit, t: ClaimTicket): Pr
 
 type Claimable = { p: PendingDeposit; ticket: ClaimTicket } | string
 
+const NOT_ON_ETHEREUM =
+	"Ethereum shows no sign of that deposit, and its signature has expired, so it can no longer go through. This page keeps its record below: check it again later, or deposit again."
+
+const readerOf = (ctx: LiveCtx, p: PendingDeposit) => l1CtxOf(demoL1(ctx.l1RpcUrl, ctx.m, p.user))
+
 async function fromDraft(ctx: LiveCtx, p: PendingDeposit, draft: DepositDraft): Promise<Claimable> {
-	const found = await reconcileDeposit(draft, l1CtxOf(demoL1(ctx.l1RpcUrl, ctx.m, p.user)), ctx.m)
+	const found = await reconcileDeposit(draft, readerOf(ctx, p), ctx.m)
 	if (found === "pending") return "That deposit is still confirming on Ethereum; try again in a minute."
 	if (found === "not-deposited") {
-		ctx.tickets.dropDeposit(p.id)
-		return "That deposit never reached Ethereum; deposit again."
+		ctx.tickets.putDeposit({ ...p, archived: true })
+		return NOT_ON_ETHEREUM
 	}
 	const next = { ...p, draft: undefined, claim: encodeTicket("claim", found) }
 	ctx.tickets.putDeposit(next)
@@ -195,8 +205,12 @@ const claimReadable = (t: ClaimTicket): boolean =>
 	t.draft.intent?.recipient instanceof AztecAddress &&
 	typeof t.draft.intent.amount === "bigint"
 
-/** `p` as a claim, a reason it cannot claim yet, or nothing to try; an entry that no longer decodes is dropped. */
+/**
+ * `p` as a claim, a reason it cannot claim yet, or nothing to try: an archived or final entry is never offered, and one
+ * that no longer decodes is dropped.
+ */
 async function claimableEntry(ctx: LiveCtx, p: PendingDeposit): Promise<Claimable | undefined> {
+	if (p.archived || p.final) return undefined
 	const d = decodedDeposit(p)
 	if (!d) {
 		ctx.tickets.dropDeposit(p.id)
@@ -229,6 +243,43 @@ async function claimable(ctx: LiveCtx, user: User): Promise<Claimable> {
 	return NOTHING_TO_CLAIM
 }
 
+/** A deposit the L1 reader called never sent, kept for the visitor to check again. */
+export interface ArchivedDeposit {
+	id: string
+	user: User
+	amount: bigint | undefined
+}
+
+export function archivedDeposits(ctx: LiveCtx): ArchivedDeposit[] {
+	return ctx.tickets
+		.deposits()
+		.filter((p) => p.archived)
+		.map((p) => {
+			const amount = decodedDeposit(p)?.draft?.intent?.amount
+			return { id: p.id, user: p.user, amount: typeof amount === "bigint" ? amount : undefined }
+		})
+}
+
+/**
+ * Reads an archived deposit's fate again, one at a time with the page's runs: found, it can claim (its ticket carries
+ * the same salt); possibly still landing, it waits with the others; neither, it stays archived. Says what it found.
+ */
+export function recheckDeposit(ctx: LiveCtx, id: string): Promise<string> {
+	return ctx.demo.exclusive(async () => {
+		const p = ctx.tickets.deposits().find((d) => d.id === id)
+		const draft = p?.archived ? decodedDeposit(p)?.draft : undefined
+		if (!p || !draft) return "There is nothing to check there any more."
+		const found = await reconcileDeposit(draft, readerOf(ctx, p), ctx.m)
+		if (found === "not-deposited") return "Still no sign of it on Ethereum. Its record stays here."
+		if (found === "pending") {
+			ctx.tickets.putDeposit({ ...p, archived: undefined })
+			return "Ethereum may still take it: it is back with the deposits waiting to be claimed."
+		}
+		ctx.tickets.putDeposit({ ...p, archived: undefined, draft: undefined, claim: encodeTicket("claim", found) })
+		return `Found it on Ethereum: ${HOLDER_NAME[p.user]} can claim it now.`
+	})
+}
+
 /** Asks before a first private claim binds `user`'s account for good; undefined when the visitor declines. */
 async function bindConsent(ctx: LiveCtx, user: User, t: ClaimTicket): Promise<ClaimConsent | undefined> {
 	const { kind, recipient } = t.draft.intent
@@ -248,13 +299,19 @@ async function claimDeposit(ctx: LiveCtx, d: ValidDraft, report: Report): Promis
 	const consent = await bindConsent(ctx, user, found.ticket)
 	if (!consent) return { kind: "failed", detail: "Nothing claimed: the binding was declined." }
 	const since = ctx.demo.sent.length
+	let entry = found.p
+	const keep = (t: ClaimTicket) => {
+		entry = { ...entry, claim: encodeTicket("claim", t) }
+		ctx.tickets.putDeposit(entry)
+	}
 	const result = await castClaim(
 		session(ctx),
 		found.ticket,
 		() => report("simulate", "Waiting for the deposit's message to reach Aztec."),
 		consent,
+		{ l1: readerOf(ctx, found.p), keep },
 	)
-	ctx.tickets.putDeposit({ ...found.p, claimed: true })
+	ctx.tickets.putDeposit({ ...entry, claimed: true })
 	if (result === "already") return { kind: "settled", detail: ALREADY_CONSUMED, rows: [] }
 	const amount = usdc2(found.ticket.draft.intent.amount)
 	return { kind: "settled", detail: `${HOLDER_NAME[user]} claimed ${amount} USDC.`, rows: await aztecRows(ctx, since, ["claim"]) }
@@ -280,7 +337,7 @@ async function request(ctx: LiveCtx, d: ValidDraft): Promise<Outcome> {
  * request, so paying a user pays into one made without the merchant list, which the rules refuse.
  */
 async function openFor(ctx: LiveCtx, d: ValidDraft, key: string, opts: ListOptions): Promise<Fr> {
-	if (!isMerchant(d.to)) return Fr.random()
+	if (!isMerchant(d.to)) return randomSecret()
 	const merchant = address(ctx, d.to)
 	const intent = { from: merchant, to: merchant, completer: address(ctx, d.actor) }
 	const { commitment } = await openRequest(ctx.demo.wallet, ctx.demo.node, token(ctx), intent, opts)
@@ -299,7 +356,7 @@ async function pay(ctx: LiveCtx, d: ValidDraft): Promise<Outcome> {
 			await payRequest(ctx.demo.gate, ctx.demo.wallet, token(ctx), payment, await listOptions(ctx))
 		} catch (e) {
 			// Refused before any send: a request opened at a proposed block that a prune removed holds no stamp any more.
-			if (message(e) === TOKEN_REFUSALS.payment) ctx.requests.delete(key)
+			if (e instanceof ListRefusal && e.message === TOKEN_REFUSALS.payment) ctx.requests.delete(key)
 			throw e
 		}
 	}
@@ -337,7 +394,7 @@ async function withdraw(ctx: LiveCtx, d: ValidDraft, wallets: Record<"A_demo" | 
 	}
 	ctx.demo.onNextSend.fn = journal
 	try {
-		const ticket = await exitToL1(exit, ctx.demo.wallet, ctx.demo.node, ctx.m, { wait: L2_PROPOSED })
+		const ticket = await exitToL1(exit, ctx.demo.wallet, ctx.demo.sends, ctx.m, { wait: L2_PROPOSED })
 		ctx.tickets.putExit({ ...entry, ticket: encodeTicket("exit", ticket) })
 	} catch (e) {
 		if (e instanceof ExitRevertedError && e.final) ctx.tickets.dropExit(entry.id)
@@ -353,33 +410,31 @@ const MAY_STILL_LAND =
 	"The network may still take the first try, so this page won't send it again. Check the balances in a few minutes, and try again if nothing moved."
 
 /**
- * A sent tx's fate, waited for while the node holds it. A copy the node refused outright never entered its pool, and
- * its nullifier is already in the chain's state, which no pending copy gets past: gone. Any other drop proves nothing
- * (a lost response, another node behind the same URL), and a prune can undo a revert, so those wait for finality.
+ * A sent tx's fate, waited for while the node holds it. A drop or a refusal is one node's word (a lost response,
+ * another node behind the same URL), and a prune can undo a revert, so either waits for finality.
  */
 async function fateOf(ctx: LiveCtx, tx: SentTx): Promise<"landed" | "gone" | "unsettled"> {
 	const hash = TxHash.fromString(tx.hash)
-	if ((await ctx.demo.node.getTxReceipt(hash)).status === TxStatus.DROPPED) {
-		return tx.refused ? "gone" : finalFate(ctx.demo.node, tx.hash, tx.expiresAt)
-	}
+	if ((await ctx.demo.node.getTxReceipt(hash)).status === TxStatus.DROPPED) return finalFate(ctx.demo.node, tx.hash, tx.expiresAt)
 	const receipt = await waitForTx(ctx.demo.node, hash, { ...L2_PROPOSED, dontThrowOnRevert: true })
 	return receipt.hasExecutionSucceeded() ? "landed" : finalFate(ctx.demo.node, tx.hash, tx.expiresAt)
 }
 
 /**
  * On a duplicate nullifier, a one-send action whose tx left for the node is decided by that tx's fate, and sent again
- * only once it provably cannot land. Anything else runs once more, after the wallet's sync: a conflict found before
- * anything was sent, or a payment, whose refused send may be the request it opened (the payment gate refuses paying a
- * request twice).
+ * only once it provably cannot land. A payment that sent its request's opening or itself is left unconfirmed: what
+ * left may still land, and a second run would open another request. A conflict found before anything was sent runs
+ * once more, after the wallet's sync; a deposit, which sends nothing on Aztec, never does.
  */
 export async function withConflictRetry(ctx: LiveCtx, attempt: () => Promise<Outcome>, kinds: readonly TxKind[]): Promise<Outcome> {
 	const since = ctx.demo.sent.length
 	try {
 		return await attempt()
 	} catch (e) {
-		if (!DUPLICATE_NULLIFIER.test(message(e))) throw e
+		if (!DUPLICATE_NULLIFIER.test(message(e)) || kinds.length === 0) throw e
 		const last = ctx.demo.sent.length > since ? ctx.demo.sent.at(-1) : undefined
-		const fate = kinds.length === 1 && last ? await fateOf(ctx, last) : "gone"
+		if (!last) return attempt()
+		const fate = kinds.length === 1 ? await fateOf(ctx, last) : "unsettled"
 		if (fate === "landed") {
 			return { kind: "settled", detail: "It went through: the network had it already.", rows: await aztecRows(ctx, since, kinds) }
 		}

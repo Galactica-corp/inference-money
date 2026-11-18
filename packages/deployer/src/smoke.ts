@@ -4,6 +4,7 @@ import { waitForTx } from "@aztec-labs/aztec.js/node"
 import { TxHash } from "@aztec-labs/aztec.js/tx"
 import {
 	assertNetworkIdentity,
+	awaitL1Receipt,
 	bridgeRefusalOf,
 	completionCount,
 	type DepositDraft,
@@ -22,11 +23,14 @@ import {
 	outboxReader,
 	payReplacingStale,
 	payRequest,
+	readBack,
 	syncMerchantList,
 	tokenRefusalOf,
-} from "@inference-money/bridge-core"
+} from "@galactica-net/inference-money-core"
+import { tokenOf } from "@galactica-net/inference-money-core/deploy"
 import {
 	aztecWorld,
+	type CastKeys,
 	castClaim,
 	castDeposit,
 	type DemoL1,
@@ -46,13 +50,13 @@ import {
 	usdcOf,
 	type WorldItem,
 	withdrawWorld,
-} from "@inference-money/demo"
+} from "@galactica-net/inference-money-demo"
 import type { Hex } from "viem"
-import { tokenOf } from "./admin"
-import { usersTagOf } from "./demo"
+import { castKeysFor } from "./demo"
 import { enlist, type Log, logWait, type Player, withHeartbeat } from "./demo-flows"
-import { type StateDir, withStateDir } from "./run-state"
+import { keepAbandonedDraft, type StateDir, withStateDir } from "./run-state"
 import { type ManifestRef, type Session, withSession } from "./session"
+import { ROLLUP_MOVED } from "./verify"
 import type { SentTx } from "./wallet"
 
 export const SMOKE_STEPS = TOUR_STEPS
@@ -150,7 +154,7 @@ async function aztecEntry(r: Run, step: SmokeStep): Promise<TourStep> {
 async function ethereumEntry(r: Run, step: SmokeStep, hash: Hex | undefined, world: WorldItem[]): Promise<TourStep> {
 	const entry: TourStep = { id: step, ...STORY[step], verdict: "settled", world }
 	if (!hash) return entry
-	const receipt = await r.aDemo.publicClient.getTransactionReceipt({ hash })
+	const receipt = await awaitL1Receipt(r.aDemo.publicClient, hash)
 	return { ...entry, l1: { txHash: hash, block: Number(receipt.blockNumber) } }
 }
 
@@ -179,8 +183,9 @@ const STEPS: Record<SmokeStep, (r: Run) => Promise<TourStep>> = {
 			r.state.draft = encodeTicket("draft", d)
 			save(r)
 		}
-		const prior = r.state.draft ? decodeDepositDraft(r.state.draft) : undefined
+		const draft = r.state.draft ? decodeDepositDraft(r.state.draft) : undefined
 		const plan = { from: "alice", to: r.cast.alice.address, kind: "private", amount: A.deposit } as const
+		const prior = draft && { draft, abandon: () => keepAbandonedDraft(r.dir, draft) }
 		const t = await castDeposit(r.s, r.aDemo, plan, prior, persist)
 		r.state.claim = encodeTicket("claim", t)
 		return ethereumEntry(r, "deposit", t.draft.l1TxHash, depositWorld(t))
@@ -231,11 +236,11 @@ const STEPS: Record<SmokeStep, (r: Run) => Promise<TourStep>> = {
 			amount: A.refused,
 			asMerchant: true,
 		} as const
-		return refusedEntry(r, "exit-refused", "exitDestination", bridgeRefusalOf, () => exitToL1(e, r.s.wallet, r.s.node, r.s.m))
+		return refusedEntry(r, "exit-refused", "exitDestination", bridgeRefusalOf, () => exitToL1(e, r.s.wallet, r.s.sends, r.s.m))
 	},
 	exit: async (r) => {
 		const e = { kind: "private", from: r.cast.alice.address, recipientL1: r.aDemo.account.address, amount: A.exit } as const
-		r.state.exit = encodeTicket("exit", await exitToL1(e, r.s.wallet, r.s.node, r.s.m))
+		r.state.exit = encodeTicket("exit", await exitToL1(e, r.s.wallet, r.s.sends, r.s.m))
 		return aztecEntry(r, "exit")
 	},
 	withdraw: async (r) => {
@@ -311,11 +316,15 @@ async function runSteps(r: Run): Promise<void> {
 	}
 }
 
+const offDeltas = (baseline: SmokeState["baseline"], now: Balances): string[] =>
+	(Object.keys(EXPECTED_DELTAS) as (keyof Balances)[]).flatMap((k) => {
+		const moved = now[k] - BigInt(baseline[k])
+		return moved === EXPECTED_DELTAS[k] ? [] : [`${k} moved ${moved}, expected ${EXPECTED_DELTAS[k]}`]
+	})
+
 export function assertDeltas(baseline: SmokeState["baseline"], now: Balances): void {
-	const moved = (k: keyof Balances) => now[k] - BigInt(baseline[k])
-	const wrong = (Object.keys(EXPECTED_DELTAS) as (keyof Balances)[]).filter((k) => moved(k) !== EXPECTED_DELTAS[k])
-	if (wrong.length === 0) return
-	const lines = wrong.map((k) => `${k} moved ${moved(k)}, expected ${EXPECTED_DELTAS[k]}`)
+	const lines = offDeltas(baseline, now)
+	if (lines.length === 0) return
 	throw new Error(`The run's deltas are off (as they are when anyone else moves the cast's funds meanwhile): ${lines.join("; ")}`)
 }
 
@@ -327,11 +336,12 @@ function writeTour(path: string, r: Run): void {
 	r.log(`tour written to ${path}`)
 }
 
-async function startRun(s: Session, dir: StateDir, tag: string, log: Log): Promise<Run> {
+async function startRun(s: Session, dir: StateDir, keys: CastKeys, log: Log): Promise<Run> {
 	const rpc = s.endpoints.l1RpcUrl
 	const aDemo = demoL1(rpc, s.m, "alice")
-	await assertNetworkIdentity(s.node, aDemo.publicClient, s.m)
-	const cast = await enlist(s, ["alice", "bob", "galactica"] as const, tag)
+	const { depositsOpen } = await assertNetworkIdentity(s.node, aDemo.publicClient, s.m)
+	if (!depositsOpen) log(`warn: ${ROLLUP_MOVED}`)
+	const cast = await enlist(s, ["alice", "bob", "galactica"] as const, keys)
 	const stored = dir.read<SmokeState>(STATE)
 	const state = stored ?? { baseline: asStrings(await balances({ s, cast, aDemo })), done: [], tour: {} }
 	if (stored) log(`resuming the run at ${nextStep(stored) ?? "its checks"}`)
@@ -347,7 +357,7 @@ async function startRun(s: Session, dir: StateDir, tag: string, log: Log): Promi
  * asserts deltas from its own start, so a repeat run on the same cast passes too. `record` writes the tour.
  */
 export function smoke(ref: ManifestRef, opts: { record?: string; log: Log }): Promise<void> {
-	const tag = usersTagOf(ref)
+	const keys = castKeysFor(ref)
 	return withStateDir("smoke", ref.m.l2.bridge.address, async (dir) => {
 		let live: Run | undefined
 		const onSend = (tx: SentTx) => {
@@ -358,12 +368,13 @@ export function smoke(ref: ManifestRef, opts: { record?: string; log: Log }): Pr
 		}
 		await withSession(ref, { payments: dir.paymentStore(), onSend }, (s) =>
 			withHeartbeat(s, async () => {
-				const run = await startRun(s, dir, tag, opts.log)
+				const run = await startRun(s, dir, keys, opts.log)
 				live = run
 				await runSteps(run)
 				live = undefined
 				try {
-					assertDeltas(run.state.baseline, await balances(run))
+					const settled = (b: Balances) => offDeltas(run.state.baseline, b).length === 0
+					assertDeltas(run.state.baseline, await readBack(() => balances(run), settled))
 				} finally {
 					dir.remove(STATE)
 					dir.remove("payments.json")

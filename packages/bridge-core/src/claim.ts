@@ -13,9 +13,10 @@ import { MerkleTreeId } from "@aztec-labs/stdlib/trees"
 import { sponsoredFpcArtifact, tokenBridgeArtifact } from "./artifacts"
 import { BindConsentRequiredError, claimBinding } from "./binding"
 import { deriveClaimSecret } from "./claim-secret"
-import type { ClaimTicket } from "./deposit"
+import { type ClaimTicket, reconcileDeposit } from "./deposit"
 import type { BridgeManifest } from "./manifest"
-import type { StageSink } from "./types"
+import { splitClaimOf, splitMessageNullifier } from "./split"
+import type { L1Ctx, StageSink } from "./types"
 
 /**
  * "consumed-unknown": the message is already consumed, by an earlier claim or by a return; the nullifier alone cannot
@@ -24,15 +25,18 @@ import type { StageSink } from "./types"
 export type ClaimResult = "claimed" | "consumed-unknown"
 
 /**
- * Who pays a tx's fee. The wallet's default payer usually links the user's account to a private claim or exit; the
- * sponsor does not. Default: sponsored for private ops, the wallet for public ones; an explicit choice overrides.
+ * Who pays a tx's fee, a public field of every tx. "sponsored": the network's sponsor, which keeps the account out of
+ * it. "account-public": the sending account, from its own Fee Juice, named as the tx's fee payer beside what the tx
+ * shows: a claim's amount, an exit's funding address, a return's depositor. Default: sponsored for private ops, the
+ * account for public ones, which publish it anyway; an explicit choice overrides.
  */
-export type FeeChoice = "sponsored" | "wallet-default"
+export type FeeChoice = "sponsored" | "account-public"
 
 export function feeFor(kind: "public" | "private", m: BridgeManifest, choice?: FeeChoice): { paymentMethod: FeePaymentMethod } | undefined {
-	return (choice ?? (kind === "private" ? "sponsored" : "wallet-default")) === "sponsored"
-		? { paymentMethod: sponsoredPayment(m) }
-		: undefined
+	const chosen = choice ?? (kind === "private" ? "sponsored" : "account-public")
+	if (chosen === "sponsored") return { paymentMethod: sponsoredPayment(m) }
+	if (chosen === "account-public") return undefined
+	throw new Error(`Unknown fee choice ${String(choice)}: name "sponsored" or "account-public".`)
 }
 
 /** The network's sponsor could not pay (exhausted, missing or refused); the ticket is untouched and can be retried. */
@@ -64,7 +68,7 @@ export type L2Wait = typeof L2_DONE | typeof L2_PROPOSED
 export const tipOf = (wait: L2Wait): "proposed" | "checkpointed" => (wait.waitForStatus === TxStatus.PROPOSED ? "proposed" : "checkpointed")
 
 // aztec-nr's consume asserts (public, private) and the sequencer's duplicate-nullifier rejection.
-const ALREADY_CONSUMED = /already nullified|No non-nullified L1 to L2 message|existing nullifier|duplicate nullifier/i
+export const ALREADY_CONSUMED = /already nullified|No non-nullified L1 to L2 message|existing nullifier|duplicate nullifier/i
 // The message is not yet in the tree the wallet's PXE anchors to.
 const NOT_YET_CLAIMABLE = /Tried to consume nonexistent L1-to-L2 message|No L1 to L2 message found/i
 const FEE_PAYER_FAILED = /fee payer|insufficient fee|not enough balance for fee/i
@@ -112,7 +116,13 @@ async function consentedBind(t: ClaimTicket, wallet: Wallet, m: BridgeManifest, 
 	return bind
 }
 
+/** A split deposit's secret commits to its terms, so only the split calls consume it; the plain ones would never find it. */
+export function assertPlainDeposit(t: ClaimTicket): void {
+	if (t.draft.split) throw new Error("This is a split deposit: claim it with claimSplit, collect its change with claimChange.")
+}
+
 async function claimCall(t: ClaimTicket, wallet: Wallet, m: BridgeManifest, allowBind: boolean | undefined) {
+	assertPlainDeposit(t)
 	const bridge = Contract.at(AztecAddress.fromStringUnsafe(m.l2.bridge.address), tokenBridgeArtifact, wallet)
 	const { amount, recipient, kind } = t.draft.intent
 	const leaf = new Fr(t.leafIndex)
@@ -138,7 +148,11 @@ export interface WaitClaimableOptions {
 export type ClaimableNode = { getL1ToL2MessageMembershipWitness(block: "latest", message: Fr): Promise<unknown> }
 export type ClaimWait = "waiting-for-inclusion" | "waiting-for-wallet-sync"
 
-async function probeConsumable(t: ClaimTicket, node: ClaimableNode, simulate: () => Promise<unknown>): Promise<"ready" | ClaimWait> {
+async function probeConsumable(
+	t: Pick<ClaimTicket, "messageHash">,
+	node: ClaimableNode,
+	simulate: () => Promise<unknown>,
+): Promise<"ready" | ClaimWait> {
 	if ((await node.getL1ToL2MessageMembershipWitness("latest", Fr.fromHexString(t.messageHash))) === undefined)
 		return "waiting-for-inclusion"
 	try {
@@ -151,13 +165,21 @@ async function probeConsumable(t: ClaimTicket, node: ClaimableNode, simulate: ()
 	}
 }
 
+/** {@link waitConsumable} gave up: the ticket's message never reached the tree the wallet's PXE anchors to. */
+export class MessageNotConsumableError extends Error {
+	constructor() {
+		super("The deposit has not reached your wallet yet. It is kept; try again in a few minutes.")
+		this.name = "MessageNotConsumableError"
+	}
+}
+
 /**
  * Resolves once `simulate` (a claim or a return of `t`, which consume the same message) succeeds: the message must be
  * in the L1-to-L2 tree the wallet's PXE anchors to, which only a successful simulation proves. A consumed message
  * resolves too, so the claim or return that follows reports it. Any other simulation failure is thrown.
  */
 export async function waitConsumable(
-	t: ClaimTicket,
+	t: Pick<ClaimTicket, "messageHash">,
 	node: ClaimableNode,
 	simulate: () => Promise<unknown>,
 	on?: StageSink<ClaimWait>,
@@ -170,7 +192,34 @@ export async function waitConsumable(
 		on?.(state)
 		await sleep(opts.pollMs ?? 5_000)
 	}
-	throw new Error("The deposit has not reached your wallet yet. It is kept; try again in a few minutes.")
+	throw new MessageNotConsumableError()
+}
+
+/**
+ * Runs `use` on `t`. When it fails on a missing Inbox message ({@link MessageNotConsumableError}, or a simulation that
+ * finds none), rebuilds the ticket from the deposit as `l1` shows it now; if that names another leaf or key, a reorg
+ * re-mined the deposit behind other messages, so the rebuilt ticket goes to `keep`, then to `use` once more. Any other
+ * outcome throws the first failure.
+ */
+export async function withRebuiltTicket<T>(
+	t: ClaimTicket,
+	l1: L1Ctx,
+	m: BridgeManifest,
+	keep: (t: ClaimTicket) => void,
+	use: (t: ClaimTicket) => Promise<T>,
+): Promise<T> {
+	let rebuilt: ClaimTicket | undefined
+	try {
+		return await use(t)
+	} catch (e) {
+		if (!(e instanceof MessageNotConsumableError) && !NOT_YET_CLAIMABLE.test(message(e))) throw e
+		const found = await reconcileDeposit(t.draft, l1, m)
+		const moved = typeof found !== "string" && (found.leafIndex !== t.leafIndex || found.messageHash !== t.messageHash)
+		if (!moved) throw e
+		rebuilt = found
+	}
+	keep(rebuilt)
+	return use(rebuilt)
 }
 
 /**
@@ -198,6 +247,7 @@ export type ClaimNode = NullifierNode & Pick<AztecNode, "getTxReceipt">
  * `compute_l1_to_l2_message_nullifier` (stdlib names it after the fee-juice contract), siloed by the bridge.
  */
 export async function messageNullifier(t: ClaimTicket, m: BridgeManifest): Promise<Fr> {
+	if (t.draft.split) return splitMessageNullifier(splitClaimOf(t), m)
 	const { kind, recipient } = t.draft.intent
 	const secret = kind === "private" ? deriveClaimSecret(t.draft.secretOrSalt, recipient) : t.draft.secretOrSalt
 	const inner = await computeFeeJuiceMessageNullifier(Fr.fromHexString(t.messageHash), secret)
@@ -222,10 +272,10 @@ export interface WaitClaimFinalizedOptions {
 }
 
 /**
- * Waits until this ticket's claim is in a finalized block, the first point at which its secret may be forgotten: an
- * epoch that misses its proof window is pruned, and an L1 reorg can remove a proof that landed near its deadline.
- * "dropped" once the nullifier is not even proposed any more, so the caller claims again; a failed read counts as not
- * final yet.
+ * Waits until this ticket's claim is in a finalized block: before that, an epoch that misses its proof window is
+ * pruned, and an L1 reorg can remove a proof that landed near its deadline. "dropped" once the nullifier is not even
+ * proposed any more, so the caller claims again; a failed read counts as not final yet. "finalized" is the node's
+ * unproven word: mark the ticket final and keep it, never delete the only copy of its secret on this answer.
  */
 export async function waitClaimFinalized(
 	t: ClaimTicket,
@@ -250,7 +300,7 @@ async function claimFinality(t: ClaimTicket, node: NullifierNode, m: BridgeManif
 /**
  * Mints the deposit on L2 from `from`: a private claim only from its recipient, a public one from anyone (the mint
  * goes to the merchant the message names), paid per {@link FeeChoice}. Both outcomes hold only at `opts.wait`'s tip, a
- * checkpoint by default: keep the secret until {@link waitClaimFinalized} says "finalized". "consumed-unknown" needs
+ * checkpoint by default: keep the secret, also past {@link waitClaimFinalized}'s "finalized". "consumed-unknown" needs
  * this ticket's nullifier on L2 at that tip: a nullifier error can come from any part of the tx. A first private claim
  * needs `allowBind` ({@link ClaimConsent}).
  */

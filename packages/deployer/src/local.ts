@@ -1,17 +1,22 @@
 import { SponsoredFeePaymentMethod } from "@aztec-labs/aztec.js/fee"
 import { Fr } from "@aztec-labs/aztec.js/fields"
-import { type BridgeManifest, L2_DONE, sponsoredFpcArtifact, sponsorInstance } from "@inference-money/bridge-core"
-import { ANVIL_ACCOUNTS, L1_CHAIN_ID, resolveEndpoints } from "@inference-money/local-network"
+import { type BridgeManifest, sponsoredFpcArtifact, sponsorInstance } from "@galactica-net/inference-money-core"
+import {
+	acceptAdmin,
+	deployBridge,
+	deployMockUsdc,
+	installCanonicalPermit2,
+	l1Signer,
+	proposeAdmin,
+} from "@galactica-net/inference-money-core/deploy"
+import { ANVIL_ACCOUNTS, L1_CHAIN_ID, resolveEndpoints } from "@galactica-net/inference-money-local-network"
 import type { Hex } from "viem"
 import { mnemonicToAccount } from "viem/accounts"
-import { acceptAdmin, proposeAdmin, tokenOf } from "./admin"
-import { deployBridge } from "./deploy"
-import { deployMockUsdc } from "./deploy-l1"
 import { buildBridgeContracts } from "./evm"
-import { installCanonicalPermit2, l1Signer } from "./l1"
 import { localManifestPath, writeManifest } from "./manifest"
 import { scrubbedEnv } from "./secrets"
 import { accountFor, LOCAL_ADMIN_SECRET } from "./session"
+import { sourceCommit } from "./source-commit"
 import { assertAllPass, verifyDeployment } from "./verify"
 import { withBridgeWallet } from "./wallet"
 
@@ -59,14 +64,13 @@ export async function deployLocal(runId: string, opts: DeployOptions): Promise<{
 			usdc,
 			permit2,
 			deployerSecret: LOCAL_DEPLOYER_SECRET,
+			sourceCommit: sourceCommit(),
 			fees,
+			merchantDelay: opts.merchantDelay,
 			sponsoredFpc: sponsor.address.toString() as Hex,
 			log,
 		})
 		const deployer = await accountFor(wallet, LOCAL_DEPLOYER_SECRET)
-		if (opts.merchantDelay !== undefined) {
-			await tokenOf(wallet, deployed).methods.set_merchant_delay!(opts.merchantDelay).send({ from: deployer, fee, wait: L2_DONE })
-		}
 		await proposeAdmin(wallet, deployed, deployer, await accountFor(wallet, LOCAL_ADMIN_SECRET), fee)
 		const admin = await acceptAdmin(wallet, node, deployed, LOCAL_ADMIN_SECRET, log)
 		const m: BridgeManifest = { ...deployed, l2: { ...deployed.l2, admin: admin.toString() as Hex } }

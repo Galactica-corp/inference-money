@@ -1,0 +1,6 @@
+# Phase 2: demo + deployer (#61 wiring, #68, #43 `refused`, #95, #87)
+
+- #43: recon said `SentTx.refused` had one reader; typecheck found two more, the integration clock specs (`merchant-exit-expiry`, `stamp-expiry`), which assert it. Kept the field with a corrected doc; only `fateOf` stops trusting it. Lesson: grep `packages/integration` too before calling a field unread; `bun run typecheck` is the fast catch.
+- #95: `readDemoFile` checks the bridge before the version, so a v1 file an earlier deployment left stays "none" (demo setup overwrites it) instead of blocking setup with an error that names setup. The showcase's testnet e2e built a `BuildTarget` with `merchantsSalt: null` for its header check; now `""`, like its `usersTag`.
+- #87: a Biome 2.5.14 GritQL plugin in an `overrides` entry (`biome/no-fr-random.grit`); `biome check --write` reflows the `.grit` file. Proven by hand: a planted `Fr.random()` in `packages/deployer/src/zz-probe.ts` fails with the rule's message, the same file as `.test.ts` passes. The showcase's `openFor` moved in this phase so lint stays green.
+- Gate: `bun run lint`, `bun run typecheck` (all workspaces), demo 16 pass, deployer 92 pass, `build/target.test.ts` 7 pass.

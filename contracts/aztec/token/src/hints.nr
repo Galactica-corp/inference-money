@@ -136,6 +136,13 @@ pub unconstrained fn is_merchant_at_anchor(list: MerchantList, account: AztecAdd
     probe(list, account).merchant
 }
 
+/// Whether `account` has a merchant entry (switched on or off) at the anchor block, per the node.
+pub unconstrained fn is_registered_at_anchor(list: MerchantList, account: AztecAddress) -> bool {
+    let merchants: Map<AztecAddress, PublicImmutable<bool, ()>, ()> =
+        Map::new((), list.merchants_slot);
+    check_nullifier_exists(merchants.at(account).compute_initialization_inner_nullifier())
+}
+
 // Passed through unchecked: the token proves or refuses for any value (anything but FIRST or NEITHER proves the
 // second side), and the tests rely on out-of-range capsules reaching that constrained code.
 unconstrained fn capsule_side(this: AztecAddress) -> Option<u8> {

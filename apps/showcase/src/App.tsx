@@ -18,10 +18,10 @@ const onHash = (notify: () => void) => {
 }
 const useHash = () => useSyncExternalStore(onHash, () => window.location.hash)
 
-/** `demo` is opened once per page by the caller: React may mount this twice, the wallet's stores may not open twice. */
-export function App({ demo }: { demo: Promise<DemoWallet> }) {
-	const opening = useOpening(demo)
+/** `openDemo` opens the page's wallet once (`openOnce`); only "Try it yourself" and `#proving` call it, never the recording. */
+export function App({ openDemo }: { openDemo: () => Promise<DemoWallet> }) {
 	const hash = useHash()
+	const opening = useOpening(openDemo, modeOf(hash) !== "tour")
 	if (hash === "#proving")
 		return (
 			<Suspense>

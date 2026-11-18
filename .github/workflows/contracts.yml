@@ -21,6 +21,7 @@ jobs:
       pull-requests: read
     outputs:
       relevant: ${{ steps.override.outputs.relevant || steps.filter.outputs.relevant }}
+      evm: ${{ steps.override.outputs.relevant || steps.filter.outputs.evm }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
@@ -29,11 +30,23 @@ jobs:
           filters: |
             relevant:
               - 'contracts/**'
+              - 'packages/bridge-core/src/deploy/permit2.json'
               - 'toolchain.json'
               - 'package.json'
               - 'bun.lock'
               - 'bunfig.toml'
               - 'test-preload.ts'
+              - '.github/workflows/contracts.yml'
+              - '.github/workflows/_contracts.yml'
+              - '.github/actions/setup-toolchains/**'
+            # The short Medusa campaign: the fizz suite deploys the vendored Permit2 runtime.
+            evm:
+              - 'contracts/evm/**'
+              - 'packages/bridge-core/src/deploy/permit2.json'
+              - 'toolchain.json'
+              - 'package.json'
+              - 'bun.lock'
+              - 'bunfig.toml'
               - '.github/workflows/contracts.yml'
               - '.github/workflows/_contracts.yml'
               - '.github/actions/setup-toolchains/**'
@@ -45,6 +58,8 @@ jobs:
     needs: changes
     if: needs.changes.outputs.relevant == 'true'
     uses: ./.github/workflows/_contracts.yml
+    with:
+      medusa: ${{ needs.changes.outputs.evm == 'true' }}
 
   status:
     name: contracts-status

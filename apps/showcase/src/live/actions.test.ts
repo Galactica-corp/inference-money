@@ -1,23 +1,24 @@
 // @vitest-environment node
 import { TxStatus } from "@aztec-labs/aztec.js/tx"
-import { memoryPaymentStore, PaymentGate } from "@inference-money/bridge-core"
-import type { SentTx } from "@inference-money/demo"
+import { type ClaimTicket, encodeTicket, memoryPaymentStore, PaymentGate } from "@galactica-net/inference-money-core"
+import type { SentTx } from "@galactica-net/inference-money-demo"
 import { describe, expect, it, vi } from "vitest"
 import { MANIFEST, TOUR, WALLETS } from "@/config/network"
 import type { PendingDeposit, Tickets } from "@/demo/tickets"
 import type { DemoWallet } from "@/demo/wallet"
 import { oneAtATime } from "@/lib/one-at-a-time"
 import type { LiveCtx } from "./actions"
-import { replay, runDraft, withConflictRetry } from "./actions"
+import { archivedDeposits, recheckDeposit, replay, runDraft, withConflictRetry } from "./actions"
+import { DEPOSITS_CLOSED } from "./draft"
 import type { Outcome } from "./outcome"
 
 /** Requests the page opened, in order, each held open until `hold` settles. */
 const requests = vi.hoisted(() => ({ order: [] as string[], hold: undefined as Promise<void> | undefined }))
 /**
- * The commitments payments went into, and how the next are refused before sending: by `PaymentRefusedError` reasons
- * in order, then, with `refuse`, as one into a request whose stamp a prune removed.
+ * The commitments payments went into, and how the next are refused: by `PaymentRefusedError` reasons in order, then,
+ * with `refuse`, on the payment rule, by the client's list before sending ("list") or in a node's reply ("text").
  */
-const payments = vi.hoisted(() => ({ refuse: false, refusals: [] as string[], into: [] as unknown[] }))
+const payments = vi.hoisted(() => ({ refuse: undefined as "list" | "text" | undefined, refusals: [] as string[], into: [] as unknown[] }))
 
 /** Where a claim this page made stands on L2, and how many claims it sent. */
 const claims = vi.hoisted(() => ({
@@ -26,12 +27,19 @@ const claims = vi.hoisted(() => ({
 	result: "claimed" as "claimed" | "already",
 	binding: "matches" as "binds" | "matches",
 	consent: undefined as unknown,
+	/** A ticket the next claim rebuilds, as a reorg that moved the deposit's Inbox message would make it. */
+	rebuilt: undefined as unknown,
 }))
 
-// A deposit this page sent is still unconfirmed on Ethereum (a "broken" one cannot even be read back); a claim
-// ticket's nullifier is wherever `claims` says.
-vi.mock("@inference-money/bridge-core", async (original) => {
-	const real = await original<typeof import("@inference-money/bridge-core")>()
+const portal = vi.hoisted(() => ({ open: true, deposits: 0 }))
+
+/** What the L1 reader answers for each stored draft, by its text: a verdict, or "found" for its ticket. */
+const deposits = vi.hoisted(() => ({ verdicts: new Map<string, string>() }))
+
+// A deposit this page sent is still unconfirmed on Ethereum unless `deposits` says otherwise (a "broken" one cannot
+// even be read back); a claim ticket's nullifier is wherever `claims` says.
+vi.mock("@galactica-net/inference-money-core", async (original) => {
+	const real = await original<typeof import("@galactica-net/inference-money-core")>()
 	const { Fr } = await import("@aztec-labs/aztec.js/fields")
 	const { AztecAddress } = await import("@aztec-labs/aztec.js/addresses")
 	const intent = { recipient: AztecAddress.ZERO, amount: 10_000n, kind: "private" }
@@ -41,7 +49,8 @@ vi.mock("@inference-money/bridge-core", async (original) => {
 		decodeDepositDraft: (s: string) => ({ marker: s }),
 		reconcileDeposit: async (d: { marker: string }) => {
 			if (d.marker === "broken") throw new Error("Cannot read properties of undefined (reading 'message')")
-			return "pending"
+			const verdict = deposits.verdicts.get(d.marker) ?? "pending"
+			return verdict === "found" ? { ...ticket, draft: d } : verdict
 		},
 		decodeClaimTicket: (s: string) => {
 			if (s === "unreadable") throw new Error("not a claim ticket")
@@ -49,6 +58,7 @@ vi.mock("@inference-money/bridge-core", async (original) => {
 			return ticket
 		},
 		syncMerchantList: async () => ({}),
+		depositsOpen: async () => portal.open,
 		claimBinding: async () => claims.binding,
 		openRequest: async () => {
 			requests.order.push("open")
@@ -60,7 +70,8 @@ vi.mock("@inference-money/bridge-core", async (original) => {
 			payments.into.push(p.commitment)
 			const reason = payments.refusals.shift()
 			if (reason) throw new real.PaymentRefusedError(reason as never)
-			if (payments.refuse) throw new Error(real.TOKEN_REFUSALS.payment)
+			if (payments.refuse === "list") throw new real.ListRefusal(real.TOKEN_REFUSALS.payment)
+			if (payments.refuse === "text") throw new Error(real.TOKEN_REFUSALS.payment)
 		},
 		// Each tip holds the blocks of the tips after it: a proposed claim shows only at "proposed", a pruned one nowhere.
 		isClaimConsumed: async (_t: unknown, _node: unknown, _m: unknown, at = "checkpointed") => {
@@ -69,12 +80,17 @@ vi.mock("@inference-money/bridge-core", async (original) => {
 		},
 	}
 })
-vi.mock("@inference-money/demo", async (original) => ({
-	...(await original<typeof import("@inference-money/demo")>()),
-	castClaim: async (_s: unknown, _t: unknown, _on: unknown, consent: unknown) => {
+vi.mock("@galactica-net/inference-money-demo", async (original) => ({
+	...(await original<typeof import("@galactica-net/inference-money-demo")>()),
+	castClaim: async (_s: unknown, _t: unknown, _on: unknown, consent: unknown, rebuild?: { keep(t: unknown): void }) => {
 		claims.sent++
 		claims.consent = consent
+		if (claims.rebuilt) rebuild?.keep(claims.rebuilt)
 		return claims.result
+	},
+	castDeposit: async () => {
+		portal.deposits++
+		throw new Error("no deposit flow in these tests")
 	},
 }))
 
@@ -103,7 +119,15 @@ function ctxWithReceipt(status: TxStatus, succeeded: boolean, finalizedAt = 0n):
 		getBlockData: async () => ({ header: { globalVariables: { timestamp: finalizedAt } } }),
 	}
 	const demo = { sent, node, exclusive: oneAtATime() } as unknown as DemoWallet
-	return { demo, m: MANIFEST, l1RpcUrl: "", tickets: undefined as never, tour: TOUR, explorer: undefined, requests: new Map() }
+	return {
+		demo,
+		m: MANIFEST,
+		l1RpcUrl: "http://127.0.0.1:9",
+		tickets: undefined as never,
+		tour: TOUR,
+		explorer: undefined,
+		requests: new Map(),
+	}
 }
 
 const send = (ctx: LiveCtx, expiresAt = 0n, refused?: true) =>
@@ -127,12 +151,13 @@ describe("withConflictRetry", () => {
 	})
 
 	it("sends a one-send action again only once its first try provably cannot land", async () => {
-		// The node doesn't hold the first try, which expires at 10: proven gone by its outright refusal, or by a finalized
-		// block past its expiry; a drop alone (a lost response) proves nothing.
+		// The node doesn't hold the first try, which expires at 10: proven gone only by a finalized block past its expiry.
+		// A drop (a lost response) or the node's outright refusal is its word alone.
 		for (const [refused, finalizedAt, retried] of [
 			[undefined, 10n, false],
 			[undefined, 11n, true],
-			[true, 0n, true],
+			[true, 10n, false],
+			[true, 11n, true],
 		] as const) {
 			const ctx = ctxWith(false, finalizedAt)
 			let attempts = 0
@@ -164,7 +189,7 @@ describe("withConflictRetry", () => {
 		}
 	})
 
-	it("runs once more on a conflict found before sending, and never settles a payment on one of its sends", async () => {
+	it("leaves a payment that sent anything unconfirmed, runs once more on a conflict found before sending, never re-runs a deposit", async () => {
 		for (const landed of [false, true]) {
 			const ctx = ctxWith(landed)
 			let attempts = 0
@@ -173,7 +198,22 @@ describe("withConflictRetry", () => {
 				send(ctx)
 				throw new Error("Duplicate nullifier in tx")
 			}, ["request", "pay"])
-			expect([attempts, outcome]).toEqual([2, DONE])
+			expect([attempts, outcome]).toEqual([1, { kind: "failed", detail: expect.stringMatching(/may still take the first try/) }])
+		}
+		for (const [kinds, outcome, runs] of [
+			[["request", "pay"], DONE, 2],
+			[[], "Existing nullifier", 1],
+		] as const) {
+			let attempts = 0
+			const result = await withConflictRetry(
+				ctxWith(false),
+				async () => {
+					if (attempts++ > 0) return DONE
+					throw new Error("Existing nullifier")
+				},
+				kinds,
+			).catch((e: Error) => e.message)
+			expect([result, attempts], `kinds [${kinds}]`).toEqual([outcome, runs])
 		}
 		const ctx = ctxWith(false)
 		const twice = withConflictRetry(ctx, async () => Promise.reject(new Error("Existing nullifier")), ["transfer"])
@@ -192,6 +232,17 @@ describe("replay", () => {
 			detail: /less than that\. This replays the recorded run instead, so nothing moved now\.$/,
 		})
 		expect(outcome.kind === "settled" && outcome.rows.map((r) => [r.key, r.source])).toEqual([["deposit", "recorded"]])
+	})
+})
+
+describe("deposit", () => {
+	it("re-reads the portal first: a rollup switch since the page opened refuses it before any read or signature", async () => {
+		portal.open = false
+		// Nothing listens there: a balance read or a signature would fail with a connection error instead.
+		const ctx: LiveCtx = { ...ctxWith(false), l1RpcUrl: "http://127.0.0.1:9" }
+		const outcome = await runDraft(ctx, { actor: "bob", action: "deposit", to: "bob", amount: 10_000n }, WALLETS, () => {})
+		expect([outcome, portal.deposits]).toEqual([{ kind: "failed", detail: DEPOSITS_CLOSED }, 0])
+		portal.open = true
 	})
 })
 
@@ -226,12 +277,69 @@ describe("claim", () => {
 		expect((await claim()).kind).toBe("settled")
 		expect([claims.sent, store.get("d1")?.claimed]).toEqual([1, true])
 		claims.state = "finalized"
-		expect([await claim(), store.size]).toEqual([nothing, 0])
+		expect([await claim(), store.get("d1")]).toEqual([
+			nothing,
+			{ id: "d1", user: "bob", since: 0, claim: "ticket", claimed: true, final: true },
+		])
 		store.set("d2", { id: "d2", user: "bob", since: 1, claim: "unreadable" })
 		store.set("d4", { id: "d4", user: "bob", since: 1, claim: "tampered" })
 		store.set("d3", { id: "d3", user: "bob", since: 2, claim: "ticket" })
 		claims.state = "pruned"
-		expect([(await claim()).kind, claims.sent, [...store.keys()]]).toEqual(["settled", 2, ["d3"]])
+		expect([(await claim()).kind, claims.sent, [...store.keys()]]).toEqual(["settled", 2, ["d1", "d3"]])
+	})
+
+	it("keeps a ticket's secret when the node calls final a claim this page never sent", async () => {
+		const store = new Map<string, PendingDeposit>([["d1", { id: "d1", user: "bob", since: 0, claim: "ticket" }]])
+		const tickets = {
+			deposits: () => [...store.values()],
+			putDeposit: (d: PendingDeposit) => store.set(d.id, d),
+			dropDeposit: (id: string) => store.delete(id),
+		} as unknown as Tickets
+		const claim = () => runDraft({ ...ctxWith(false), tickets }, { actor: "bob", action: "claim", to: "bob" }, WALLETS, () => {})
+		Object.assign(claims, { state: "finalized", result: "already" })
+		try {
+			expect((await claim()).kind).toBe("settled")
+			expect(await claim()).toEqual({ kind: "failed", detail: "There is nothing to claim: deposit first." })
+			expect(store.get("d1")).toEqual({ id: "d1", user: "bob", since: 0, claim: "ticket", claimed: true, final: true })
+		} finally {
+			claims.result = "claimed"
+		}
+	})
+
+	it("archives a deposit Ethereum does not show, never offers it, and a re-check moves it on or keeps it, salt intact", async () => {
+		const archived: PendingDeposit = { id: "a1", user: "bob", since: 0, draft: "gone", archived: true }
+		const store = new Map<string, PendingDeposit>([["a1", { id: "a1", user: "bob", since: 0, draft: "gone" }]])
+		const tickets = {
+			deposits: () => [...store.values()],
+			putDeposit: (d: PendingDeposit) => store.set(d.id, d),
+			dropDeposit: (id: string) => store.delete(id),
+		} as unknown as Tickets
+		const ctx: LiveCtx = { ...ctxWith(false), l1RpcUrl: "http://127.0.0.1:9", tickets }
+		const claim = () => runDraft(ctx, { actor: "bob", action: "claim", to: "bob" }, WALLETS, () => {})
+		deposits.verdicts.set("gone", "not-deposited")
+		try {
+			expect(await claim()).toEqual({ kind: "failed", detail: expect.stringContaining("keeps its record below") })
+			expect(store.get("a1")).toEqual(archived)
+			expect(await claim()).toEqual({ kind: "failed", detail: "There is nothing to claim: deposit first." })
+			expect(archivedDeposits(ctx)).toEqual([{ id: "a1", user: "bob", amount: undefined }])
+			for (const [verdict, after] of [
+				["not-deposited", ["gone", true, undefined]],
+				["pending", ["gone", undefined, undefined]],
+				["found", [undefined, undefined, "gone"]],
+			] as const) {
+				store.set("a1", archived)
+				deposits.verdicts.set("gone", verdict)
+				await recheckDeposit(ctx, "a1")
+				const p = store.get("a1")
+				const salt = p?.claim && (JSON.parse(p.claim) as { ticket: { draft: { marker: string } } }).ticket.draft.marker
+				expect([p?.draft, p?.archived, salt], verdict).toEqual([...after])
+			}
+			store.set("a1", { ...archived, final: true, archived: undefined })
+			const gone = "There is nothing to check there any more."
+			expect([await recheckDeposit(ctx, "a1"), await recheckDeposit(ctx, "missing")]).toEqual([gone, gone])
+		} finally {
+			deposits.verdicts.clear()
+		}
 	})
 
 	it("asks before a first claim binds the account: a decline sends nothing and keeps the ticket, an accept consents", async () => {
@@ -281,6 +389,25 @@ describe("claim", () => {
 		}
 	})
 
+	it("stores a ticket its claim rebuilt in place of the old one, and marks that one claimed", async () => {
+		const store = new Map<string, PendingDeposit>([["d1", { id: "d1", user: "bob", since: 0, claim: "ticket" }]])
+		const tickets = {
+			deposits: () => [...store.values()],
+			putDeposit: (d: PendingDeposit) => store.set(d.id, d),
+			dropDeposit: (id: string) => store.delete(id),
+		} as unknown as Tickets
+		const rebuilt = { messageHash: "0x02", leafIndex: 2n, depositor: "0xd", draft: { marker: "moved" } } as unknown as ClaimTicket
+		Object.assign(claims, { state: "pruned", rebuilt })
+		try {
+			expect(
+				(await runDraft({ ...ctxWith(false), tickets }, { actor: "bob", action: "claim", to: "bob" }, WALLETS, () => {})).kind,
+			).toBe("settled")
+			expect(store.get("d1")).toEqual({ id: "d1", user: "bob", since: 0, claim: encodeTicket("claim", rebuilt), claimed: true })
+		} finally {
+			claims.rebuilt = undefined
+		}
+	})
+
 	it("never lets a deposit still confirming, or one it cannot read back right now, hold up the claims after it", async () => {
 		const store = new Map<string, PendingDeposit>([
 			["b0", { id: "b0", user: "bob", since: -1, draft: "confirming" }],
@@ -317,17 +444,19 @@ describe("runDraft", () => {
 		expect(requests.order).toEqual(["open", "opened", "open", "opened"])
 	})
 
-	it("forgets a request whose stamp a refused payment proves gone, so the next payment opens a fresh one", async () => {
+	it("forgets a request only when its own list refused paying it before any send, so the next payment opens a fresh one", async () => {
 		const base = ctxWith(false)
 		const cast = { galactica: { address: "0xg" }, alice: { address: "0xa" } }
 		const ctx: LiveCtx = { ...base, demo: { ...base.demo, cast } as unknown as DemoWallet }
 		ctx.requests.set("galactica>alice", 1 as never)
 		const pay = { actor: "alice", action: "pay", to: "galactica", amount: 10_000n } as const
-		payments.refuse = true
 		try {
+			payments.refuse = "text"
+			expect([(await runDraft(ctx, pay, WALLETS, () => {})).kind, ctx.requests.size], "a reply's text").toEqual(["refused", 1])
+			payments.refuse = "list"
 			expect([(await runDraft(ctx, pay, WALLETS, () => {})).kind, ctx.requests.size]).toEqual(["refused", 0])
 		} finally {
-			payments.refuse = false
+			payments.refuse = undefined
 		}
 		const opened = requests.order.length
 		expect((await runDraft(ctx, pay, WALLETS, () => {})).kind).toBe("settled")

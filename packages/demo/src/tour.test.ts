@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test"
 import { Fr } from "@aztec-labs/aztec.js/fields"
-import { tokenArtifact } from "@inference-money/bridge-core"
+import { tokenArtifact } from "@galactica-net/inference-money-core"
 import { MANIFEST } from "../../bridge-core/src/test/fixtures"
 import { parseTour, TOUR_STEPS, type TourStep, type TourStepId, tourHeader, tourMismatches } from "./tour"
 import { aztecWorld, ethereumWorld } from "./world-view"

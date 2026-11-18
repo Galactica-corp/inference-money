@@ -10,7 +10,7 @@ import {Constants} from "@aztec/core/libraries/ConstantsGen.sol";
 import {Epoch} from "@aztec/core/libraries/TimeLib.sol";
 
 import {TokenPortal} from "../src/TokenPortal.sol";
-import {CapturingInbox, CapturingOutbox, FakeRegistry, FakeRollup} from "./mocks/AztecFakes.sol";
+import {CapturingInbox, CapturingOutbox, FAKE_ROLLUP_VERSION, FakeRegistry, FakeRollup} from "./mocks/AztecFakes.sol";
 import {StubRouter, initializedPortal} from "./mocks/MockPortal.sol";
 import {
     FeeOnTransferERC20,
@@ -179,12 +179,12 @@ contract TokenPortalTest is Test {
         StubRouter bound = new StubRouter(address(portal), address(token));
 
         vm.expectRevert(TokenPortal.RouterMismatch.selector);
-        portal.initialize(address(registry), address(token), BRIDGE, otherPortal);
+        portal.initialize(address(registry), address(token), BRIDGE, otherPortal, FAKE_ROLLUP_VERSION);
         vm.expectRevert(TokenPortal.RouterMismatch.selector);
-        portal.initialize(address(registry), address(token), BRIDGE, otherToken);
+        portal.initialize(address(registry), address(token), BRIDGE, otherToken, FAKE_ROLLUP_VERSION);
         // No code, no binding to read.
         vm.expectRevert();
-        portal.initialize(address(registry), address(token), BRIDGE, makeAddr("eoa"));
+        portal.initialize(address(registry), address(token), BRIDGE, makeAddr("eoa"), FAKE_ROLLUP_VERSION);
         assertEq(address(portal.registry()), address(0), "a refused initialize bound a registry");
 
         FakeRollup rollup = FakeRollup(registry.rollup());
@@ -199,7 +199,7 @@ contract TokenPortalTest is Test {
             address(outbox),
             rollup.VERSION()
         );
-        portal.initialize(address(registry), address(token), BRIDGE, address(bound));
+        portal.initialize(address(registry), address(token), BRIDGE, address(bound), FAKE_ROLLUP_VERSION);
         assertEq(portal.router(), address(bound), "router");
     }
 
@@ -214,9 +214,9 @@ contract TokenPortalTest is Test {
         address namesOtherToken = address(new StubRouter(address(wrongToken), other));
 
         vm.expectRevert(TokenPortal.RouterMismatch.selector);
-        wrongPortal.initialize(address(registry), address(token), BRIDGE, namesOtherPortal);
+        wrongPortal.initialize(address(registry), address(token), BRIDGE, namesOtherPortal, FAKE_ROLLUP_VERSION);
         vm.expectRevert(TokenPortal.RouterMismatch.selector);
-        wrongToken.initialize(address(registry), address(token), BRIDGE, namesOtherToken);
+        wrongToken.initialize(address(registry), address(token), BRIDGE, namesOtherToken, FAKE_ROLLUP_VERSION);
     }
 
     function test_withdraw_consumesAndDebitsExactly() public {

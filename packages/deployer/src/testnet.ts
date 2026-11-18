@@ -2,23 +2,21 @@ import { rmSync } from "node:fs"
 import { join } from "node:path"
 import { AztecAddress } from "@aztec-labs/aztec.js/addresses"
 import { FeeJuicePaymentMethodWithClaim } from "@aztec-labs/aztec.js/fee"
-import type { createAztecNodeClient } from "@aztec-labs/aztec.js/node"
-import { type BridgeManifest, L2_DONE, sponsoredFpcArtifact, sponsorInstance } from "@inference-money/bridge-core"
-import { REPO_ROOT } from "@inference-money/local-network"
+import type { AztecNode } from "@aztec-labs/aztec.js/node"
+import { type BridgeManifest, readBack, sponsoredFpcArtifact, sponsorInstance } from "@galactica-net/inference-money-core"
+import { deployBridge, type L1Signer, type L2Fees, l1Signer, proposeAdmin } from "@galactica-net/inference-money-core/deploy"
+import { REPO_ROOT } from "@galactica-net/inference-money-local-network"
 import type { Hex } from "viem"
 import { privateKeyToAccount } from "viem/accounts"
-import { proposeAdmin, tokenOf } from "./admin"
-import { deployBridge } from "./deploy"
-import type { L2Fees } from "./deploy-l2"
 import { type BridgeEvmArtifacts, buildBridgeContracts, forgeRunDir } from "./evm"
 import { bridgeFeeJuice } from "./fee-juice"
-import { type L1Signer, l1Signer } from "./l1"
 import type { DeployOptions } from "./local"
 import { writeManifest } from "./manifest"
 import { TESTNET } from "./networks"
 import { probeNetwork } from "./preflight"
 import { aztecSecretFrom, KEYED, keyedEnv, l1PrivateKeyFrom, scrubbedEnv } from "./secrets"
 import { accountFor } from "./session"
+import { sourceCommit } from "./source-commit"
 import { assertAllPass, verifyDeployment } from "./verify"
 import { withBridgeWallet } from "./wallet"
 
@@ -57,18 +55,14 @@ export function adminAddressFrom(env: NodeJS.ProcessEnv = process.env): AztecAdd
  * The deployer account's first tx claims Fee Juice minted from the testnet faucet and bridged to it; every later tx
  * pays from that balance.
  */
-function selfFundedFees(
-	l1: ReturnType<typeof testnetL1>,
-	node: ReturnType<typeof createAztecNodeClient>,
-	log: (m: string) => void,
-): L2Fees {
+function selfFundedFees(l1: ReturnType<typeof testnetL1>, node: AztecNode, log: (m: string) => void): L2Fees {
 	return {
 		accountDeploy: async (account: AztecAddress) => {
 			const claim = await bridgeFeeJuice({
 				node,
+				pins: TESTNET,
 				l1RpcUrl: l1.l1RpcUrl,
 				l1PrivateKey: l1.l1PrivateKey,
-				l1ChainId: TESTNET.l1ChainId,
 				to: account,
 				log,
 			})
@@ -105,17 +99,17 @@ export async function deployTestnet(opts: DeployOptions): Promise<BridgeManifest
 			permit2: TESTNET.permit2,
 			registry: TESTNET.registry,
 			deployerSecret,
+			sourceCommit: sourceCommit(),
 			fees: selfFundedFees(keys, node, log),
+			merchantDelay: opts.merchantDelay,
 			sponsoredFpc: TESTNET.sponsoredFpc,
 			log,
 		})
 		const deployer = await accountFor(wallet, deployerSecret)
-		if (opts.merchantDelay !== undefined) {
-			await tokenOf(wallet, m).methods.set_merchant_delay!(opts.merchantDelay).send({ from: deployer, wait: L2_DONE })
-		}
 		await proposeAdmin(wallet, m, deployer, admin)
 		log(`handover proposed to ${admin}: accept it with \`bridge admin accept\``)
-		assertAllPass(await verifyDeployment(m, evm, keys.l1.publicClient, node, { pendingTo: admin.toString() }), log)
+		const verify = () => verifyDeployment(m, evm, keys.l1.publicClient, node, { pendingTo: admin.toString() })
+		assertAllPass(await readBack(verify, (checks) => checks.every((c) => c.ok)), log)
 		return m
 	})
 	writeManifest(TESTNET_MANIFEST, manifest)

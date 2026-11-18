@@ -5,7 +5,7 @@ import {ECDSA} from "@oz/utils/cryptography/ECDSA.sol";
 import {Hash} from "@aztec/core/libraries/crypto/Hash.sol";
 
 import {TokenPortal} from "../src/TokenPortal.sol";
-import {CapturingInbox, CapturingOutbox, FakeRegistry, FakeRollup} from "./mocks/AztecFakes.sol";
+import {CapturingInbox, CapturingOutbox, FAKE_ROLLUP_VERSION, FakeRegistry, FakeRollup} from "./mocks/AztecFakes.sol";
 import {StubRouter} from "./mocks/MockPortal.sol";
 import {
     PortalIgnoresSubmitter,
@@ -68,7 +68,13 @@ contract FundingAuthorizationTest is ProofCanary {
     /// Initializes `p` against the shared registry and token; the periphery and the stranger each hold and approve
     /// enough for any deposit here.
     function _bind(TokenPortal p) internal returns (TokenPortal) {
-        p.initialize(address(registry), address(token), BRIDGE, address(new StubRouter(address(p), address(token))));
+        p.initialize(
+            address(registry),
+            address(token),
+            BRIDGE,
+            address(new StubRouter(address(p), address(token))),
+            FAKE_ROLLUP_VERSION
+        );
         address[2] memory payers = [periphery, stranger];
         for (uint256 i; i < payers.length; i++) {
             token.mint(payers[i], 10 * AMOUNT);

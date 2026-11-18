@@ -1,7 +1,7 @@
-import { type BridgeManifest, parseManifest } from "@inference-money/bridge-core/manifest"
-import { ethereumKey } from "@inference-money/demo/keys"
-import { parseTour, type Tour } from "@inference-money/demo/tour"
-import { type NetworkPins, TESTNET } from "@inference-money/deployer/networks"
+import { type BridgeManifest, parseManifest } from "@galactica-net/inference-money-core/manifest"
+import { ethereumKey } from "@galactica-net/inference-money-demo/keys"
+import { parseTour, type Tour } from "@galactica-net/inference-money-demo/tour"
+import { type NetworkPins, TESTNET } from "@galactica-net/inference-money-deployer/networks"
 import { type Address, type Chain, defineChain } from "viem"
 import { privateKeyToAddress } from "viem/accounts"
 
@@ -21,6 +21,7 @@ export const WALLETS: Record<"A_demo" | "B_demo", Address> = {
 }
 
 export const USERS_TAG: string = __SHOWCASE_USERS_TAG__
+export const MERCHANTS_SALT: string = __SHOWCASE_MERCHANTS_SALT__
 export const L1_RPC_URL: string = __SHOWCASE_L1_RPC__
 /** Whether the embedded wallet proves for real: always on testnet, on local only in the proving harness. */
 export const PROVES: boolean = __SHOWCASE_PROOFS__ === "real"

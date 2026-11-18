@@ -16,6 +16,7 @@ describe("token refusals", () => {
 			"notAdminOrGuardian",
 		)
 		expect(tokenRefusalOf(new Error("Assertion failed: Only the pending merchant admin"))).toBe("notPendingAdmin")
+		expect(tokenRefusalOf(new Error("Assertion failed: Only the merchant admin lowers a delay"))).toBe("notAdminLowersDelay")
 		expect(tokenRefusalOf(new Error("Assertion failed: Only the merchant admin"))).toBe("notAdmin")
 		expect(tokenRefusalOf(`Simulation error: ${TOKEN_REFUSALS.payment}`)).toBe("payment")
 		expect(tokenRefusalOf(new Error("Balance too low"))).toBeUndefined()

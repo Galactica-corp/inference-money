@@ -1,4 +1,4 @@
-import { describe, expect, it } from "bun:test"
+import { describe, expect, it, spyOn } from "bun:test"
 import { parseDelay, parseInvocation } from "./cli-args"
 
 describe("bridge CLI arguments", () => {
@@ -14,6 +14,10 @@ describe("bridge CLI arguments", () => {
 			flags: { tour: "t.json", "l1-rpc": "http://x" },
 		})
 		expect(parseInvocation(["demo", "setup", "local", "--rotate"]).flags).toEqual({ rotate: true })
+		expect(parseInvocation(["verify", "local", "--allow-pending", "--node", "http://n"]).flags).toEqual({
+			"allow-pending": true,
+			node: "http://n",
+		})
 		expect(parseInvocation(["disposable", "exec", "deploy", "testnet", "--merchant-delay", "3600"]).args).toEqual([
 			"deploy",
 			"testnet",
@@ -31,7 +35,7 @@ describe("bridge CLI arguments", () => {
 			["verify", "m.json", "--bogus", "1"],
 			["verify", "m.json", "--tour"],
 			["export", "m.json"],
-			["probe", "mainnet"],
+			["probe", "devnet"],
 			["disposable", "exec"],
 			["frobnicate"],
 		]) {
@@ -39,8 +43,19 @@ describe("bridge CLI arguments", () => {
 		}
 	})
 
-	it("bounds a delay to the token's [3600, 86400] seconds", () => {
-		expect(parseDelay("3600")).toBe(3600n)
-		for (const bad of ["3599", "86401", "1h", "-1"]) expect(() => parseDelay(bad)).toThrow()
+	it("bounds a delay to the token's [3600, 86400] seconds, and warns on stderr at 82 800 s or less", () => {
+		const warn = spyOn(console, "warn").mockImplementation(() => {})
+		try {
+			expect(parseDelay("3600")).toBe(3600n)
+			for (const bad of ["3599", "86401", "1h", "-1"]) expect(() => parseDelay(bad)).toThrow()
+			warn.mockClear()
+			parseDelay("82800")
+			expect(warn).toHaveBeenCalledTimes(1)
+			expect(String(warn.mock.calls[0]?.[0])).toContain("marks those txs")
+			for (const unmarked of ["82801", "86400"]) parseDelay(unmarked)
+			expect(warn).toHaveBeenCalledTimes(1)
+		} finally {
+			warn.mockRestore()
+		}
 	})
 })

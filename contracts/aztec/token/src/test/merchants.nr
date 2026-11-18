@@ -97,7 +97,7 @@ unconstrained fn switching_back_on_cancels_a_pending_switch_off() {
     w.env.call_public(w.admin, Token::at(w.token).schedule_merchant_off(w.m1, false));
     let s = status(w, w.m1);
     assert(!s.scheduled_off);
-    // The switch-on is itself scheduled, so it marks the entry until then.
+    // The switch-on is itself scheduled; as a change to the current value it marks nothing.
     assert_eq(s.scheduled_off_at, t0 + HOUR + DAY);
     at(w, t0 + DAY + HOUR - 1);
     assert(is_merchant(w, w.m1));
@@ -129,11 +129,11 @@ unconstrained fn cancel_refuses_an_entry_with_nothing_pending() {
 }
 
 #[test(should_fail_with = "No pending change")]
-unconstrained fn cancel_refuses_to_re_mark_a_cancelled_entry() {
+unconstrained fn cancel_refuses_a_cancelled_entry() {
     let w = utils::setup_merchant_world(false);
     w.env.call_public(w.admin, Token::at(w.token).schedule_merchant_off(w.m1, true));
     w.env.call_public(w.admin, Token::at(w.token).cancel_merchant_change(w.m1));
-    // The scheduled value now equals the current one: a second cancel would only restart the mark.
+    // The scheduled value now equals the current one, so nothing is left to cancel.
     w.env.call_public(w.admin, Token::at(w.token).cancel_merchant_change(w.m1));
 }
 
@@ -197,11 +197,59 @@ unconstrained fn the_delay_setting_is_admin_only() {
     w.env.call_public(w.m1, Token::at(w.token).set_merchant_delay(HOUR));
 }
 
-// On a listed merchant, so the registration check cannot be what refuses it.
-#[test(should_fail_with = "Only the merchant admin")]
-unconstrained fn sync_merchant_delay_is_admin_only() {
+// Both ways one admin tx can leave a merchant alone on a shorter delay: a merchant added under a lowered setting, and
+// one synced to it, each with the setting restored in the same tx.
+#[test]
+unconstrained fn a_stranger_restores_a_targeted_entry_at_once() {
     let w = utils::setup_merchant_world(false);
-    w.env.call_public(w.bob, Token::at(w.token).sync_merchant_delay(w.m1));
+    w.env.call_public(w.admin, Token::at(w.token).set_merchant_delay(HOUR));
+    w.env.call_public(w.admin, Token::at(w.token).add_merchant(w.bob));
+    w.env.call_public(w.admin, Token::at(w.token).sync_merchant_delay(w.m1));
+    w.env.call_public(w.admin, Token::at(w.token).set_merchant_delay(DAY));
+    assert_eq(status(w, w.bob).delay, HOUR);
+    assert_eq(status(w, w.m1).scheduled_delay, HOUR);
+
+    w.env.call_public(w.alice, Token::at(w.token).sync_merchant_delay(w.bob));
+    w.env.call_public(w.alice, Token::at(w.token).sync_merchant_delay(w.m1));
+    let (b, m) = (status(w, w.bob), status(w, w.m1));
+    assert_eq([b.delay, b.scheduled_delay, m.delay, m.scheduled_delay], [DAY; 4]);
+}
+
+#[test]
+unconstrained fn a_strangers_sync_never_restarts_a_pending_decrease() {
+    let w = utils::setup_merchant_world(false);
+    let t0 = w.env.last_block_timestamp();
+    w.env.call_public(w.admin, Token::at(w.token).set_merchant_delay(HOUR));
+    w.env.call_public(w.admin, Token::at(w.token).sync_merchant_delay(w.m1));
+    let pending = status(w, w.m1);
+    at(w, t0 + 12 * HOUR);
+    w.env.call_public(w.alice, Token::at(w.token).sync_merchant_delay(w.m1));
+    assert(status(w, w.m1) == pending);
+    at(w, t0 + DAY - HOUR);
+    assert_eq(status(w, w.m1).delay, HOUR);
+}
+
+// The setting sits above the pending 1 h but below the 24 h in force, so only a guard reading the delay in force
+// refuses.
+#[test(should_fail_with = "Only the merchant admin lowers a delay")]
+unconstrained fn a_strangers_sync_never_lowers_the_delay_in_force() {
+    let w = utils::setup_merchant_world(false);
+    w.env.call_public(w.admin, Token::at(w.token).set_merchant_delay(HOUR));
+    w.env.call_public(w.admin, Token::at(w.token).sync_merchant_delay(w.m1));
+    w.env.call_public(w.admin, Token::at(w.token).set_merchant_delay(12 * HOUR));
+    w.env.call_public(w.alice, Token::at(w.token).sync_merchant_delay(w.m1));
+}
+
+#[test(should_fail_with = "Only the merchant admin lowers a delay")]
+unconstrained fn a_guardians_cancel_holds_against_a_strangers_sync() {
+    let w = utils::setup_merchant_world(false);
+    let t0 = w.env.last_block_timestamp();
+    w.env.call_public(w.admin, Token::at(w.token).schedule_merchant_guardian(w.bob));
+    at(w, t0 + DAY);
+    w.env.call_public(w.admin, Token::at(w.token).set_merchant_delay(HOUR));
+    w.env.call_public(w.admin, Token::at(w.token).sync_merchant_delay(w.m1));
+    w.env.call_public(w.bob, Token::at(w.token).cancel_merchant_change(w.m1));
+    w.env.call_public(w.alice, Token::at(w.token).sync_merchant_delay(w.m1));
 }
 
 #[test]

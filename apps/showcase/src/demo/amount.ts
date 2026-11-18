@@ -1,4 +1,4 @@
-import { MAX_L2_AMOUNT } from "@inference-money/bridge-core/types"
+import { MAX_L2_AMOUNT } from "@galactica-net/inference-money-core/types"
 
 export const USDC_DECIMALS = 6
 const UNIT = 10n ** BigInt(USDC_DECIMALS)

@@ -3,7 +3,7 @@ import { existsSync, mkdtempSync, rmSync } from "node:fs"
 import { homedir } from "node:os"
 import { join } from "node:path"
 import { MANIFEST } from "../../bridge-core/src/test/fixtures"
-import { maskImmutables } from "./evm"
+import { forgeEnv, maskImmutables } from "./evm"
 import { readManifest, writeManifest } from "./manifest"
 
 describe("deploy units", () => {
@@ -12,6 +12,11 @@ describe("deploy units", () => {
 		expect(maskImmutables("0xaabbccdd", ranges)).toBe("0xaa0000dd")
 		expect(maskImmutables("0xaa1122dd", ranges)).toBe(maskImmutables("0xaabbccdd", ranges))
 		expect(maskImmutables("0xaabbccde", ranges)).not.toBe(maskImmutables("0xaabbccdd", ranges))
+	})
+
+	it("builds under the default profile whatever Foundry overrides the caller's environment carries", () => {
+		const env = forgeEnv({ FOUNDRY_PROFILE: "fuzz", FOUNDRY_OPTIMIZER_RUNS: "1", DAPP_SRC: "x", PATH: "/bin" })
+		expect(env).toEqual({ FOUNDRY_PROFILE: "default", PATH: "/bin" })
 	})
 
 	it("writes only a valid manifest, and reads it back unchanged", () => {

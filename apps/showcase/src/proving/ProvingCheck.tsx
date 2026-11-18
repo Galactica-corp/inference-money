@@ -1,5 +1,5 @@
 import { AztecAddress } from "@aztec-labs/aztec.js/addresses"
-import type { BridgeManifest } from "@inference-money/bridge-core"
+import type { BridgeManifest } from "@galactica-net/inference-money-core"
 import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { PROVES } from "@/config/network"

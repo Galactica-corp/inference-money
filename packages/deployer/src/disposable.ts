@@ -3,10 +3,10 @@ import { basename, dirname, join, resolve } from "node:path"
 import type { Writable } from "node:stream"
 import type { AztecAddress } from "@aztec-labs/aztec.js/addresses"
 import { Fr } from "@aztec-labs/aztec.js/fields"
-import { createAztecNodeClient } from "@aztec-labs/aztec.js/node"
-import { parseManifest, randomSecret, signingKeyFor, tokenBridgeArtifact } from "@inference-money/bridge-core"
-import { aztecAddressOf } from "@inference-money/demo"
-import { REPO_ROOT } from "@inference-money/local-network"
+import { createNodeClient, parseManifest, randomSecret, signingKeyFor, tokenBridgeArtifact } from "@galactica-net/inference-money-core"
+import { layoutSlot, publicReader, type Roles, readRoles } from "@galactica-net/inference-money-core/deploy"
+import { aztecAddressOf } from "@galactica-net/inference-money-demo"
+import { REPO_ROOT } from "@galactica-net/inference-money-local-network"
 import type { Address } from "viem"
 import { generatePrivateKey, privateKeyToAddress } from "viem/accounts"
 import { type Command, type Invocation, parseInvocation } from "./cli-args"
@@ -16,7 +16,6 @@ import { DISPOSABLE_DIR, keyedWorktree, StateDir, syncDir, withStateDir, writeDu
 import { scanFailed, scanForSecrets, scanLine } from "./scan"
 import { aztecSecretFrom, KEYED, l1PrivateKeyFrom, scrubbedEnv, secretNeedles } from "./secrets"
 import type { ManifestRef } from "./session"
-import { layoutSlot, publicReader, type Roles, readRoles } from "./token-reads"
 
 /** The disposable fallback's keys: owner-only, outside every checkout, until `destroy`. */
 export const DISPOSABLE_FILE = join(DISPOSABLE_DIR, "testnet.env")
@@ -196,7 +195,7 @@ async function execUnder(inv: Invocation, command: string[], file: string, root:
 
 /** Read at the pinned testnet node, never one a manifest names, with the token the bridge itself is configured with. */
 async function finalRoles(ref: ManifestRef): Promise<Roles & { token: Fr }> {
-	const node = createAztecNodeClient(TESTNET.nodeUrl)
+	const node = createNodeClient(TESTNET.nodeUrl)
 	const token = await publicReader(node, ref.m.l2.bridge.address, "finalized")(layoutSlot(tokenBridgeArtifact, "config", 1))
 	return { ...(await readRoles(node, ref.m, "finalized")), token }
 }
@@ -213,8 +212,9 @@ function assertRecorded(file: string, ref: ManifestRef): void {
 }
 
 /**
- * Deletes the disposable keys once the deployment they made shows, at its last finalized block, both roles held by the
- * manifest's admin alone, an account none of the keys control. Absence is no evidence (a finalized block from before
+ * Deletes the disposable keys once the deployment they made shows, in reads at the `finalized` tag through the pinned
+ * node (separate reads, not necessarily of one block), both roles held by the manifest's admin alone, an account none of
+ * the keys control. Absence is no evidence (a finalized block from before
  * the deploy holds no roles at all), and a prune can undo a switch short of finalized; with the keys gone, a role left
  * with them could never move again. Anything less, a failed read or an unrecorded deploy included, keeps the file.
  */

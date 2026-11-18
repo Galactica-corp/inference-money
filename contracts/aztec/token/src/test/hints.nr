@@ -179,6 +179,16 @@ unconstrained fn a_merchant_read_caps_expiry_at_the_entrys_horizon() {
     assert_eq(w.env.private_context_at(w.token, |_| merchant_horizon(list, w.bob)), 0);
 }
 
+// A cancel schedules the current value, a change aztec-nr's horizon ignores: the read caps as a settled entry's does.
+#[test]
+unconstrained fn a_cancelled_entry_reads_unmarked() {
+    let w = utils::setup_merchant_world(false);
+    let _ = switch_off(w, w.m1);
+    w.env.call_public(w.admin, Token::at(w.token).cancel_merchant_change(w.m1));
+    utils::anchor_at(w.env, w.env.last_block_timestamp() + 1);
+    assert_horizon(w, w.m1, MERCHANT_MAX_DELAY - 1);
+}
+
 // The call publishes its sender, so a merchant sender is proven even while the hidden recipient's read would cap later.
 // TXE cannot see which entry a real call read; check-stamp-constraint.sh pins the call's `(from, to, true)`.
 #[test]
@@ -320,6 +330,20 @@ unconstrained fn a_capsule_naming_a_switched_off_merchant_fails_the_proof() {
         w.alice,
         Token::at(w.token).transfer_private_to_private(w.alice, w.m1, AMOUNT, 0),
     );
+}
+
+// Proving either account would fail here (alice is unlisted, m1 switched off), so a passing merge read no entry, and
+// a marked merchant's merge keeps the standard expiry whatever its capsule names.
+#[test]
+unconstrained fn a_self_send_reads_no_merchant_entry_whatever_its_capsule_names() {
+    let w = utils::setup_merchant_world(false);
+    utils::anchor_at(w.env, switch_off(w, w.m1));
+    store_side_capsule(w, FIRST as Field);
+    let token = Token::at(w.token);
+    for holder in [w.alice, w.m1] {
+        w.env.call_private(holder, token.transfer_private_to_private(holder, holder, AMOUNT, 0));
+        utils::check_private_balance(w.env, w.token, holder, mint_amount);
+    }
 }
 
 #[test(should_fail_with = "Payment refused: users may only pay into requests opened for a merchant")]

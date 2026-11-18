@@ -23,6 +23,6 @@ export function LiveRoot({ header, opening }: { header: ReactNode; opening: Open
 		return liveEngine(ctx, WALLETS)
 	}, [opening])
 	const presto = useLivePresto(opening.status === "ready" ? opening.demo.presto : undefined)
-	const wallet = opening.status === "ready" ? { status: "ready" as const } : opening
+	const wallet = opening.status === "ready" ? { status: "ready" as const, depositsOpen: opening.demo.depositsOpen } : opening
 	return <LiveMode header={header} engine={engine} wallet={wallet} presto={presto} />
 }

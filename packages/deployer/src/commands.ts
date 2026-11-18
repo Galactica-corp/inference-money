@@ -1,26 +1,27 @@
 import { AztecAddress } from "@aztec-labs/aztec.js/addresses"
-import { createAztecNodeClient } from "@aztec-labs/aztec.js/node"
-import { signingKeyFor, sponsoredPayment } from "@inference-money/bridge-core"
-import { aztecAddressOf } from "@inference-money/demo"
-import { REPO_ROOT, runIdFor } from "@inference-money/local-network"
+import { createNodeClient, signingKeyFor, sponsoredPayment } from "@galactica-net/inference-money-core"
 import {
 	acceptAdmin,
 	addMerchants,
 	cancelMerchantChange,
 	describeMerchants,
+	merchantDelayVerdict,
 	proposeAdmin,
+	readBackDelay,
 	scheduleGuardian,
 	scheduleMerchant,
 	setMerchantDelay,
 	setPaused,
-} from "./admin"
+} from "@galactica-net/inference-money-core/deploy"
+import { aztecAddressOf } from "@galactica-net/inference-money-demo"
+import { REPO_ROOT, runIdFor } from "@galactica-net/inference-money-local-network"
 import { type Command, type Invocation, parseDelay } from "./cli-args"
 import { demoFund, demoReset, demoSetup, demoStatus } from "./demo"
 import { DISPOSABLE_FILE, disposableDestroy, disposableExec, disposableInit, INTERIM_ADMIN } from "./disposable"
 import { exportBundle } from "./export"
 import { deployLocal } from "./local"
 import { localManifestPath, writeManifest } from "./manifest"
-import { TESTNET } from "./networks"
+import { networkByName, TESTNET } from "./networks"
 import { probeNetwork } from "./preflight"
 import { scanFailed, scanForSecrets, scanLine } from "./scan"
 import { aztecSecretFrom, KEYED, keyedEnv, secretNeedles } from "./secrets"
@@ -103,11 +104,24 @@ export const HANDLERS: Record<Command, Handler> = {
 			await scheduleMerchant(s, admin, aztecAddress(inv.args[1] as string), false)
 			log("switch-on scheduled: it takes effect after the merchant's delay")
 		}),
-	"merchants delay": (inv) =>
-		asAdmin(inv, async (s, admin) => {
-			const { txs, synced } = await setMerchantDelay(s, admin, parseDelay(inv.args[1] as string))
-			log(`delay set and synced to the ${synced} merchant(s) the node lists, in ${txs} tx(s); a decrease applies after old − new`)
-		}),
+	"merchants delay"(inv) {
+		const ref = loadManifest(inv.args[0] as string)
+		const requested = parseDelay(inv.args[1] as string)
+		return withSession(ref, {}, async (s) => {
+			const admin = await adminAccount(s)
+			let sendError: string | undefined
+			try {
+				const { txs, synced } = await setMerchantDelay(s, admin, requested)
+				log(`sent the setting and ${synced} merchant sync(s) in ${txs} tx(s)`)
+			} catch (e) {
+				sendError = e instanceof Error ? e.message : String(e)
+			}
+			const verdict = merchantDelayVerdict(requested, await readBackDelay(s.node, s.m, requested, sendError))
+			if (verdict.record) writeManifest(ref.path, { ...s.m, l2: { ...s.m.l2, merchantDelay: Number(requested) } })
+			for (const line of verdict.lines) log(line)
+			return verdict.exit
+		})
+	},
 	"merchants guardian": (inv) =>
 		asAdmin(inv, async (s, admin) => {
 			await scheduleGuardian(s, admin, aztecAddress(inv.args[1] as string))
@@ -122,7 +136,7 @@ export const HANDLERS: Record<Command, Handler> = {
 		}),
 	async "merchants list"(inv) {
 		const ref = loadManifest(inv.args[0] as string)
-		const lines = await describeMerchants({ node: createAztecNodeClient(ref.m.l2.nodeUrl), m: ref.m })
+		const lines = await describeMerchants({ node: createNodeClient(ref.m.l2.nodeUrl), m: ref.m })
 		for (const line of lines) log(line)
 		log(`${lines.length} merchant(s) added`)
 		return 0
@@ -139,6 +153,7 @@ export const HANDLERS: Record<Command, Handler> = {
 			node: flag(inv, "node"),
 			l1Rpc: flag(inv, "l1-rpc"),
 			guardian: guardian ? aztecAddress(guardian).toString() : undefined,
+			allowPending: inv.flags["allow-pending"] === true,
 			log,
 		})
 	},
@@ -185,11 +200,14 @@ export const HANDLERS: Record<Command, Handler> = {
 		log(`destroyed ${DISPOSABLE_FILE}`)
 		return 0
 	},
-	async probe() {
-		const checks = await probeNetwork(TESTNET, keyedEnv()[KEYED.rpcUrl] || TESTNET.defaultL1RpcUrl)
+	async probe(inv) {
+		const pins = networkByName(inv.args[0] as string)
+		// The keyed L1 RPC is a Sepolia endpoint.
+		const keyed = pins === TESTNET ? keyedEnv()[KEYED.rpcUrl] : undefined
+		const checks = await probeNetwork(pins, keyed || pins.defaultL1RpcUrl)
 		for (const c of checks) log(`${c.ok ? "ok  " : "FAIL"} ${c.name}: ${c.detail}`)
 		const failed = checks.filter((c) => !c.ok).length
-		log(failed === 0 ? `probe testnet: all ${checks.length} checks passed` : `probe testnet: ${failed} failed`)
+		log(failed === 0 ? `probe ${pins.name}: all ${checks.length} checks passed` : `probe ${pins.name}: ${failed} failed`)
 		return failed === 0 ? 0 : 1
 	},
 	/** Prints only a yes/no and counts: which secret matched, or where, is never output. */

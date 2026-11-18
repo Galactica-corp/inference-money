@@ -1,4 +1,4 @@
-import type { WorldItem } from "@inference-money/demo/tour"
+import type { WorldItem } from "@galactica-net/inference-money-demo/tour"
 import { formatUsdc } from "@/demo/amount"
 
 /** `0x1234…cdef`; anything shorter than an address is shown whole. */

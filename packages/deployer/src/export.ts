@@ -2,8 +2,8 @@ import { copyFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 import { loadContractArtifact } from "@aztec-labs/aztec.js/abi"
 import type { ContractArtifact } from "@aztec-labs/stdlib/abi"
-import { type BridgeManifest, instanceFromRecord, PERMIT2_DEPOSIT_ROUTER_ABI, TOKEN_PORTAL_ABI } from "@inference-money/bridge-core"
-import { REPO_ROOT } from "@inference-money/local-network"
+import { type BridgeManifest, instanceFromRecord, PERMIT2_DEPOSIT_ROUTER_ABI, TOKEN_PORTAL_ABI } from "@galactica-net/inference-money-core"
+import { REPO_ROOT } from "@galactica-net/inference-money-local-network"
 import { readManifest, writeManifest } from "./manifest"
 
 /** The committed, transpiled Aztec artifacts, under the manifest's instance keys. */

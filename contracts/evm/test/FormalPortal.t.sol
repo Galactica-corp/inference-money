@@ -3,7 +3,7 @@ pragma solidity >=0.8.27;
 
 import {Constants} from "@aztec/core/libraries/ConstantsGen.sol";
 import {TokenPortal} from "../src/TokenPortal.sol";
-import {CapturingInbox, CapturingOutbox, FakeRegistry, FakeRollup} from "./mocks/AztecFakes.sol";
+import {CapturingInbox, CapturingOutbox, FAKE_ROLLUP_VERSION, FakeRegistry, FakeRollup} from "./mocks/AztecFakes.sol";
 import {StubRouter, initializedPortal} from "./mocks/MockPortal.sol";
 import {
     PortalWithoutCanonicalCheck,
@@ -14,6 +14,7 @@ import {
     PortalWithoutInitOnce,
     PortalWithoutRecipientCheck,
     PortalWithoutRouterCheck,
+    PortalWithoutVersionCheck,
     PortalWithoutZeroCheck
 } from "./mocks/Mutants.sol";
 import {ProofCanary} from "./mocks/ProofCanary.sol";
@@ -24,6 +25,8 @@ import {PlainERC20} from "./mocks/TestTokens.sol";
 ///
 ///   check_initializedBindingsCannotChange  — a second initialize never rebinds anything, the router included
 ///   check_initialize_rejectsNonInitializer — no caller but the deployer can make the first initialize
+///   check_initialize_rejectsVersionMismatch — no first initialize binds a canonical rollup of another version than
+///                                              the one its caller expects
 ///   check_deposit_rejectsAmountAboveU128   — no deposit above the L2 amount type reaches the Inbox
 ///   check_depositFor_rejectsNonRouter      — no caller but the bound router can name a depositor
 ///   check_depositPublic_rejectsOutOfFieldRecipient — no public deposit to a recipient above the field reaches the
@@ -31,8 +34,8 @@ import {PlainERC20} from "./mocks/TestTokens.sol";
 ///   check_deposit_rejectsZeroAmount        — no zero deposit reaches the Inbox, publicly or through the router
 ///   check_deposit_rejectsStaleRollup       — once the registry's canonical rollup moves, no deposit reaches the
 ///                                             bound rollup's Inbox
-///   check_depositPublic_rejectsBadRefund   — no public deposit names zero, the portal or the router as its refund
-///                                             address
+///   check_depositPublic_rejectsBadRefund   — no public deposit names zero, the portal, the router, the token, the
+///                                             Inbox or the Outbox as its refund address
 ///
 /// Every proof asserts the exact revert selector: a bare `catch` would accept a fixture failing for its own reasons,
 /// and assumes valid values for every guard that runs before the one it targets. Failures are signalled with assertions
@@ -49,6 +52,7 @@ contract FormalPortalTest is ProofCanary {
     string internal constant STALE_DEPOSITED = "a deposit reached a rollup that is no longer canonical";
     string internal constant BAD_REFUND_DEPOSITED = "a public deposit named a refund address no return can leave";
     string internal constant EXPIRED_DEPOSITED = "an expired authorization deposited";
+    string internal constant WRONG_VERSION_BOUND = "initialize bound a rollup of another version than expected";
 
     TokenPortal internal locked;
     StubRouter internal routerA;
@@ -78,18 +82,24 @@ contract FormalPortalTest is ProofCanary {
     function check_initializedBindingsCannotChange(
         address candidateUnderlying,
         bytes32 candidateBridge,
-        address candidateRouter
+        address candidateRouter,
+        uint256 candidateVersion
     ) public {
-        proveInitOnce(locked, candidateUnderlying, candidateBridge, candidateRouter);
+        proveInitOnce(locked, candidateUnderlying, candidateBridge, candidateRouter, candidateVersion);
     }
 
     function check_initialize_rejectsNonInitializer(
         address caller,
         address candidateUnderlying,
         bytes32 candidateBridge,
-        address candidateRouter
+        address candidateRouter,
+        uint256 candidateVersion
     ) public {
-        proveInitializerOnly(fresh, caller, candidateUnderlying, candidateBridge, candidateRouter);
+        proveInitializerOnly(fresh, caller, candidateUnderlying, candidateBridge, candidateRouter, candidateVersion);
+    }
+
+    function check_initialize_rejectsVersionMismatch(uint256 expected) public {
+        proveRejectsVersionMismatch(fresh, expected);
     }
 
     function check_deposit_rejectsAmountAboveU128(bytes32 to, uint256 amount, bytes32 secretHash) public {
@@ -145,10 +155,14 @@ contract FormalPortalTest is ProofCanary {
 
     /// `p` was initialized against registry A by this contract, so the call clears the deployer-only guard and meets
     /// the init-once guard alone.
-    function proveInitOnce(TokenPortal p, address candidateUnderlying, bytes32 candidateBridge, address candidateRouter)
-        public
-    {
-        try p.initialize(address(regB), candidateUnderlying, candidateBridge, candidateRouter) {
+    function proveInitOnce(
+        TokenPortal p,
+        address candidateUnderlying,
+        bytes32 candidateBridge,
+        address candidateRouter,
+        uint256 candidateVersion
+    ) public {
+        try p.initialize(address(regB), candidateUnderlying, candidateBridge, candidateRouter, candidateVersion) {
             assertTrue(false, "re-initialized an already-initialized portal");
         } catch (bytes memory reason) {
             assertEq(bytes4(reason), TokenPortal.AlreadyInitialized.selector, "rejected for the wrong reason");
@@ -162,16 +176,29 @@ contract FormalPortalTest is ProofCanary {
         address caller,
         address candidateUnderlying,
         bytes32 candidateBridge,
-        address candidateRouter
+        address candidateRouter,
+        uint256 candidateVersion
     ) public {
         vm.assume(caller != address(this));
         vm.prank(caller);
-        try p.initialize(address(regB), candidateUnderlying, candidateBridge, candidateRouter) {
+        try p.initialize(address(regB), candidateUnderlying, candidateBridge, candidateRouter, candidateVersion) {
             assertTrue(false, "a non-initializer initialized the portal");
         } catch (bytes memory reason) {
             assertEq(bytes4(reason), TokenPortal.NotInitializer.selector, "rejected for the wrong reason");
             assertEq(address(p.registry()), address(0), "a rejected initialize bound a registry");
             assertEq(p.router(), address(0), "a rejected initialize bound a router");
+        }
+    }
+
+    /// `p` is uninitialized and was deployed by this contract; its router is valid, so only the version can refuse it.
+    function proveRejectsVersionMismatch(TokenPortal p, uint256 expected) public {
+        vm.assume(expected != rollupB.getVersion());
+        address router = address(new StubRouter(address(p), UNDERLYING_B));
+        try p.initialize(address(regB), UNDERLYING_B, BRIDGE_B, router, expected) {
+            assertTrue(false, WRONG_VERSION_BOUND);
+        } catch (bytes memory reason) {
+            assertEq(bytes4(reason), TokenPortal.RollupVersionMismatch.selector, "rejected for the wrong reason");
+            assertEq(address(p.registry()), address(0), "a rejected initialize bound a registry");
         }
     }
 
@@ -309,12 +336,22 @@ contract FormalPortalTest is ProofCanary {
     }
 
     /// `p` is bound to registry A (so to `inboxA`) and may pull any amount from this contract. `which` picks zero, the
-    /// portal or the router; every guard before the refund address is satisfied.
+    /// portal, the router, the token, the Inbox, the Outbox or the registry; every guard before the refund address is
+    /// satisfied.
     function proveRejectsBadRefund(TokenPortal p, uint8 which, bytes32 to, uint256 amount, bytes32 secretHash) public {
         vm.assume(amount != 0 && amount <= type(uint128).max);
         vm.assume(uint256(to) <= Constants.MAX_FIELD_VALUE);
         // A conditional, not an array: halmos cannot index memory by a symbolic offset.
-        address depositor = which % 3 == 0 ? address(0) : which % 3 == 1 ? address(p) : p.router();
+        uint8 pick = which % 7;
+        address depositor = pick == 0
+            ? address(0)
+            : pick == 1
+                ? address(p)
+                : pick == 2
+                    ? p.router()
+                    : pick == 3
+                        ? address(p.underlying())
+                        : pick == 4 ? address(p.inbox()) : pick == 5 ? address(p.outbox()) : address(p.registry());
         uint256 sent = inboxA.sent();
         uint256 reserve = p.underlying().balanceOf(address(p));
         try p.depositToAztecPublic(depositor, to, amount, secretHash) {
@@ -358,6 +395,10 @@ contract FormalPortalTest is ProofCanary {
 
     function _assumeValidRefund(TokenPortal p, address depositor) internal view {
         vm.assume(depositor != address(0) && depositor != address(p) && depositor != p.router());
+        vm.assume(
+            depositor != address(p.underlying()) && depositor != address(p.inbox()) && depositor != address(p.outbox())
+        );
+        vm.assume(depositor != address(p.registry()));
     }
 
     function _assertBoundToA(TokenPortal p) internal view {
@@ -376,10 +417,16 @@ contract FormalPortalTest is ProofCanary {
 
     function test_canary_initOnce_failsWithoutTheGuard() public {
         PortalWithoutInitOnce mutant = new PortalWithoutInitOnce();
-        mutant.initialize(address(regA), UNDERLYING_A, BRIDGE_A, address(new StubRouter(address(mutant), UNDERLYING_A)));
+        mutant.initialize(
+            address(regA),
+            UNDERLYING_A,
+            BRIDGE_A,
+            address(new StubRouter(address(mutant), UNDERLYING_A)),
+            FAKE_ROLLUP_VERSION
+        );
         address rebound = address(new StubRouter(address(mutant), UNDERLYING_B));
         _assertProofFails(
-            abi.encodeCall(this.proveInitOnce, (mutant, UNDERLYING_B, BRIDGE_B, rebound)),
+            abi.encodeCall(this.proveInitOnce, (mutant, UNDERLYING_B, BRIDGE_B, rebound, FAKE_ROLLUP_VERSION)),
             "re-initialized an already-initialized portal"
         );
     }
@@ -388,7 +435,10 @@ contract FormalPortalTest is ProofCanary {
         PortalWithoutInitializerCheck mutant = new PortalWithoutInitializerCheck();
         address router = address(new StubRouter(address(mutant), UNDERLYING_B));
         _assertProofFails(
-            abi.encodeCall(this.proveInitializerOnly, (mutant, makeAddr("attacker"), UNDERLYING_B, BRIDGE_B, router)),
+            abi.encodeCall(
+                this.proveInitializerOnly,
+                (mutant, makeAddr("attacker"), UNDERLYING_B, BRIDGE_B, router, FAKE_ROLLUP_VERSION)
+            ),
             "a non-initializer initialized the portal"
         );
     }
@@ -415,7 +465,11 @@ contract FormalPortalTest is ProofCanary {
     function test_canary_routerCheck_failsWithoutTheGuard() public {
         PortalWithoutRouterCheck mutant = new PortalWithoutRouterCheck();
         mutant.initialize(
-            address(regA), address(token), BRIDGE_A, address(new StubRouter(address(mutant), address(token)))
+            address(regA),
+            address(token),
+            BRIDGE_A,
+            address(new StubRouter(address(mutant), address(token))),
+            FAKE_ROLLUP_VERSION
         );
         address stranger = makeAddr("stranger");
         token.transfer(stranger, 2e6);
@@ -445,6 +499,13 @@ contract FormalPortalTest is ProofCanary {
                 (mutant, address(this), bytes32(uint256(1)), 1e6, bytes32(0), address(rollupB))
             ),
             STALE_DEPOSITED
+        );
+    }
+
+    function test_canary_version_failsWithoutTheGuard() public {
+        TokenPortal mutant = new PortalWithoutVersionCheck();
+        _assertProofFails(
+            abi.encodeCall(this.proveRejectsVersionMismatch, (mutant, FAKE_ROLLUP_VERSION + 1)), WRONG_VERSION_BOUND
         );
     }
 
@@ -491,7 +552,7 @@ contract FormalPortalTest is ProofCanary {
         assertEq(inboxA.sent(), sent + 1);
     }
 
-    /// Any refund address but the three refused ones lands, the depositor's own or a third party's.
+    /// Any refund address but the seven refused ones lands, the depositor's own or a third party's.
     function test_canary_anyOtherRefundAddressDeposits() public {
         uint256 sent = inboxA.sent();
         funded.depositToAztecPublic(makeAddr("refund"), bytes32(uint256(1)), 1e6, bytes32(0));
@@ -501,7 +562,11 @@ contract FormalPortalTest is ProofCanary {
     /// A mutant bound to registry A (so to `inboxA`) over `token`, which this contract has approved it to pull.
     function _fundedMutant(TokenPortal mutant) internal returns (TokenPortal) {
         mutant.initialize(
-            address(regA), address(token), BRIDGE_A, address(new StubRouter(address(mutant), address(token)))
+            address(regA),
+            address(token),
+            BRIDGE_A,
+            address(new StubRouter(address(mutant), address(token))),
+            FAKE_ROLLUP_VERSION
         );
         token.approve(address(mutant), type(uint256).max);
         return mutant;
@@ -511,7 +576,7 @@ contract FormalPortalTest is ProofCanary {
     /// is what says B is a working registry rather than an untested one.
     function test_canary_registryBBindsAFreshPortal() public {
         address router = address(new StubRouter(address(fresh), UNDERLYING_B));
-        fresh.initialize(address(regB), UNDERLYING_B, BRIDGE_B, router);
+        fresh.initialize(address(regB), UNDERLYING_B, BRIDGE_B, router, FAKE_ROLLUP_VERSION);
         assertEq(address(fresh.registry()), address(regB), "registry");
         assertEq(address(fresh.underlying()), UNDERLYING_B, "underlying");
         assertEq(fresh.l2Bridge(), BRIDGE_B, "l2Bridge");

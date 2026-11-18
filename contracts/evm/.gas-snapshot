@@ -1,4 +1,4 @@
-FundingAuthorizationTest:test_gas_depositPrivateSigned() (gas: 346145)
-FundingAuthorizationTest:test_gas_depositPublicDirect() (gas: 273607)
+FundingAuthorizationTest:test_gas_depositPrivateSigned() (gas: 346101)
+FundingAuthorizationTest:test_gas_depositPublicDirect() (gas: 280727)
 Permit2DepositRouterTest:test_gas_depositPrivate() (gas: 651802)
-Permit2DepositRouterTest:test_gas_depositPublic() (gas: 623127)
+Permit2DepositRouterTest:test_gas_depositPublic() (gas: 630247)

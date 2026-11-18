@@ -2,7 +2,14 @@ import { beforeAll, describe, expect, it } from "bun:test"
 import type { AztecAddress } from "@aztec-labs/aztec.js/addresses"
 import { SetPublicAuthwitContractInteraction } from "@aztec-labs/aztec.js/authorization"
 import { Fr } from "@aztec-labs/aztec.js/fields"
-import { MERCHANT_MAX_DELAY, MERCHANT_MIN_DELAY, merchantSide, Side, sideCapsule, TOKEN_REFUSALS } from "@inference-money/bridge-core"
+import {
+	MERCHANT_MAX_DELAY,
+	MERCHANT_MIN_DELAY,
+	merchantSide,
+	Side,
+	sideCapsule,
+	TOKEN_REFUSALS,
+} from "@galactica-net/inference-money-core"
 import { funded, l1Actor, l2Actor, l2Balances, sentDuring, USDC } from "./actors"
 import { committedExpiry, lifetime } from "./expiry"
 import { harness, INTEGRATION } from "./harness"
@@ -60,13 +67,18 @@ describe.skipIf(!INTEGRATION)("transfers under the merchant rule", () => {
 		await token().methods.set_merchant_delay!(MERCHANT_MIN_DELAY).send(asAdmin())
 		await listMerchant(m3)
 		await token().methods.set_merchant_delay!(MERCHANT_MAX_DELAY).send(asAdmin())
-		const [short] = await sentDuring(() => transfer(alice, m3, Side.First))
-		expect(short!.expiresAt).toBe(committedExpiry(short!, short!.anchorTs + MERCHANT_MIN_DELAY - 1n))
-		expect(lifetime(short!)).toBeLessThan(lifetime(notReading!))
+		try {
+			const [short] = await sentDuring(() => transfer(alice, m3, Side.First))
+			expect(short!.expiresAt).toBe(committedExpiry(short!, short!.anchorTs + MERCHANT_MIN_DELAY - 1n))
+			expect(lifetime(short!)).toBeLessThan(lifetime(notReading!))
 
-		const { receipt } = await token().methods.schedule_merchant_off!(m3, true).send(asAdmin())
-		const changeAt = (await blockTimestamp(receipt)) + MERCHANT_MIN_DELAY
-		const [pending] = await sentDuring(() => transfer(alice, m3, Side.First))
-		expect(pending!.expiresAt).toBe(committedExpiry(pending!, changeAt - 1n))
+			const { receipt } = await token().methods.schedule_merchant_off!(m3, true).send(asAdmin())
+			const changeAt = (await blockTimestamp(receipt)) + MERCHANT_MIN_DELAY
+			const [pending] = await sentDuring(() => transfer(alice, m3, Side.First))
+			expect(pending!.expiresAt).toBe(committedExpiry(pending!, changeAt - 1n))
+		} finally {
+			// An increase applies at once: no later verify of this shared deployment meets an entry off the setting.
+			await token().methods.sync_merchant_delay!(m3).send(asAdmin())
+		}
 	})
 })

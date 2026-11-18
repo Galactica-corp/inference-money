@@ -1,4 +1,4 @@
-import type { Actor } from "@inference-money/demo"
+import type { Actor } from "@galactica-net/inference-money-demo"
 import { parseUsdc } from "@/demo/amount"
 import type { Holder } from "@/tour/player"
 import type { SceneId } from "@/tour/scenes"
@@ -18,6 +18,9 @@ export const ACTION_LABEL: Record<LiveAction, string> = {
 	send: "Send privately",
 	withdraw: "Withdraw to Ethereum",
 }
+
+export const DEPOSITS_CLOSED =
+	"Deposits are closed. Aztec has moved to a new rollup, and this bridge stays on the one it was deployed on. Claims, payments, transfers and withdrawals still work while that rollup runs."
 
 /** What the composer holds: the amount as typed, so validation can say what is wrong with it. */
 export interface Draft {

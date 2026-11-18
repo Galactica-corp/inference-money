@@ -8,7 +8,7 @@ import {Epoch} from "@aztec/core/libraries/TimeLib.sol";
 import {Constants} from "@aztec/core/libraries/ConstantsGen.sol";
 
 import {TokenPortal} from "../src/TokenPortal.sol";
-import {CapturingInbox, CapturingOutbox, FakeRegistry, FakeRollup} from "./mocks/AztecFakes.sol";
+import {CapturingInbox, CapturingOutbox, FAKE_ROLLUP_VERSION, FakeRegistry, FakeRollup} from "./mocks/AztecFakes.sol";
 import {MockUsdc} from "./mocks/MockUsdc.sol";
 import {StubRouter, initializedPortal} from "./mocks/MockPortal.sol";
 
@@ -132,10 +132,10 @@ contract PortalHandler is StdUtils {
 
     function reinitialize(uint256 actorSeed, address underlying_, bytes32 bridge_, address router_) external {
         vm.prank(actors[actorSeed % actors.length]);
-        try portal.initialize(address(registry), underlying_, bridge_, router_) {
+        try portal.initialize(address(registry), underlying_, bridge_, router_, FAKE_ROLLUP_VERSION) {
             strangerReinitialized = true;
         } catch {}
-        try portal.initialize(address(registry), underlying_, bridge_, router_) {
+        try portal.initialize(address(registry), underlying_, bridge_, router_, FAKE_ROLLUP_VERSION) {
             strangerReinitialized = true;
         } catch {}
     }

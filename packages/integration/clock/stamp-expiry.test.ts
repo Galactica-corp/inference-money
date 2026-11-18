@@ -19,8 +19,8 @@ import {
 	stampDeadline,
 	stampUnmarkedUntil,
 	TOKEN_REFUSALS,
-} from "@inference-money/bridge-core"
-import type { SentTx } from "@inference-money/deployer"
+} from "@galactica-net/inference-money-core"
+import type { SentTx } from "@galactica-net/inference-money-deployer"
 import { funded, l1Actor, l2Actor, sentDuring, USDC } from "../test/actors"
 import { committedExpiry, lifetime } from "../test/expiry"
 import { harness, holdSends, INTEGRATION, latestTimestamp, warpTo } from "../test/harness"

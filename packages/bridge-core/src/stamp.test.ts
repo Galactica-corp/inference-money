@@ -1,7 +1,9 @@
 import { describe, expect, it } from "bun:test"
+import { AztecAddress } from "@aztec-labs/aztec.js/addresses"
 import { poseidon2HashBytes } from "@aztec-labs/foundation/crypto/sync"
 import { Fr } from "@aztec-labs/foundation/curves/bn254"
 import {
+	DOM_SEP__MERCHANT_REF_PAID,
 	DOM_SEP__MERCHANT_REQUEST_PAID,
 	DOM_SEP__MERCHANT_STAMP,
 	DOM_SEP__MERCHANT_STAMP_PAD,
@@ -9,6 +11,7 @@ import {
 	MERCHANT_SIDE_SLOT,
 	pad,
 	paid,
+	paidRef,
 	REQUEST_OPENED_EFFECT,
 	STAMP_BUCKET_SLOT,
 	stamp,
@@ -26,9 +29,17 @@ describe("merchant stamps (cross-toolchain vectors)", () => {
 		expect(DOM_SEP__MERCHANT_STAMP).toBe(u32("dom_sep__merchant_token_stamp"))
 		expect(DOM_SEP__MERCHANT_STAMP_PAD).toBe(u32("dom_sep__merchant_token_stamp_pad"))
 		expect(DOM_SEP__MERCHANT_REQUEST_PAID).toBe(u32("dom_sep__merchant_token_request_paid"))
+		expect(DOM_SEP__MERCHANT_REF_PAID).toBe(u32("dom_sep__merchant_token_ref_paid"))
 		expect(MERCHANT_SIDE_SLOT.equals(hash("merchant_token_side_hint_capsule_slot"))).toBe(true)
 		expect(STAMP_BUCKET_SLOT.equals(hash("merchant_token_stamp_bucket_capsule_slot"))).toBe(true)
 		expect(REQUEST_OPENED_EFFECT.equals(hash("merchant_token_request_opened"))).toBe(true)
+	})
+
+	it.each([
+		[0n, 0n, "0x137ffc4aa5d99bec8def2f15df0916cf4008642a87a04cfe93c5115c097e42e3"],
+		[0x1234n, 0x5eedn, "0x0502a4dd9739d00939202ac3d254c480d9d73ebe93707d82b0a6f0f1628267a3"],
+	] as const)("paidRef(%p, %p) matches the keystone", (merchant, ref, expected) => {
+		expect(paidRef(AztecAddress.fromBigIntUnsafe(merchant), new Fr(ref)).toString()).toBe(expected)
 	})
 
 	it.each([

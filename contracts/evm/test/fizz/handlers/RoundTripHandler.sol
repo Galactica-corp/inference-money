@@ -117,16 +117,49 @@ abstract contract RoundTripHandler is AztecL2Handler, Permit2DepositRouterHandle
 
     // ――――――――――――――――――――――――― Probes ――――――――――――――――――――――――――
 
-    /// A funded, unblocked caller's in-range deposit in a Normal environment with the portal's rollup still canonical
-    /// must go through, whatever the history.
+    /// A funded, unblocked caller's in-range deposit with the portal's rollup still canonical must go through, whatever
+    /// the history: in a Normal environment on every path, and under a sender surcharge on the direct ones, where the
+    /// portal still receives exactly `amount` (the router pays a surcharge on its forward, which `ResidualBalance`
+    /// refuses by design).
     function adv_depositLiveness(uint8 which, uint256 amt, bool dust) public {
-        if (!_depositEnvClean()) return;
         which = uint8(which % 4);
+        bool viaRouter = which >= 2;
+        bool liveMode =
+            _cleanEnvIn(ModalUsdc.Mode.Normal) || (!viaRouter && _cleanEnvIn(ModalUsdc.Mode.SenderSurcharge));
+        if (!liveMode || !_canonical()) return;
         uint256 amount = dust ? clampBetween(amt, 1, 99) : clampBetween(amt, 1, MAX_REALISTIC_AMOUNT);
-        if (!_ensureFunds(actor, amount)) return;
-        if (!_attemptDeposit(actor, amount, which >= 2, which % 2 == 1, toL2Account(amt), bytes32(0))) {
+        // At the mock supply cap `_ensureFunds` can succeed on `amount` alone; the surcharge needs 1 % on top.
+        uint256 surcharge = usdc.mode() == ModalUsdc.Mode.SenderSurcharge ? (amount * usdc.BPS()) / 10_000 : 0;
+        if (!_ensureFunds(actor, amount) || usdc.balanceOf(actor) < amount + surcharge) return;
+        if (!_attemptDeposit(actor, amount, viaRouter, which % 2 == 1, toL2Account(amt), bytes32(0))) {
             ghosts.depositLivenessBroken++;
         }
+    }
+
+    /// A deadline equal to the block's timestamp is still valid, on the portal's private path (its own authorization)
+    /// and through the router (Permit2's); one second earlier is refused with that path's own expiry error, and a
+    /// refused router deposit keeps its nonce.
+    function adv_deadlineEdge(bool viaRouter, bool isPrivate, bool past, uint256 amt) public {
+        if (!past && !_depositEnvClean()) return;
+        if (!viaRouter) isPrivate = true;
+        uint256 amount = clampBetween(amt, 1, MAX_REALISTIC_AMOUNT);
+        if (!_ensureFunds(actor, amount)) return;
+        uint256 deadline = block.timestamp - (past ? 1 : 0);
+        // A fresh secret per probe, so two edge deposits in one block never share a portal authorization digest.
+        bytes32 secret = bytes32(authorizationNonce++);
+        if (!past) {
+            (bool live,,) = _signedDeposit(actor, amount, viaRouter, isPrivate, L2_ACCOUNTS[0], secret, deadline);
+            if (!live) ghosts.depositLivenessBroken++;
+            return;
+        }
+        uint256 consumed = _noopBegin();
+        (bool ok, bytes memory reason, uint256 nonce) =
+            _signedDeposit(actor, amount, viaRouter, isPrivate, L2_ACCOUNTS[0], secret, deadline);
+        bytes4 expired =
+            viaRouter ? IPermit2Errors.SignatureExpired.selector : TokenPortal.AuthorizationExpired.selector;
+        if (ok || bytes4(reason) != expired) ghosts.boundaryAccepted++;
+        _noopEnd(consumed);
+        if (viaRouter && _nonceUsed(actor, nonce)) ghosts.authorizationRollbackBroken++;
     }
 
     /// A proven Outbox leaf from another L2 sender, rollup version, L1 recipient or chain must never pay the portal out.
@@ -197,32 +230,49 @@ abstract contract RoundTripHandler is AztecL2Handler, Permit2DepositRouterHandle
         internal
         returns (bool ok)
     {
-        bytes32 recipient = isPrivate ? bytes32(0) : to;
-        uint256 deadline;
-        bytes memory signature;
-        if (viaRouter) {
-            deadline = block.timestamp + 1;
-            signature = _permitSignature(who, amount, recipient, secret, isPrivate, 0, deadline);
-        } else if (isPrivate) {
-            (deadline, signature) = _authorize(who, who, amount, secret);
+        if (viaRouter || isPrivate) {
+            // A year out on the portal's path, as `_authorize` signs; Permit2's only needs to outlive this call.
+            uint256 deadline = viaRouter ? block.timestamp + 1 : block.timestamp + 365 days + authorizationNonce++;
+            (ok,,) = _signedDeposit(who, amount, viaRouter, isPrivate, to, secret, deadline);
+            return ok;
         }
         vm.prank(who);
+        try portal.depositToAztecPublic(who, to, amount, secret) {
+            ok = true;
+        } catch {}
+        if (ok) _afterDirectDeposit(who, to, amount, false);
+    }
+
+    /// One signed deposit by `who` through the router or the portal's private path, valid through `deadline`, recorded
+    /// in the model only if it succeeded. Returns the revert reason and the Permit2 nonce it signed.
+    function _signedDeposit(
+        address who,
+        uint256 amount,
+        bool viaRouter,
+        bool isPrivate,
+        bytes32 to,
+        bytes32 secret,
+        uint256 deadline
+    ) internal returns (bool ok, bytes memory reason, uint256 nonce) {
+        bytes32 recipient = isPrivate ? bytes32(0) : to;
+        bytes memory signature;
         if (viaRouter) {
-            try router.deposit(amount, recipient, secret, isPrivate, 0, deadline, signature) {
-                ok = true;
-            } catch {}
-        } else if (isPrivate) {
-            try portal.depositToAztecPrivate(who, amount, secret, deadline, signature) {
-                ok = true;
-            } catch {}
+            nonce = _freshNonce(who);
+            signature = _permitSignature(who, amount, recipient, secret, isPrivate, nonce, deadline);
         } else {
-            try portal.depositToAztecPublic(who, to, amount, secret) {
-                ok = true;
-            } catch {}
+            signature = _authorizeUntil(who, who, amount, secret, deadline);
         }
-        if (!ok) return false;
-        if (viaRouter) _afterRouterDeposit(who, recipient, amount, isPrivate);
-        else _afterDirectDeposit(who, recipient, amount, isPrivate);
+        vm.prank(who);
+        (ok, reason) = viaRouter
+            ? address(router)
+                .call(
+                    abi.encodeCall(router.deposit, (amount, recipient, secret, isPrivate, nonce, deadline, signature))
+                )
+            : address(portal)
+                .call(abi.encodeCall(portal.depositToAztecPrivate, (who, amount, secret, deadline, signature)));
+        if (!ok) return (ok, reason, nonce);
+        if (viaRouter) _afterRouterDeposit(who, recipient, amount, isPrivate, nonce);
+        else _afterDirectDeposit(who, bytes32(0), amount, true);
     }
 
     /// One withdraw of modelled exit `id` by its caller (or the actor), recorded only if it succeeded; a revert in a

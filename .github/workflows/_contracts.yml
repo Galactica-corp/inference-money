@@ -2,6 +2,11 @@ name: Contracts (reusable)
 
 on:
   workflow_call:
+    inputs:
+      medusa:
+        description: Run the short Medusa campaign (the caller saw contracts/evm or its inputs change).
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -20,7 +25,7 @@ jobs:
           slither: "true"
       - name: Remapping check (unit)
         run: bun run --cwd contracts/evm test
-      # fmt, lint (src), unit, fuzz and invariant suites; the Sepolia fork suite runs locally in the phase gate.
+      # fmt, lint (src), unit, fuzz and invariant suites; the Sepolia fork suite runs nightly (fork-contracts.yml).
       - name: Forge (hermetic)
         run: bun run test:evm
       - name: Gas snapshot
@@ -31,6 +36,30 @@ jobs:
       # Exact proof names and per-contract counts: a renamed, deleted or failing proof fails the job.
       - name: Halmos (strict)
         run: bun run test:evm:formal
+
+  # 120 s of fuzzing from an empty corpus; the hour with a carried corpus is fuzz-contracts.yml. The job's bound is
+  # hard: a failure that Medusa is still shrinking at 5 minutes ends red, the job log naming the property it shrinks.
+  medusa:
+    name: medusa (120 s)
+    if: inputs.medusa
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/setup-toolchains
+        with:
+          medusa: "true"
+      - run: bun run test:evm:fuzz -- 120
+      - if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: medusa-pr-campaign
+          path: |
+            contracts/evm/fizz_data/last-campaign.log
+            contracts/evm/fizz_data/logs_medusa/
+            contracts/evm/fizz_data/corpus_medusa/test_results/
+          retention-days: 14
+          if-no-files-found: ignore
 
   noir:
     name: aztec.nr (artifacts, sole-consumer, TXE)
