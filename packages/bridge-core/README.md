@@ -1,7 +1,7 @@
 # @galactica-net/inference-money-core
 
 The inference-money USDC bridge between Ethereum and Aztec, as one package: the protocol SDK, the three Aztec contract
-artifacts, the L1 ABIs and bytecode, the testnet deployment, and a deploy library for instances of your own.
+artifacts, the L1 ABIs and bytecode, the mainnet and testnet deployments, and a deploy library for instances of your own.
 
 ```sh
 bun add @galactica-net/inference-money-core   # or npm install
@@ -13,9 +13,24 @@ for: use the same one in your own package.
 | Import | What |
 |---|---|
 | `@galactica-net/inference-money-core` | Deposit, claim, pay, exit and withdraw flows, the rules and their refusals, `tokenArtifact`, `tokenBridgeArtifact`, `tokenMinterProxyArtifact`, `TOKEN_PORTAL_ABI`, `PERMIT2_DEPOSIT_ROUTER_ABI` |
-| `…/deployments` | `TESTNET_MANIFEST`, `DEPLOYMENTS`: every address and instance record of the deployments this version ships |
-| `…/deploy` | `deployTestBridge`, `deployBridge`, `addMerchants` and the other admin calls, `BRIDGE_EVM_ARTIFACTS`, the `TESTNET` pins, the local-network helpers (`installCanonicalPermit2`, `startBlockHeartbeat`) |
-| `…/manifest`, `…/rules`, `…/types`, `…/networks` | Leaf modules that load no Aztec SDK: the manifest schema, the refusal strings, shared types, the testnet pins |
+| `…/deployments` | `MAINNET_MANIFEST`, `TESTNET_MANIFEST`, `DEPLOYMENTS`: every address and instance record of the deployments this version ships |
+| `…/deploy` | `deployTestBridge`, `deployBridge`, `addMerchants` and the other admin calls, `BRIDGE_EVM_ARTIFACTS`, the `MAINNET` and `TESTNET` pins, the local-network helpers (`installCanonicalPermit2`, `startBlockHeartbeat`) |
+| `…/manifest`, `…/rules`, `…/types`, `…/networks` | Leaf modules that load no Aztec SDK: the manifest schema, the refusal strings, shared types, the network pins |
+
+## The mainnet deployment
+
+```ts
+import { registerBridgeContracts } from "@galactica-net/inference-money-core"
+import { MAINNET_MANIFEST } from "@galactica-net/inference-money-core/deployments"
+
+await registerBridgeContracts(wallet, MAINNET_MANIFEST) // refuses an artifact that does not derive the recorded address
+console.log(MAINNET_MANIFEST.l2.token.address, MAINNET_MANIFEST.l1.portal)
+```
+
+Mainnet has no fee sponsor (`MAINNET_MANIFEST.l2.sponsoredFpc` is unset, and `"sponsored"` refuses there). Pass your own
+fee payer as `{ paymentMethod }` (an FPC you run, a relayer), or `"account-public"`, which names the account as fee
+payer in public beside its claim, exit or payment. Its contracts are not audited yet (an audit follows this limited
+run), so keep amounts small. Its admin key is not published, and it lists no merchants yet.
 
 ## The testnet deployment
 
