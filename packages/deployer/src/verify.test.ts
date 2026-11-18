@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test"
+import { Fr } from "@aztec-labs/aztec.js/fields"
 import type { AztecNode } from "@aztec-labs/aztec.js/node"
-import type { MerchantEntry } from "@galactica-net/inference-money-core"
+import type { BridgeManifest, MerchantEntry } from "@galactica-net/inference-money-core"
 import type { DelayReads, DelayState } from "@galactica-net/inference-money-core/deploy"
 import { type Address, type Hex, type PublicClient, TransactionNotFoundError } from "viem"
 import { MANIFEST } from "../../bridge-core/src/test/fixtures"
@@ -136,15 +137,24 @@ describe("delayPolicyChecks", () => {
 	})
 })
 
-const publishedEverywhere = { getContract: async () => ({}) } as unknown as AztecNode
-const sponsorCheck = async (network: "local" | "testnet") => {
+const nodeWith = (feeJuice: bigint) =>
+	({ getContract: async () => ({}), getPublicStorageAt: async () => new Fr(feeJuice) }) as unknown as AztecNode
+const environment = async (network: BridgeManifest["network"], feeJuice = 0n) => {
 	const m = { ...MANIFEST, network, l2: { ...MANIFEST.l2, sponsoredFpc: undefined } }
-	return (await verifyEnvironment(publishedEverywhere, m)).find((c) => c.name === "SponsoredFPC")
+	return verifyEnvironment(nodeWith(feeJuice), m)
 }
+const sponsorCheck = async (network: BridgeManifest["network"]) => (await environment(network)).find((c) => c.name === "SponsoredFPC")
 
 describe("verifyEnvironment", () => {
-	it("fails a manifest with no fee sponsor anywhere but a local network", async () => {
+	it("fails a testnet manifest with no fee sponsor, passes a local one, and only warns on mainnet, which has none", async () => {
 		expect(await sponsorCheck("testnet")).toMatchObject({ ok: false, detail: expect.stringMatching(/fee payer/) })
 		expect(await sponsorCheck("local")).toMatchObject({ ok: true })
+		expect(await sponsorCheck("mainnet")).toMatchObject({ ok: true, warn: true, detail: expect.stringMatching(/own fee payer/) })
+	})
+
+	it("fails a sponsorless mainnet deployment whose admin holds no Fee Juice to pay its own txs", async () => {
+		const admin = (checks: Check[]) => checks.find((c) => c.name.startsWith("admin Fee Juice"))
+		expect(admin(await environment("mainnet", 0n))).toMatchObject({ ok: false })
+		expect(admin(await environment("mainnet", 10n ** 18n))).toMatchObject({ ok: true })
 	})
 })

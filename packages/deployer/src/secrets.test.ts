@@ -3,7 +3,7 @@ import { mkdtempSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { TESTNET } from "./networks"
-import { aztecSecretFrom, containsSecret, l1PrivateKeyFrom, scrubbedEnv, secretNeedles } from "./secrets"
+import { aztecSecretFrom, containsSecret, keyedFor, l1PrivateKeyFrom, scrubbedEnv, secretNeedles } from "./secrets"
 
 const KEY: `0x${string}` = `0x${"0b".repeat(32)}`
 const FR: `0x${string}` = `0x${"0c".repeat(32)}`
@@ -23,6 +23,18 @@ describe("keyed-run secrets", () => {
 			expect(run).toThrow(new RegExp(name))
 			expect(run).not.toThrow(new RegExp(bad.slice(2)))
 		}
+	})
+
+	it("keeps each network's keys under names of its own, so a testnet key never acts on mainnet", () => {
+		const mainnet = keyedFor("mainnet")
+		expect(l1PrivateKeyFrom({ MAINNET_L1_PRIVATE_KEY: KEY }, mainnet)).toBe(KEY)
+		expect(() => l1PrivateKeyFrom({ TESTNET_L1_PRIVATE_KEY: KEY }, mainnet)).toThrow(/MAINNET_L1_PRIVATE_KEY/)
+		const testnetNames = new Set(Object.values(keyedFor("testnet")))
+		expect(Object.values(mainnet).filter((n) => testnetNames.has(n))).toEqual([])
+		// Redaction and the scan find credentials by name: every secret name, on both networks, is caught.
+		const secrets = [keyedFor("testnet"), mainnet].flatMap((k) => [k.l1PrivateKey, k.deployerSecret, k.adminSecret, k.rpcUrl])
+		expect(Object.keys(scrubbedEnv(Object.fromEntries(secrets.map((n) => [n, "x"]))))).toEqual([])
+		expect(Object.keys(scrubbedEnv({ MAINNET_ADMIN_ADDRESS: "0x1" }))).toEqual(["MAINNET_ADMIN_ADDRESS"])
 	})
 
 	it("never falls back to a secrets file or argv: a clean environment fails by name alone", () => {

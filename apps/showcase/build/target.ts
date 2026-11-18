@@ -37,7 +37,16 @@ export const EMBEDDED_TOUR = "showcase-tour.json"
 /** A local deployment lives for one run, so a local build plays a fixture recording that names no live contract. */
 const FIXTURE_TOUR = "apps/showcase/e2e/fixtures/tour.json"
 /** A keyed run's variables: a build that sees one refuses to run, so no secret can reach a bundle. */
-const KEYED = ["TESTNET_L1_PRIVATE_KEY", "TESTNET_DEPLOYER_SECRET", "TESTNET_ADMIN_SECRET", "SEPOLIA_RPC_URL"]
+const KEYED = [
+	"TESTNET_L1_PRIVATE_KEY",
+	"TESTNET_DEPLOYER_SECRET",
+	"TESTNET_ADMIN_SECRET",
+	"SEPOLIA_RPC_URL",
+	"MAINNET_L1_PRIVATE_KEY",
+	"MAINNET_DEPLOYER_SECRET",
+	"MAINNET_ADMIN_SECRET",
+	"ETHEREUM_RPC_URL",
+]
 /** bb.js fetches its proving key material from these, a host it hardcodes and its fallback. */
 export const CRS_ORIGINS = ["https://crs.aztec-cdn.foundation", "https://crs.aztec-labs.com"]
 

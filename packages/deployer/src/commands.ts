@@ -1,8 +1,12 @@
 import { AztecAddress } from "@aztec-labs/aztec.js/addresses"
-import { createNodeClient, signingKeyFor, sponsoredPayment } from "@galactica-net/inference-money-core"
+import { FeeJuicePaymentMethodWithClaim, type FeePaymentMethod } from "@aztec-labs/aztec.js/fee"
+import type { Fr } from "@aztec-labs/aztec.js/fields"
+import { getFeeJuiceBalance } from "@aztec-labs/aztec.js/utils"
+import { createNodeClient, signingKeyFor } from "@galactica-net/inference-money-core"
 import {
 	acceptAdmin,
 	addMerchants,
+	adminFee,
 	cancelMerchantChange,
 	describeMerchants,
 	merchantDelayVerdict,
@@ -15,19 +19,23 @@ import {
 } from "@galactica-net/inference-money-core/deploy"
 import { aztecAddressOf } from "@galactica-net/inference-money-demo"
 import { REPO_ROOT, runIdFor } from "@galactica-net/inference-money-local-network"
+import { type Address, getAddress, isAddress } from "viem"
+import { units18 } from "./budget"
 import { type Command, type Invocation, parseDelay } from "./cli-args"
 import { demoFund, demoReset, demoSetup, demoStatus } from "./demo"
-import { DISPOSABLE_FILE, disposableDestroy, disposableExec, disposableInit, INTERIM_ADMIN } from "./disposable"
+import { disposableDestroy, disposableExec, disposableFile, disposableInit, disposableSweep, INTERIM_ADMIN } from "./disposable"
 import { exportBundle } from "./export"
+import { loadFeeClaim, removeFeeClaim } from "./fee-claims"
+import { deployLive } from "./live"
 import { deployLocal } from "./local"
 import { localManifestPath, writeManifest } from "./manifest"
-import { networkByName, TESTNET } from "./networks"
+import { MAINNET, networkByName } from "./networks"
 import { probeNetwork } from "./preflight"
 import { scanFailed, scanForSecrets, scanLine } from "./scan"
-import { aztecSecretFrom, KEYED, keyedEnv, secretNeedles } from "./secrets"
-import { accountFor, adminAccount, adminSecretFor, loadManifest, type Session, withSession } from "./session"
+import { aztecSecretFrom, type KeyedNetwork, keyedEnv, keyedFor, secretNeedles } from "./secrets"
+import { accountFor, adminAccount, adminSecretFor, loadManifest, type ManifestRef, type Session, withSession } from "./session"
 import { smoke } from "./smoke"
-import { deployTestnet } from "./testnet"
+import { DEMO_NETWORKS } from "./verify"
 import { verifyManifest } from "./verify-cli"
 
 const log = (m: string) => console.log(m)
@@ -49,29 +57,60 @@ const asAdmin = (inv: Invocation, fn: (s: Session, admin: AztecAddress) => Promi
 		return 0
 	})
 
+const l1Address = (value: string): Address => {
+	if (!isAddress(value, { strict: false })) throw new Error("expected an L1 address (20-byte 0x-hex)")
+	return getAddress(value)
+}
+
+/** The demo cast's keys are public: it runs on local and testnet only, where its funds are demo funds. */
+function demoManifest(inv: Invocation): ManifestRef {
+	const ref = loadManifest(inv.args[0] as string)
+	if (!DEMO_NETWORKS.includes(ref.m.network)) throw new Error(`The demo cast runs on local and testnet only, not ${ref.m.network}.`)
+	return ref
+}
+
+/**
+ * Fee Juice the deploy bridged to the admin but never claimed (its public claim failed), kept on disk: on a network
+ * without a sponsor the admin's account deploy claims it instead, when the admin holds none.
+ */
+async function keptAdminClaim(s: Session, secret: Fr): Promise<{ admin: AztecAddress; method: FeePaymentMethod } | undefined> {
+	if (s.m.network === "local" || s.m.l2.sponsoredFpc) return undefined
+	const admin = await accountFor(s.wallet, secret)
+	const claim = loadFeeClaim(s.m.network, admin)
+	if (!claim || (await getFeeJuiceBalance(admin, s.node)) > 0n) return undefined
+	log(`admin ${admin}: its account deploy claims the kept Fee Juice (${claim.claimAmount})`)
+	return { admin, method: new FeeJuicePaymentMethodWithClaim(admin, claim) }
+}
+
 export const HANDLERS: Record<Command, Handler> = {
 	async deploy(inv) {
 		const merchantDelay = flag(inv, "merchant-delay")
 		const opts = { log, ...(merchantDelay ? { merchantDelay: parseDelay(merchantDelay) } : {}) }
-		if (inv.args[0] === "local") {
+		const network = inv.args[0] as "local" | KeyedNetwork
+		if (network === "local") {
 			const { path } = await deployLocal(runIdFor(), opts)
 			log(`deploy local: verified, handed over to the local admin; manifest ${path}`)
 		} else {
-			const m = await deployTestnet(opts)
-			log(`deploy testnet: verified with the handover pending; manifest deployments/testnet.json (bridge ${m.l2.bridge.address})`)
+			const m = await deployLive(network, opts)
+			log(
+				`deploy ${network}: verified with the handover pending; manifest deployments/${network}.json (bridge ${m.l2.bridge.address})`,
+			)
 		}
 		return 0
 	},
-	/** The address the admin secret rebuilds, derived offline: it goes into the deploy template as TESTNET_ADMIN_ADDRESS. */
-	async "admin address"() {
-		const secret = aztecSecretFrom(KEYED.adminSecret)
+	/** The address the network's admin secret rebuilds, derived offline: the deploy proposes to it (<NETWORK>_ADMIN_ADDRESS). */
+	async "admin address"(inv) {
+		const secret = aztecSecretFrom(keyedFor(inv.args[0] as KeyedNetwork).adminSecret)
 		log((await aztecAddressOf({ secret, signingKey: signingKeyFor(secret) })).toString())
 		return 0
 	},
 	async "admin accept"(inv) {
 		const ref = loadManifest(inv.args[0] as string)
 		return withSession(ref, {}, async (s) => {
-			const admin = await acceptAdmin(s.wallet, s.node, s.m, adminSecretFor(s.m), log)
+			const secret = adminSecretFor(s.m)
+			const kept = await keptAdminClaim(s, secret)
+			const admin = await acceptAdmin(s.wallet, s.node, s.m, secret, log, kept?.method)
+			if (kept) removeFeeClaim(s.m.network, kept.admin)
 			const interim = process.env[INTERIM_ADMIN] === "1"
 			const { interimAdmin: _, ...l2 } = s.m.l2
 			const recorded = { ...l2, admin: admin.toString() as `0x${string}`, ...(interim ? { interimAdmin: true as const } : {}) }
@@ -83,7 +122,7 @@ export const HANDLERS: Record<Command, Handler> = {
 	"admin propose": (inv) =>
 		asAdmin(inv, async (s, admin) => {
 			const next = aztecAddress(inv.args[1] as string)
-			await proposeAdmin(s.wallet, s.m, admin, next, { paymentMethod: sponsoredPayment(s.m) })
+			await proposeAdmin(s.wallet, s.m, admin, next, adminFee(s.m))
 			log(`proposed both roles to ${next}; it takes them with \`bridge admin accept\``)
 		}),
 	"merchants add": (inv) =>
@@ -162,7 +201,7 @@ export const HANDLERS: Record<Command, Handler> = {
 		return 0
 	},
 	async smoke(inv) {
-		await smoke(loadManifest(inv.args[0] as string), { record: flag(inv, "record"), log })
+		await smoke(demoManifest(inv), { record: flag(inv, "record"), log })
 		return 0
 	},
 	async export(inv) {
@@ -171,40 +210,56 @@ export const HANDLERS: Record<Command, Handler> = {
 		return 0
 	},
 	async "demo setup"(inv) {
-		await demoSetup(loadManifest(inv.args[0] as string), { rotate: inv.flags.rotate === true, log })
+		await demoSetup(demoManifest(inv), { rotate: inv.flags.rotate === true, log })
 		return 0
 	},
 	async "demo status"(inv) {
-		await demoStatus(loadManifest(inv.args[0] as string), log)
+		await demoStatus(demoManifest(inv), log)
 		return 0
 	},
 	async "demo reset"(inv) {
-		await demoReset(loadManifest(inv.args[0] as string), log)
+		await demoReset(demoManifest(inv), log)
 		return 0
 	},
 	async "demo fund"(inv) {
-		await demoFund(loadManifest(inv.args[0] as string), log)
+		await demoFund(demoManifest(inv), log)
 		return 0
 	},
-	async "disposable init"() {
-		const a = await disposableInit()
-		log(`disposable keys written to ${DISPOSABLE_FILE} (0600); fund the L1 address at the Sepolia faucets:`)
+	async "disposable init"(inv) {
+		const network = inv.args[0] as KeyedNetwork
+		const a = await disposableInit(network, { admin: flag(inv, "admin"), refund: flag(inv, "refund") })
+		log(`disposable keys written to ${disposableFile(network)} (0600)`)
 		log(`  L1 deployer    ${a.l1}`)
 		log(`  L2 deployer    ${a.deployer}`)
-		log(`  interim admin  ${a.admin}`)
+		if (network === "testnet") {
+			log(`  interim admin  ${a.admin}`)
+			log("fund the L1 address at the Sepolia faucets")
+			return 0
+		}
+		log(`  admin          ${a.admin} (proposed to by the deploy; this bundle holds no admin key)`)
+		log(`  refund         ${a.refund} (\`disposable sweep mainnet\` sends leftovers here)`)
+		const checks = await probeNetwork(MAINNET, MAINNET.defaultL1RpcUrl)
+		for (const c of checks.filter((c) => c.name.startsWith("funding needed"))) log(`fund the L1 address with: ${c.detail}`)
+		log(`then check it: bun run bridge probe mainnet --funder ${a.l1}`)
 		return 0
 	},
 	"disposable exec": (inv) => disposableExec(inv.args),
+	async "disposable sweep"(inv) {
+		const r = await disposableSweep(inv.args[0] as KeyedNetwork)
+		log(`swept ${units18(r.feeAsset)} AZTEC and ${units18(r.eth)} ETH to ${r.refund}`)
+		return 0
+	},
 	async "disposable destroy"(inv) {
-		await disposableDestroy(loadManifest(inv.args[0] as string))
-		log(`destroyed ${DISPOSABLE_FILE}`)
+		const ref = loadManifest(inv.args[0] as string)
+		await disposableDestroy(ref)
+		log(`destroyed the ${ref.m.network} disposable keys`)
 		return 0
 	},
 	async probe(inv) {
 		const pins = networkByName(inv.args[0] as string)
-		// The keyed L1 RPC is a Sepolia endpoint.
-		const keyed = pins === TESTNET ? keyedEnv()[KEYED.rpcUrl] : undefined
-		const checks = await probeNetwork(pins, keyed || pins.defaultL1RpcUrl)
+		const keyed = keyedEnv()[keyedFor(pins.name).rpcUrl]
+		const funder = flag(inv, "funder")
+		const checks = await probeNetwork(pins, keyed || pins.defaultL1RpcUrl, funder ? { funder: l1Address(funder) } : {})
 		for (const c of checks) log(`${c.ok ? "ok  " : "FAIL"} ${c.name}: ${c.detail}`)
 		const failed = checks.filter((c) => !c.ok).length
 		log(failed === 0 ? `probe ${pins.name}: all ${checks.length} checks passed` : `probe ${pins.name}: ${failed} failed`)

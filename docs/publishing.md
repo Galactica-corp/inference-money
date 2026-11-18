@@ -6,8 +6,8 @@ workspace stays private.
 | Subpath | Contents |
 |---|---|
 | `.` | The protocol SDK, the three Aztec artifacts (`contracts/aztec/*/target`), the L1 ABIs |
-| `./deployments` | `deployments/testnet.json` as `TESTNET_MANIFEST`, and `DEPLOYMENTS` by network |
-| `./deploy` | `deployBridge`, `deployTestBridge`, the admin and merchant calls, the L1 bytecode (`BRIDGE_EVM_ARTIFACTS`), the testnet pins, the local-network helpers (`installCanonicalPermit2`, `startBlockHeartbeat`) |
+| `./deployments` | `deployments/testnet.json` as `TESTNET_MANIFEST`, `deployments/mainnet.json` as `MAINNET_MANIFEST`, and `DEPLOYMENTS` by network |
+| `./deploy` | `deployBridge`, `deployTestBridge`, the admin and merchant calls, the L1 bytecode (`BRIDGE_EVM_ARTIFACTS`), the testnet and mainnet pins, the local-network helpers (`installCanonicalPermit2`, `startBlockHeartbeat`) |
 | `./manifest`, `./rules`, `./types`, `./networks` | Leaf modules that load no Aztec SDK |
 
 **Why one package.** `contracts/evm` and `contracts/aztec` are Foundry and Noir projects with no JavaScript entry; what
@@ -34,9 +34,11 @@ export loading under Node. CI runs the same on every bridge-core PR.
 ## A release
 
 1. **Contracts changed?** Run the testnet sequence (`docs/operations.md`, "Testnet, in order") and commit
-   `deployments/testnet.json`, `testnet-demo.json` and `testnet-tour.json`. A change to `contracts/evm` also needs
+   `deployments/testnet.json`, `testnet-demo.json` and `testnet-tour.json`; then mainnet's (`docs/operations.md`,
+   Mainnet) and commit `deployments/mainnet.json`. A change to `contracts/evm` also needs
    `bun run --cwd packages/bridge-core embed:evm`, committed. An SDK-only release skips this step.
-2. `bun run bridge verify deployments/testnet.json`: the deployment matches its manifest and this commit's code.
+2. `bun run bridge verify deployments/testnet.json` and `… mainnet.json`: each deployment matches its manifest and this
+   commit's code.
 3. Bump `version` in `packages/bridge-core/package.json`, then `bun install` so `bun.lock` follows. Merge through the
    usual `dev` PR; release from the merged commit.
 4. `bun run release:check`: lint, typecheck, bridge-core's tests (they build `contracts/evm` first), pack, smoke.
@@ -56,19 +58,21 @@ npm versions are immutable: a broken release is fixed by the next version, and `
 
 ## Versions
 
-- `0.x` while only testnet is shipped. A new deployment, a new `PROTOCOL_VERSION` or an Aztec release bump is a minor
-  version; anything a dependent can take without changing code or addresses is a patch.
+- `1.x` from the first mainnet deployment on. A new deployment on either network, a new `PROTOCOL_VERSION` or an Aztec
+  release bump is a minor version; anything a dependent can take without changing code or addresses is a patch; a
+  breaking SDK change is a major.
 - The `@aztec-labs/*` dependencies are exact pins (`toolchain.json`'s `aztecJs`). A dependent on another Aztec release
   gets two copies of the SDK, whose classes do not mix: release a matching version instead.
 - A dependent pins an exact version too: a minor can move the testnet addresses.
 
-## Mainnet, later
+## Mainnet
 
-Add `"mainnet"` to the manifest schema's `network`, commit `deployments/mainnet.json`, add it to `DEPLOYMENTS`
-(`packages/bridge-core/src/deployments.ts`) and its pins beside `TESTNET` (`src/deploy/networks.ts`), and release
-`1.0.0`. `deployments.test.ts` then holds the mainnet addresses to the shipped artifacts as well, so testnet and mainnet
-must run the same contract code in any one version; a testnet-only contract change waits on a pre-release
-(`npm publish --tag next`).
+`deployments/mainnet.json` ships as `MAINNET_MANIFEST` and `DEPLOYMENTS.mainnet` from `1.0.0` on, its pins as `MAINNET`
+(`src/deploy/networks.ts`). `deployments.test.ts` holds both manifests to the shipped artifacts, so testnet and mainnet
+run the same contract code in any one version; a testnet-only contract change waits on a pre-release
+(`npm publish --tag next`). A mainnet redeploy is a release step like testnet's (`docs/operations.md`, Mainnet), and its
+manifest is committed before the version bump. Mainnet names no fee sponsor: the README tells dependents to pass a
+payer of their own.
 
 Publishing by hand needs no stored token. If releases become frequent, npm trusted publishing (OIDC) from a
 tag-triggered workflow does the same without one, but it would be the first workflow here with a write permission

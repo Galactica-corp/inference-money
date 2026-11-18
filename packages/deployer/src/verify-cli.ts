@@ -3,9 +3,9 @@ import { createNodeClient } from "@galactica-net/inference-money-core"
 import { parseTour, tourMismatches } from "@galactica-net/inference-money-demo"
 import { readDemoFile } from "@galactica-net/inference-money-demo/files"
 import { createPublicClient, http, type PublicClient } from "viem"
+import { buildFresh } from "./live"
 import type { Check } from "./preflight"
 import { endpointsFor, type ManifestRef } from "./session"
-import { buildFresh } from "./testnet"
 import { assertAllPass, VerificationFailed, verifyDeployment } from "./verify"
 
 export interface VerifyFlags {

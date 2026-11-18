@@ -27,17 +27,23 @@ export type ClaimResult = "claimed" | "consumed-unknown"
 /**
  * Who pays a tx's fee, a public field of every tx. "sponsored": the network's sponsor, which keeps the account out of
  * it. "account-public": the sending account, from its own Fee Juice, named as the tx's fee payer beside what the tx
- * shows: a claim's amount, an exit's funding address, a return's depositor. Default: sponsored for private ops, the
- * account for public ones, which publish it anyway; an explicit choice overrides.
+ * shows: a claim's amount, an exit's funding address, a return's depositor. `{ paymentMethod }`: a payer of the
+ * caller's own (its FPC, a relayer), for a network without a sponsor; the tx names whatever payer that method names.
+ * Default: sponsored for private ops, the account for public ones, which publish it anyway; an explicit choice overrides.
  */
-export type FeeChoice = "sponsored" | "account-public"
+export type FeeChoice = "sponsored" | "account-public" | { paymentMethod: FeePaymentMethod }
 
 export function feeFor(kind: "public" | "private", m: BridgeManifest, choice?: FeeChoice): { paymentMethod: FeePaymentMethod } | undefined {
+	if (typeof choice === "object" && choice !== null) return { paymentMethod: choice.paymentMethod }
 	const chosen = choice ?? (kind === "private" ? "sponsored" : "account-public")
 	if (chosen === "sponsored") return { paymentMethod: sponsoredPayment(m) }
 	if (chosen === "account-public") return undefined
-	throw new Error(`Unknown fee choice ${String(choice)}: name "sponsored" or "account-public".`)
+	throw new Error(`Unknown fee choice ${String(choice)}: name "sponsored", "account-public" or { paymentMethod }.`)
 }
+
+/** Whether `fee` is the network's sponsor: only its failures are {@link SponsorUnavailableError}s. */
+export const isSponsoredFee = (fee: { paymentMethod: FeePaymentMethod } | undefined): boolean =>
+	fee?.paymentMethod instanceof SponsoredFeePaymentMethod
 
 /** The network's sponsor could not pay (exhausted, missing or refused); the ticket is untouched and can be retried. */
 export class SponsorUnavailableError extends Error {
@@ -313,7 +319,7 @@ export async function claim(
 ): Promise<ClaimResult> {
 	const call = await claimCall(t, wallet, m, opts.allowBind)
 	const fee = feeFor(t.draft.intent.kind, m, opts.fee)
-	const sponsored = fee !== undefined
+	const sponsored = isSponsoredFee(fee)
 	const wait = opts.wait ?? L2_DONE
 	try {
 		const { txHash } = await call.send({ from: opts.from, fee, wait: NO_WAIT })

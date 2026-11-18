@@ -13,6 +13,7 @@ import {
 	type ClaimWait,
 	type FeeChoice,
 	feeFor,
+	isSponsoredFee,
 	messageNullifier,
 	type NullifierNode,
 	sponsorFailure,
@@ -98,7 +99,7 @@ export async function returnDeposit(
 	try {
 		txHash = (await returnCall(t, wallet, m).send({ from: opts.from, fee, wait: NO_WAIT })).txHash
 	} catch (e) {
-		throw (fee && sponsorFailure(e, "return")) || e
+		throw (isSponsoredFee(fee) && sponsorFailure(e, "return")) || e
 	}
 	const located = await locateWithdrawal(t.depositor, amount, txHash, node, m).catch((cause: unknown) => {
 		throw new ReturnUnconfirmedError(txHash, t.depositor, amount, { cause })

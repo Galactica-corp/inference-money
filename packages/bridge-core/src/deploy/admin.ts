@@ -1,14 +1,16 @@
 import { AztecAddress } from "@aztec-labs/aztec.js/addresses"
 import { BatchCall, Contract, type ContractFunctionInteraction } from "@aztec-labs/aztec.js/contracts"
 import type { FeePaymentMethod } from "@aztec-labs/aztec.js/fee"
-import type { Fr } from "@aztec-labs/aztec.js/fields"
+import { Fr } from "@aztec-labs/aztec.js/fields"
 import type { AztecNode } from "@aztec-labs/aztec.js/node"
+import { getFeeJuiceBalance } from "@aztec-labs/aztec.js/utils"
 import type { Wallet } from "@aztec-labs/aztec.js/wallet"
 import type { EmbeddedWallet } from "@aztec-labs/wallets/embedded"
 import { tokenArtifact, tokenBridgeArtifact } from "../artifacts"
 import { L2_DONE, sponsoredPayment } from "../claim"
 import type { BridgeManifest } from "../manifest"
 import { MERCHANT_MIN_DELAY, type MerchantList, type MerchantNode, merchantStatus, syncMerchantList } from "../merchants"
+import { signingKeyFor } from "../signing-key"
 import { ensureAccount } from "./deploy-l2"
 import { entryDelay, readDelays, readRoles } from "./token-reads"
 
@@ -25,7 +27,12 @@ export const CALLS_PER_TX = 4
 const at = (address: string) => AztecAddress.fromStringUnsafe(address)
 export const bridgeOf = (wallet: Wallet, m: BridgeManifest) => Contract.at(at(m.l2.bridge.address), tokenBridgeArtifact, wallet)
 export const tokenOf = (wallet: Wallet, m: BridgeManifest) => Contract.at(at(m.l2.token.address), tokenArtifact, wallet)
-const sponsored = (m: BridgeManifest) => ({ paymentMethod: sponsoredPayment(m) })
+/**
+ * How an admin tx pays: through the manifest's sponsor where it names one, else from the admin's own Fee Juice (mainnet).
+ * An admin's txs name it publicly either way, so paying itself reveals nothing more.
+ */
+export const adminFee = (m: BridgeManifest): { paymentMethod: FeePaymentMethod } | undefined =>
+	m.l2.sponsoredFpc ? { paymentMethod: sponsoredPayment(m) } : undefined
 
 /** Sends `calls` from `from` in as few txs as the entrypoint allows, in order; one tx's calls share its block. */
 export async function sendChunked(
@@ -58,9 +65,9 @@ export async function proposeAdmin(
 }
 
 /**
- * Accepts both roles as the account `secret` rebuilds, deploying it through the sponsor first if needed, and returns
- * once both read back as its own at a checkpoint. A rerun after an accept that landed only reads them back, since a
- * second accept would revert.
+ * Accepts both roles as the account `secret` rebuilds, deploying it first if needed (through the sponsor, or without
+ * one from the Fee Juice already claimed to its address), and returns once both read back as its own at a checkpoint.
+ * A rerun after an accept that landed only reads them back, since a second accept would revert.
  */
 export async function acceptAdmin(
 	wallet: EmbeddedWallet,
@@ -68,8 +75,11 @@ export async function acceptAdmin(
 	m: BridgeManifest,
 	secret: Fr,
 	log: (m: string) => void,
+	/** Pays the account deploy instead, e.g. claiming Fee Juice bridged to the admin that no one has claimed yet. */
+	accountDeployFee?: FeePaymentMethod,
 ): Promise<AztecAddress> {
-	const fees = { accountDeploy: async () => sponsoredPayment(m), tx: sponsoredPayment(m) }
+	const fees = { accountDeploy: async () => accountDeployFee ?? adminFee(m)?.paymentMethod }
+	if (!accountDeployFee && !adminFee(m)) await assertHoldsFeeJuice(wallet, node, secret)
 	const admin = await ensureAccount(wallet, secret, fees, log, "admin")
 	const holdsBoth = async () => {
 		const r = await readRoles(node, m)
@@ -80,13 +90,22 @@ export async function acceptAdmin(
 		return admin
 	}
 	const calls = [bridgeOf(wallet, m).methods.claim_ownership!(), tokenOf(wallet, m).methods.accept_merchant_admin!()]
-	await new BatchCall(wallet, calls).send({ from: admin, fee: sponsored(m), wait: L2_DONE })
+	await new BatchCall(wallet, calls).send({ from: admin, fee: adminFee(m), wait: L2_DONE })
 	if (!(await holdsBoth())) throw new Error(`The accept was checkpointed, but ${admin} does not hold both roles.`)
 	return admin
 }
 
+/** Without a sponsor the admin pays its own way; refused before proving when its address holds no Fee Juice at all. */
+async function assertHoldsFeeJuice(wallet: EmbeddedWallet, node: Pick<AztecNode, "getPublicStorageAt">, secret: Fr): Promise<void> {
+	const { address } = await wallet.createSchnorrAccount(secret, Fr.ZERO, signingKeyFor(secret))
+	const balance = await getFeeJuiceBalance(address, node as AztecNode)
+	if (balance === 0n) {
+		throw new Error(`This network has no fee sponsor and admin ${address} holds no Fee Juice: bridge some to it first.`)
+	}
+}
+
 export async function setPaused(s: AdminSession, admin: AztecAddress, paused: boolean): Promise<void> {
-	await bridgeOf(s.wallet, s.m).methods.set_paused!(paused).send({ from: admin, fee: sponsored(s.m), wait: L2_DONE })
+	await bridgeOf(s.wallet, s.m).methods.set_paused!(paused).send({ from: admin, fee: adminFee(s.m), wait: L2_DONE })
 }
 
 export async function addMerchants(s: AdminSession, admin: AztecAddress, accounts: AztecAddress[]): Promise<number> {
@@ -95,13 +114,13 @@ export async function addMerchants(s: AdminSession, admin: AztecAddress, account
 		s.wallet,
 		accounts.map((a) => token.methods.add_merchant!(a)),
 		admin,
-		sponsored(s.m),
+		adminFee(s.m),
 	)
 }
 
 /** Schedules a switch-off (`off`) or a switch back on, effective after the merchant's delay. */
 export async function scheduleMerchant(s: AdminSession, admin: AztecAddress, account: AztecAddress, off: boolean): Promise<void> {
-	await tokenOf(s.wallet, s.m).methods.schedule_merchant_off!(account, off).send({ from: admin, fee: sponsored(s.m), wait: L2_DONE })
+	await tokenOf(s.wallet, s.m).methods.schedule_merchant_off!(account, off).send({ from: admin, fee: adminFee(s.m), wait: L2_DONE })
 }
 
 /**
@@ -114,7 +133,7 @@ export async function setMerchantDelay(s: AdminSession, admin: AztecAddress, del
 	const token = tokenOf(s.wallet, s.m)
 	const list = await syncMerchantList(s.node, at(s.m.l2.token.address))
 	const syncs = [...list.entries.keys()].map((account) => token.methods.sync_merchant_delay!(at(account)))
-	const txs = await sendChunked(s.wallet, [token.methods.set_merchant_delay!(delay), ...syncs], admin, sponsored(s.m))
+	const txs = await sendChunked(s.wallet, [token.methods.set_merchant_delay!(delay), ...syncs], admin, adminFee(s.m))
 	return { txs, synced: syncs.length }
 }
 
@@ -153,12 +172,12 @@ export function merchantDelayVerdict(requested: bigint, r: DelayReadBack): { rec
 
 /** Schedules the cancel-only guardian (zero removes it), effective after the guardian slot's delay. */
 export async function scheduleGuardian(s: AdminSession, admin: AztecAddress, guardian: AztecAddress): Promise<void> {
-	await tokenOf(s.wallet, s.m).methods.schedule_merchant_guardian!(guardian).send({ from: admin, fee: sponsored(s.m), wait: L2_DONE })
+	await tokenOf(s.wallet, s.m).methods.schedule_merchant_guardian!(guardian).send({ from: admin, fee: adminFee(s.m), wait: L2_DONE })
 }
 
 /** Cancels a merchant's pending change; the token refuses one with nothing pending. */
 export async function cancelMerchantChange(s: AdminSession, admin: AztecAddress, account: AztecAddress): Promise<void> {
-	await tokenOf(s.wallet, s.m).methods.cancel_merchant_change!(account).send({ from: admin, fee: sponsored(s.m), wait: L2_DONE })
+	await tokenOf(s.wallet, s.m).methods.cancel_merchant_change!(account).send({ from: admin, fee: adminFee(s.m), wait: L2_DONE })
 }
 
 /** One line per added merchant, from `MerchantAdded` events and each switch-off entry at the latest block. */

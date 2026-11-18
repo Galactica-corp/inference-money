@@ -1,11 +1,12 @@
 /** `bun run bridge <command>`: what each command takes. A trailing `...` arg takes the rest of the line. */
 const COMMANDS = {
-	deploy: { args: ["local|testnet"], flags: ["merchant-delay"] },
-	"admin address": { args: [] },
+	deploy: { args: ["local|testnet|mainnet"], flags: ["merchant-delay"] },
+	"admin address": { args: ["testnet|mainnet"] },
 	"admin accept": { args: ["manifest"] },
 	"admin propose": { args: ["manifest", "address"] },
-	"disposable init": { args: [] },
-	"disposable exec": { args: ["command..."] },
+	"disposable init": { args: ["testnet|mainnet"], flags: ["admin", "refund"] },
+	"disposable exec": { args: ["testnet|mainnet", "command..."] },
+	"disposable sweep": { args: ["mainnet"] },
 	"disposable destroy": { args: ["manifest"] },
 	"merchants add": { args: ["manifest", "account..."] },
 	"merchants off": { args: ["manifest", "account"] },
@@ -23,7 +24,7 @@ const COMMANDS = {
 	"demo status": { args: ["manifest"] },
 	"demo reset": { args: ["manifest"] },
 	"demo fund": { args: ["manifest"] },
-	probe: { args: ["testnet|mainnet"] },
+	probe: { args: ["testnet|mainnet"], flags: ["funder"] },
 	scan: { args: ["secrets"] },
 } as const satisfies Record<string, { args: readonly string[]; flags?: readonly string[] }>
 
@@ -81,6 +82,13 @@ function splitFlags(words: string[], allowed: readonly string[]): { positional: 
 	return { positional, flags }
 }
 
+/** `disposable exec <network> <command...>`: the command is parsed again, by the child that runs it. */
+function parseExec(rest: readonly string[]): Invocation {
+	checkLiteral("testnet|mainnet", rest[0] ?? "")
+	if (rest.length < 2) throw new UsageError("disposable exec needs a bridge command to run")
+	return { command: "disposable exec", args: [...rest], flags: {} }
+}
+
 /** Parses argv after the script name. A usage error names what is wrong, never the value it rejected. */
 export function parseInvocation(argv: readonly string[]): Invocation {
 	const two = argv.slice(0, 2).join(" ")
@@ -89,10 +97,7 @@ export function parseInvocation(argv: readonly string[]): Invocation {
 	const spec: { args: readonly string[]; flags?: readonly string[] } = COMMANDS[command]
 	const rest = argv.slice(command.split(" ").length)
 	const variadic = spec.args.at(-1)?.endsWith("...") === true
-	if (command === "disposable exec") {
-		if (rest.length === 0) throw new UsageError("disposable exec needs a bridge command to run")
-		return { command, args: [...rest], flags: {} }
-	}
+	if (command === "disposable exec") return parseExec(rest)
 	const { positional, flags } = splitFlags(rest, spec.flags ?? [])
 	const fixed = variadic ? spec.args.length - 1 : spec.args.length
 	if (positional.length < spec.args.length || (!variadic && positional.length > fixed)) {

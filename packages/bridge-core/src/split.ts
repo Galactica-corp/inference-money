@@ -32,6 +32,7 @@ import {
 	type ClaimWait,
 	type FeeChoice,
 	feeFor,
+	isSponsoredFee,
 	L2_DONE,
 	type L2Wait,
 	type NullifierNode,
@@ -268,7 +269,7 @@ export async function claimSplit(
 	} catch (e) {
 		const consumed = () => isSplitConsumed(c, node, m, tipOf(wait)).catch(() => false)
 		if (ALREADY_CONSUMED.test(e instanceof Error ? e.message : String(e)) && (await consumed())) return "consumed-unknown"
-		throw (fee && sponsorFailure(e, "claim")) || e
+		throw (isSponsoredFee(fee) && sponsorFailure(e, "claim")) || e
 	}
 }
 
@@ -304,7 +305,7 @@ export function returnSplit(
 ): Promise<ExitTicket> {
 	const fee = feeFor("private", m, opts.fee)
 	const send = () => bridgeOf(wallet, m).methods.return_split!(...splitArgs(c)).send({ from: opts.from, fee, wait: NO_WAIT })
-	return withdrawalOf(send, c.depositor, c.amount, node, m, fee !== undefined)
+	return withdrawalOf(send, c.depositor, c.amount, node, m, isSponsoredFee(fee))
 }
 
 /** The buyer's change: what it collects, and the IOU behind it. */
@@ -372,7 +373,7 @@ export async function claimChange(
 		await waitForTx(node as AztecNode, txHash, opts.wait ?? L2_DONE)
 		return txHash
 	} catch (e) {
-		throw (fee && sponsorFailure(e, "change collection")) || e
+		throw (isSponsoredFee(fee) && sponsorFailure(e, "change collection")) || e
 	}
 }
 
@@ -386,5 +387,5 @@ export function returnChange(
 ): Promise<ExitTicket> {
 	const fee = feeFor("private", m, opts.fee)
 	const send = () => bridgeOf(wallet, m).methods.return_change!(ch.buyer, ...changeArgs(ch)).send({ from: opts.from, fee, wait: NO_WAIT })
-	return withdrawalOf(send, ch.claim.depositor, ch.amount, node, m, fee !== undefined)
+	return withdrawalOf(send, ch.claim.depositor, ch.amount, node, m, isSponsoredFee(fee))
 }

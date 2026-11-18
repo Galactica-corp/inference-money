@@ -27,13 +27,14 @@ jobs:
         id: filter
         with:
           # The ABI pins read the forge build, and the class-id pins read the committed L2 artifacts, which must
-          # also derive the shipped testnet manifest.
+          # also derive the shipped testnet and mainnet manifests.
           filters: |
             relevant:
               - 'packages/bridge-core/**'
               - 'contracts/evm/**'
               - 'contracts/aztec/*/target/**'
               - 'deployments/testnet.json'
+              - 'deployments/mainnet.json'
               - 'toolchain.json'
               - 'package.json'
               - 'bun.lock'

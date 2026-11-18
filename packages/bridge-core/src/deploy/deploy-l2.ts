@@ -13,9 +13,12 @@ import type { L2InstanceRecord } from "../manifest"
 import { randomSecret } from "../random"
 import { signingKeyFor } from "../signing-key"
 
-/** How a network pays: the account deploy (the account has no balance yet), then every later tx (undefined: its own Fee Juice). */
+/**
+ * How a network pays: the account deploy (undefined: from Fee Juice already claimed to the account's address), then
+ * every later tx (undefined: its own Fee Juice).
+ */
 export interface L2Fees {
-	accountDeploy(account: AztecAddress): Promise<FeePaymentMethod>
+	accountDeploy(account: AztecAddress): Promise<FeePaymentMethod | undefined>
 	tx: FeePaymentMethod | undefined
 }
 
@@ -38,7 +41,9 @@ export async function ensureAccount(
 	}
 	log(`${label} ${manager.address}: deploying`)
 	const deploy = await manager.getDeployMethod()
-	await deploy.send({ from: NO_FROM, fee: { paymentMethod: await fees.accountDeploy(manager.address) } })
+	// No payment method on a self-deploy: the account's entrypoint pays from the Fee Juice its address already holds.
+	const paymentMethod = await fees.accountDeploy(manager.address)
+	await deploy.send({ from: NO_FROM, fee: paymentMethod ? { paymentMethod } : undefined })
 	return manager.address
 }
 

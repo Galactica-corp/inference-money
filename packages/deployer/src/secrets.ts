@@ -2,16 +2,37 @@ import { Fr } from "@aztec-labs/aztec.js/fields"
 import type { Hex } from "viem"
 import { MAINNET, TESTNET } from "./networks"
 
+/** A network a keyed run acts on. */
+export type KeyedNetwork = "testnet" | "mainnet"
+
 /**
- * The keyed-run variables. A command gets them through its environment alone (env-exec's approved process, or a
- * `disposable exec` child), never argv, and moves them out of process.env at startup ({@link holdSecrets}).
+ * The keyed-run variables, one set per network, so a key held for one network never acts on the other. A command gets
+ * them through its environment alone (env-exec's approved process, or a `disposable exec` child), never argv, and
+ * moves them out of process.env at startup ({@link holdSecrets}). `adminAddress` is public: the deploy proposes to it.
  */
-export const KEYED = {
-	l1PrivateKey: "TESTNET_L1_PRIVATE_KEY",
-	deployerSecret: "TESTNET_DEPLOYER_SECRET",
-	adminSecret: "TESTNET_ADMIN_SECRET",
-	rpcUrl: "SEPOLIA_RPC_URL",
+export const KEYED_BY_NETWORK = {
+	testnet: {
+		l1PrivateKey: "TESTNET_L1_PRIVATE_KEY",
+		deployerSecret: "TESTNET_DEPLOYER_SECRET",
+		adminSecret: "TESTNET_ADMIN_SECRET",
+		rpcUrl: "SEPOLIA_RPC_URL",
+		adminAddress: "TESTNET_ADMIN_ADDRESS",
+	},
+	mainnet: {
+		l1PrivateKey: "MAINNET_L1_PRIVATE_KEY",
+		deployerSecret: "MAINNET_DEPLOYER_SECRET",
+		adminSecret: "MAINNET_ADMIN_SECRET",
+		rpcUrl: "ETHEREUM_RPC_URL",
+		adminAddress: "MAINNET_ADMIN_ADDRESS",
+	},
 } as const
+
+export type KeyedNames = (typeof KEYED_BY_NETWORK)[KeyedNetwork]
+
+export const keyedFor = (network: KeyedNetwork): KeyedNames => KEYED_BY_NETWORK[network]
+
+/** Testnet's names. */
+export const KEYED = KEYED_BY_NETWORK.testnet
 
 const HEX32 = /^0x[0-9a-fA-F]{64}$/
 const SECP256K1_N = 0xfffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141n
@@ -25,10 +46,11 @@ function scalar(name: string, env: NodeJS.ProcessEnv, bound: bigint): Hex {
 	return value as Hex
 }
 
-export const l1PrivateKeyFrom = (env: NodeJS.ProcessEnv = keyedEnv()): Hex => scalar(KEYED.l1PrivateKey, env, SECP256K1_N)
+export const l1PrivateKeyFrom = (env: NodeJS.ProcessEnv = keyedEnv(), names: KeyedNames = KEYED): Hex =>
+	scalar(names.l1PrivateKey, env, SECP256K1_N)
 
 /** An Aztec account or deployer secret: a field element, as `op-remote`'s `generate fr` draws it. */
-export const aztecSecretFrom = (name: typeof KEYED.deployerSecret | typeof KEYED.adminSecret, env: NodeJS.ProcessEnv = keyedEnv()): Fr =>
+export const aztecSecretFrom = (name: KeyedNames["deployerSecret"] | KeyedNames["adminSecret"], env: NodeJS.ProcessEnv = keyedEnv()): Fr =>
 	Fr.fromHexString(scalar(name, env, Fr.MODULUS))
 
 const SECRET_NAME = /PRIVATE_KEY|SECRET|MNEMONIC|PASSWORD|TOKEN|RPC_URL|API_KEY/i

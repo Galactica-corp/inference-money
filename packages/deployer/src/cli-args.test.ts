@@ -18,7 +18,8 @@ describe("bridge CLI arguments", () => {
 			"allow-pending": true,
 			node: "http://n",
 		})
-		expect(parseInvocation(["disposable", "exec", "deploy", "testnet", "--merchant-delay", "3600"]).args).toEqual([
+		expect(parseInvocation(["disposable", "exec", "testnet", "deploy", "testnet", "--merchant-delay", "3600"]).args).toEqual([
+			"testnet",
 			"deploy",
 			"testnet",
 			"--merchant-delay",
@@ -26,10 +27,26 @@ describe("bridge CLI arguments", () => {
 		])
 	})
 
+	it("takes mainnet where a live network is named", () => {
+		expect(parseInvocation(["deploy", "mainnet"]).args).toEqual(["mainnet"])
+		expect(parseInvocation(["admin", "address", "mainnet"]).args).toEqual(["mainnet"])
+		expect(parseInvocation(["probe", "mainnet", "--funder", "0xf"]).flags).toEqual({ funder: "0xf" })
+		expect(parseInvocation(["disposable", "init", "mainnet", "--admin", "0xa", "--refund", "0xr"]).flags).toEqual({
+			admin: "0xa",
+			refund: "0xr",
+		})
+		expect(parseInvocation(["disposable", "sweep", "mainnet"]).args).toEqual(["mainnet"])
+	})
+
 	it("refuses unknown commands and flags, wrong arity, bad literals and a missing required flag", () => {
 		for (const argv of [
 			["deploy"],
-			["deploy", "mainnet"],
+			["deploy", "devnet"],
+			["admin", "address"],
+			["disposable", "init"],
+			["disposable", "sweep", "testnet"],
+			["disposable", "exec", "deploy", "testnet"],
+			["disposable", "exec", "mainnet"],
 			["pause", "local", "maybe"],
 			["merchants", "off", "local"],
 			["verify", "m.json", "--bogus", "1"],
