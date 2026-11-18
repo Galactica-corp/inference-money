@@ -20,6 +20,7 @@
 		"nodeVersion": "6.0.0",
 		"rollupVersion": 2070860440,
 		"nodeUrl": "https://aztec-mainnet.drpc.org",
+		"admin": "0x2a38eb28c50a8d5a53e973e0f7aab48b3b4c1d95f7e5732ba6428e0508d72cef",
 		"merchantDelay": 86400,
 		"proxy": {
 			"address": "0x17d7d12e97087ba618f42cd669e147e7cda4f3b41d8afe81e5513521977aa633",
