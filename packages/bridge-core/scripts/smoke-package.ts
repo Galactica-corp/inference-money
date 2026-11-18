@@ -37,7 +37,9 @@ need(typeof deploy.installCanonicalPermit2 === "function", "installCanonicalPerm
 need(typeof deploy.startBlockHeartbeat === "function", "startBlockHeartbeat is missing")
 need(deploy.BRIDGE_EVM_ARTIFACTS.portal.bytecode.length > 2, "the portal bytecode is missing")
 need(deployments.TESTNET_MANIFEST.network === "testnet", "the testnet manifest is missing")
-console.log(deployments.TESTNET_MANIFEST.l2.bridge.address)
+need(deployments.MAINNET_MANIFEST.network === "mainnet", "the mainnet manifest is missing")
+need(deployments.DEPLOYMENTS.mainnet === deployments.MAINNET_MANIFEST, "DEPLOYMENTS.mainnet is missing")
+console.log(deployments.MAINNET_MANIFEST.l2.bridge.address)
 `
 const bridge = execFileSync("node", ["--input-type=module", "-e", probe], { cwd: OUT, encoding: "utf8" }).trim()
-console.log(`${pkg.name}: ${packed.files.length} files, ${subpaths.length} subpaths load; testnet bridge ${bridge}`)
+console.log(`${pkg.name}: ${packed.files.length} files, ${subpaths.length} subpaths load; mainnet bridge ${bridge}`)
